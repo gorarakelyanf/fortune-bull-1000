@@ -83,15 +83,22 @@
     return 0;
   }
   const isMusic = (n) => (man[n] || {}).kind === "music";
+  // Mobile memory: a decoded track is raw PCM (a 3-minute stereo track is ~65 MB), so music is decoded only when it is
+  // about to play (the base track ahead of time), the compressed file is kept, and a long track that has been stopped
+  // for RESUME_S is released (decoded again if it comes back). SFX stay decoded.
+  const PRE_MUSIC = ["music_base"], RELEASE_LONGER = 60;
+  const stoppedAt = {};
   function kick() { // decode what is fetched: SFX all at once, music one track at a time (wanted track first)
     if (!ctx) return;
     const todo = names.filter((n) => state[n] === "raw");
-    const mus = todo.filter(isMusic).sort((a, b) => (want && a === want.name ? -1 : want && b === want.name ? 1 : 0));
+    const mus = todo.filter(isMusic).filter((n) => (want && want.name === n) || PRE_MUSIC.includes(n))
+      .sort((a, b) => (want && a === want.name ? -1 : want && b === want.name ? 1 : 0));
     todo.filter((n) => !isMusic(n)).concat(musicBusy ? [] : mus.slice(0, 1)).forEach((n) => {
       state[n] = "decoding"; if (isMusic(n)) musicBusy = true;
-      decode(raw[n]).then((b) => { buf[n] = b; state[n] = "ok"; if (!isMusic(n) && !man[n].loop) lead[n] = scanLead(b); },
+      const ab = isMusic(n) ? raw[n].slice(0) : raw[n];               // decodeAudioData detaches its buffer
+      decode(ab).then((b) => { buf[n] = b; state[n] = "ok"; if (!isMusic(n) && !man[n].loop) lead[n] = scanLead(b); },
         (e) => { state[n] = "fail"; warn("decode failed:", n, e && e.message); })
-        .then(() => { raw[n] = null; if (isMusic(n)) musicBusy = false; check(); kick();
+        .then(() => { if (!isMusic(n)) raw[n] = null; if (isMusic(n)) musicBusy = false; check(); kick();
           if (want && want.name === n && !(cur && cur.name === n)) A.music(n, want); });
     });
   }
@@ -112,10 +119,14 @@
         man = m || {};
         names = Object.keys(man).filter((n) => n.charAt(0) !== "_" && man[n] && man[n].file);
         names.forEach((n) => { state[n] = "fetch"; });
-        return Promise.all(names.map((n) => fetch(base + man[n].file)
+        const get = (n) => fetch(base + man[n].file)
           .then((r) => { if (!r.ok) throw new Error(r.status + " " + man[n].file); return r.arrayBuffer(); })
           .then((ab) => { raw[n] = ab; state[n] = "raw"; kick(); })
-          .catch((e) => { state[n] = "fail"; warn("load failed:", n, e && e.message); })));
+          .catch((e) => { state[n] = "fail"; warn("load failed:", n, e && e.message); });
+        // SFX first (small, needed at once), then music one file at a time, base first: keeps a phone link free
+        const mus = names.filter(isMusic).sort((a, b) => (PRE_MUSIC.includes(b) ? 1 : 0) - (PRE_MUSIC.includes(a) ? 1 : 0));
+        return Promise.all(names.filter((n) => !isMusic(n)).map(get))
+          .then(() => mus.reduce((p, n) => p.then(() => get(n)), Promise.resolve()));
       })
       .catch((e) => warn("manifest failed:", e && e.message))
       .then(() => { fetchDone = true; check(); });
@@ -232,6 +243,7 @@
     T.setVol = (v, t) => { T.vol = v; ramp(T.g.gain, v * gainOf(name), num(t, 0.5)); };
     T.stop = (f) => {
       if (T.dead) return; T.dead = true;
+      stoppedAt[name] = ctx.currentTime + f;
       if (m.resume) paused[name] = { pos: T.pos(), t: ctx.currentTime };
       ramp(T.g.gain, 0, f);
       const end = ctx.currentTime + f + 0.1;
@@ -240,7 +252,16 @@
     };
     return T;
   }
-  function pump() { if (cur && !cur.dead) cur.next(); }
+  function pump() {
+    if (cur && !cur.dead) cur.next();
+    if (!ctx) return;
+    const now = ctx.currentTime;                     // release long tracks nobody has needed for RESUME_S
+    names.forEach((n) => {
+      if (!isMusic(n) || !buf[n] || !raw[n] || (cur && !cur.dead && cur.name === n) || (want && want.name === n)) return;
+      if (buf[n].duration <= RELEASE_LONGER || stoppedAt[n] == null || now - stoppedAt[n] < RESUME_S + 2) return;
+      buf[n] = null; state[n] = "raw"; stoppedAt[n] = null;
+    });
+  }
 
   A.music = function (name, o) {
     o = o || {};

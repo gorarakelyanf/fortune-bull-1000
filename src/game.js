@@ -115,7 +115,9 @@
       float a = (1.0 - clamp((g - 0.06) / 0.22, 0.0, 1.0)) * c.a;
       rgb.g = min(rgb.g, max(rgb.r * 0.92, rgb.b));
       gl_FragColor = vec4(rgb * a, a); }`;
-  const clips = {}, clipReady = [];
+  const clips = {}, clipReady = [], clipPend = {}, lateClips = [];
+  const BOOT_CLIPS = new Set(["bull_idle", "bull_big"]);
+  let clipSink = null;                                              // set once the scene can take a late clip
   const keyFilter = new PIXI.Filter(undefined, KEY_FRAG);          // one shared instance: every keyed clip uses it
   if (V2ART) for (const n of Object.keys(clipList)) if (n.startsWith("wild_") || n.startsWith("super_wild_")) delete clipList[n];
   for (const [name, c] of Object.entries(clipList)) {
@@ -126,22 +128,32 @@
       v.muted = true; v.playsInline = true; v.loop = !!c.loop; v.preload = "auto";
       v.crossOrigin = "anonymous";
       v.defaultPlaybackRate = v.playbackRate = BASE_TS;          // clips follow ?ts= slow motion too
-      clipReady.push(new Promise((res) => { v.addEventListener("canplaythrough", res, { once: true }); v.addEventListener("error", res, { once: true }); setTimeout(res, 12000); }));
+      // mobile: only the idle and the roar (used by the intro and the popup) hold the TAP TO PLAY screen; the moves and
+      // wild clips keep downloading and switch on when ready (until then the code-drawn fallbacks play)
+      const meta = new Promise((res) => { if (v.readyState >= 1) res(); v.addEventListener("loadedmetadata", res, { once: true }); v.addEventListener("error", res, { once: true }); });
+      if (BOOT_CLIPS.has(name)) clipReady.push(Promise.race([new Promise((res) => { v.addEventListener("canplaythrough", res, { once: true }); v.addEventListener("error", res, { once: true }); }),
+        new Promise((res) => setTimeout(res, 9000))]));
       v.load();
-      clips[name] = { video: v, sprite: null, cfg: c };
+      clipPend[name] = { video: v, sprite: null, cfg: c, meta };
     } catch (e) { console.warn("clip", name, e); }
   }
   await Promise.all(clipReady);
   // textures only once a clip knows its size: a PIXI VideoResource made before that can recurse forever
-  // (_onPlayStart <-> _onCanPlay while width is still 0) on a slow connection. A clip that never loaded is dropped.
-  for (const [name, o] of Object.entries(clips)) {
+  // (_onPlayStart <-> _onCanPlay while width is still 0) on a slow connection. A clip that never loads stays off.
+  function activateClip(name) {
+    const o = clipPend[name]; if (!o || clips[name]) return;
     const v = o.video, c = o.cfg;
-    if (!v.videoWidth || v.error) { console.warn("clip not loaded", name); delete clips[name]; continue; }
+    if (!v.videoWidth || v.error) { console.warn("clip not loaded", name); return; }
     const tex = PIXI.Texture.from(v, { resourceOptions: { autoPlay: false, updateFPS: 30 } });
     const sp = new PIXI.Sprite(tex);
     sp.position.set(c.x || 0, c.y || 0); sp.width = c.w; sp.height = c.h; sp.visible = false;
     if (c.key === "green") sp.filters = [keyFilter];
-    o.sprite = sp;
+    o.sprite = sp; clips[name] = o;
+    if (clipSink) clipSink(name); else lateClips.push(name);
+  }
+  for (const name of Object.keys(clipPend)) {
+    if (BOOT_CLIPS.has(name) && clipPend[name].video.videoWidth) activateClip(name);
+    else clipPend[name].meta.then(() => activateClip(name));
   }
   const hasClip = (n) => !!clips[n];
 
@@ -184,13 +196,23 @@
     return e;
   });
   bullL.addChild(bull);
-  if (hasClip("bull_idle")) {                     // Kling bull: idle loop replaces the still, eyes come from the clip
-    for (const n of Object.keys(clips).filter((k) => k.startsWith("bull_"))) {
-      const sp = clips[n].sprite; sp.position.set(clips[n].cfg.x - bull.x, clips[n].cfg.y - bull.y); bull.addChild(sp);
+  // Kling bull: idle loop replaces the still, eyes come from the clip. Clips that arrive after boot slot in above the
+  // idle (moves fade in over it) and below the hand flame / finger mask, which are added to the bull later.
+  const bullClipAt = bull.children.length;
+  function attachBullClip(n) {
+    const o = clips[n], sp = o.sprite;
+    sp.position.set(o.cfg.x - bull.x, o.cfg.y - bull.y);
+    const idle = clips.bull_idle && clips.bull_idle.sprite;
+    const at = n === "bull_idle" ? bullClipAt : idle && idle.parent === bull ? bull.getChildIndex(idle) + 1 : bullClipAt;
+    bull.addChildAt(sp, Math.min(at, bull.children.length));
+    if (n === "bull_idle") {
+      bullSpr.visible = false; eyes.forEach((e) => (e.visible = false));
+      sp.visible = true; const p = o.video.play(); if (p && p.catch) p.catch(() => {});
     }
-    bullSpr.visible = false; eyes.forEach((e) => (e.visible = false));
-    clips.bull_idle.sprite.visible = true; clips.bull_idle.video.play();
   }
+  ["bull_idle", ...Object.keys(clips).filter((k) => k.startsWith("bull_") && k !== "bull_idle")].forEach((n) => { if (clips[n]) attachBullClip(n); });
+  clipSink = (n) => { if (n.startsWith("bull_")) attachBullClip(n); };     // wild clips are looked up per win
+  lateClips.splice(0).forEach(clipSink);
   const bullState = { breath: 1 };
 
   // ambient: god rays, dust, brazier fire, sun medallion
