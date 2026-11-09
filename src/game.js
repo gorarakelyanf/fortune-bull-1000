@@ -121,19 +121,28 @@
   for (const [name, c] of Object.entries(clipList)) {
     try {
       const v = document.createElement("video");
-      v.src = `assets/clips/${VER === 1 && /^(super_)?wild_/.test(name) ? "_v1/" : ""}${c.file}`;   // V1 = original wild clips v.muted = true; v.playsInline = true; v.loop = !!c.loop; v.preload = "auto";
+      const dir = VER === 1 && /^(super_)?wild_/.test(name) ? "_v1/" : "";    // V1 = original wild clips
+      v.src = `assets/clips/${dir}${c.file}`;
+      v.muted = true; v.playsInline = true; v.loop = !!c.loop; v.preload = "auto";
       v.crossOrigin = "anonymous";
       v.defaultPlaybackRate = v.playbackRate = BASE_TS;          // clips follow ?ts= slow motion too
-      clipReady.push(new Promise((res) => { v.addEventListener("canplaythrough", res, { once: true }); v.addEventListener("error", res, { once: true }); setTimeout(res, 8000); }));
+      clipReady.push(new Promise((res) => { v.addEventListener("canplaythrough", res, { once: true }); v.addEventListener("error", res, { once: true }); setTimeout(res, 12000); }));
       v.load();
-      const tex = PIXI.Texture.from(v, { resourceOptions: { autoPlay: false, updateFPS: 30 } });
-      const sp = new PIXI.Sprite(tex);
-      sp.position.set(c.x || 0, c.y || 0); sp.width = c.w; sp.height = c.h; sp.visible = false;
-      if (c.key === "green") sp.filters = [keyFilter];
-      clips[name] = { video: v, sprite: sp, cfg: c };
+      clips[name] = { video: v, sprite: null, cfg: c };
     } catch (e) { console.warn("clip", name, e); }
   }
   await Promise.all(clipReady);
+  // textures only once a clip knows its size: a PIXI VideoResource made before that can recurse forever
+  // (_onPlayStart <-> _onCanPlay while width is still 0) on a slow connection. A clip that never loaded is dropped.
+  for (const [name, o] of Object.entries(clips)) {
+    const v = o.video, c = o.cfg;
+    if (!v.videoWidth || v.error) { console.warn("clip not loaded", name); delete clips[name]; continue; }
+    const tex = PIXI.Texture.from(v, { resourceOptions: { autoPlay: false, updateFPS: 30 } });
+    const sp = new PIXI.Sprite(tex);
+    sp.position.set(c.x || 0, c.y || 0); sp.width = c.w; sp.height = c.h; sp.visible = false;
+    if (c.key === "green") sp.filters = [keyFilter];
+    o.sprite = sp;
+  }
   const hasClip = (n) => !!clips[n];
 
   // ---------- scene ----------
