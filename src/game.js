@@ -76,6 +76,28 @@
   const fxPts = await (await fetch("assets/fx_points.json")).json();
   let clipList = {};
   try { clipList = await (await fetch("assets/clips/clips.json")).json(); } catch (e) { clipList = {}; }
+  // ---------- clip downloads (Kling) ----------
+  // Mobile load order: the art and the two clips the intro and popup need (idle, roar) download together and hold the
+  // TAP TO PLAY screen; sounds and the other clips (moves, wilds) follow after it and switch on when ready (until then
+  // the code-drawn fallbacks play). Sprites are made later in activateClip().
+  const clips = {}, clipReady = [], clipPend = {}, lateClips = [];
+  const BOOT_CLIPS = new Set(["bull_idle", "bull_big"]);
+  let clipSink = null;                                              // set once the scene can take a late clip
+  if (V2ART) for (const n of Object.keys(clipList)) if (n.startsWith("wild_") || n.startsWith("super_wild_")) delete clipList[n];
+  for (const [name, c] of Object.entries(clipList)) {
+    try {
+      const v = document.createElement("video");
+      const dir = VER === 1 && /^(super_)?wild_/.test(name) ? "_v1/" : "";    // V1 = original wild clips
+      v.muted = true; v.playsInline = true; v.loop = !!c.loop; v.preload = "auto";
+      v.crossOrigin = "anonymous";
+      v.defaultPlaybackRate = v.playbackRate = BASE_TS;          // clips follow ?ts= slow motion too
+      const meta = new Promise((res) => { v.addEventListener("loadedmetadata", res, { once: true }); v.addEventListener("error", res, { once: true }); });
+      const ready = new Promise((res) => { v.addEventListener("canplaythrough", res, { once: true }); v.addEventListener("error", res, { once: true }); });
+      const start = () => { if (!v.src) { v.src = `assets/clips/${dir}${c.file}`; v.load(); } };
+      clipPend[name] = { video: v, sprite: null, cfg: c, meta, ready, start };
+      if (BOOT_CLIPS.has(name)) { start(); clipReady.push(Promise.race([ready, new Promise((res) => setTimeout(res, 15000))])); }
+    } catch (e) { console.warn("clip", name, e); }
+  }
   const files = [];
   const add = (p) => files.push(artSrc(p));
   add("BG/bg_main"); add("Character/bull");
@@ -102,7 +124,6 @@
   if (!NO_ART) FX.useArt((n) => PIXI.Assets.get(`assets/vfx/${n}.webp`));
   if (window.GOLD_FNT) PIXI.BitmapFont.install(window.GOLD_FNT, await PIXI.Assets.load("assets/fonts/gold_digits.png"));   // embedded .fnt
   else await PIXI.Assets.load("assets/fonts/gold_digits.fnt");
-  if (window.AUDIO) { if (BASE_TS !== 1 && AUDIO.timeScale) AUDIO.timeScale(BASE_TS); AUDIO.load("assets/audio/", "assets/audio/audio.json").catch((e) => console.warn("audio", e)); }
   const T = (p) => PIXI.Assets.get(artSrc(p)) || PIXI.Assets.get(`assets/${p}.webp`) || PIXI.Texture.from(artSrc(p));
 
   // ---------- clips (Kling) ----------
@@ -115,29 +136,16 @@
       float a = (1.0 - clamp((g - 0.06) / 0.22, 0.0, 1.0)) * c.a;
       rgb.g = min(rgb.g, max(rgb.r * 0.92, rgb.b));
       gl_FragColor = vec4(rgb * a, a); }`;
-  const clips = {}, clipReady = [], clipPend = {}, lateClips = [];
-  const BOOT_CLIPS = new Set(["bull_idle", "bull_big"]);
-  let clipSink = null;                                              // set once the scene can take a late clip
   const keyFilter = new PIXI.Filter(undefined, KEY_FRAG);          // one shared instance: every keyed clip uses it
-  if (V2ART) for (const n of Object.keys(clipList)) if (n.startsWith("wild_") || n.startsWith("super_wild_")) delete clipList[n];
-  for (const [name, c] of Object.entries(clipList)) {
-    try {
-      const v = document.createElement("video");
-      const dir = VER === 1 && /^(super_)?wild_/.test(name) ? "_v1/" : "";    // V1 = original wild clips
-      v.src = `assets/clips/${dir}${c.file}`;
-      v.muted = true; v.playsInline = true; v.loop = !!c.loop; v.preload = "auto";
-      v.crossOrigin = "anonymous";
-      v.defaultPlaybackRate = v.playbackRate = BASE_TS;          // clips follow ?ts= slow motion too
-      // mobile: only the idle and the roar (used by the intro and the popup) hold the TAP TO PLAY screen; the moves and
-      // wild clips keep downloading and switch on when ready (until then the code-drawn fallbacks play)
-      const meta = new Promise((res) => { if (v.readyState >= 1) res(); v.addEventListener("loadedmetadata", res, { once: true }); v.addEventListener("error", res, { once: true }); });
-      if (BOOT_CLIPS.has(name)) clipReady.push(Promise.race([new Promise((res) => { v.addEventListener("canplaythrough", res, { once: true }); v.addEventListener("error", res, { once: true }); }),
-        new Promise((res) => setTimeout(res, 9000))]));
-      v.load();
-      clipPend[name] = { video: v, sprite: null, cfg: c, meta };
-    } catch (e) { console.warn("clip", name, e); }
-  }
   await Promise.all(clipReady);
+  // then sounds (SFX first, music after: audio.js) and the remaining clips, one at a time so each finishes quickly
+  if (window.AUDIO) { if (BASE_TS !== 1 && AUDIO.timeScale) AUDIO.timeScale(BASE_TS); AUDIO.load("assets/audio/", "assets/audio/audio.json").catch((e) => console.warn("audio", e)); }
+  (async () => {
+    for (const n of Object.keys(clipPend).filter((k) => !BOOT_CLIPS.has(k))) {
+      const o = clipPend[n]; o.start();
+      await Promise.race([o.ready, new Promise((res) => setTimeout(res, 15000))]);
+    }
+  })();
   // textures only once a clip knows its size: a PIXI VideoResource made before that can recurse forever
   // (_onPlayStart <-> _onCanPlay while width is still 0) on a slow connection. A clip that never loads stays off.
   function activateClip(name) {
