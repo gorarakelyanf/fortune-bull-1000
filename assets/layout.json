@@ -1,0 +1,682 @@
+{
+"bg_main": {
+"name": "bg_main",
+"file": "BG/bg_main.png",
+"x": 0,
+"y": 0,
+"w": 1080.0,
+"h": 1920.0,
+"blend": "normal",
+"note": ""
+},
+"bull": {
+"name": "bull",
+"file": "Character/bull.png",
+"x": 162,
+"y": 18,
+"w": 725.0,
+"h": 1019.5,
+"blend": "normal",
+"note": "head matched to the board bull (score 0.938); lower body hidden by the board"
+},
+"win_bar": {
+"name": "win_bar",
+"file": "UI/win_bar.png",
+"x": 0,
+"y": 1276,
+"w": 1080.0,
+"h": 136.0,
+"blend": "normal",
+"note": "TOTAL WIN strip; the text on it is live"
+},
+"panel_reels": {
+"name": "panel_reels",
+"file": "Board/panel_reels.png",
+"x": 38,
+"y": 612,
+"w": 811.0,
+"h": 648.0,
+"blend": "normal",
+"note": ""
+},
+"mult_tray": {
+"name": "mult_tray",
+"file": "Board/mult_tray.png",
+"x": 849,
+"y": 614,
+"w": 190.0,
+"h": 643.0,
+"blend": "normal",
+"note": ""
+},
+"chip1_chip_shadow": {
+"name": "chip1_chip_shadow",
+"file": "Multipliers/chip_shadow.png",
+"x": 838,
+"y": 602,
+"w": 212.0,
+"h": 155.0,
+"blend": "normal",
+"note": ""
+},
+"chip1_chip_bg_2": {
+"name": "chip1_chip_bg_2",
+"file": "Multipliers/chip_bg_2.png",
+"x": 838,
+"y": 602,
+"w": 212.0,
+"h": 155.0,
+"blend": "normal",
+"note": ""
+},
+"chip1_chip_rim": {
+"name": "chip1_chip_rim",
+"file": "Multipliers/chip_rim.png",
+"x": 838,
+"y": 602,
+"w": 212.0,
+"h": 155.0,
+"blend": "normal",
+"note": ""
+},
+"chip1_chip_glints": {
+"name": "chip1_chip_glints",
+"file": "Multipliers/chip_glints.png",
+"x": 838,
+"y": 602,
+"w": 212.0,
+"h": 155.0,
+"blend": "normal",
+"note": ""
+},
+"chip2_chip_shadow": {
+"name": "chip2_chip_shadow",
+"file": "Multipliers/chip_shadow.png",
+"x": 838,
+"y": 730,
+"w": 212.0,
+"h": 155.0,
+"blend": "normal",
+"note": ""
+},
+"chip2_chip_bg_3": {
+"name": "chip2_chip_bg_3",
+"file": "Multipliers/chip_bg_3.png",
+"x": 838,
+"y": 730,
+"w": 212.0,
+"h": 155.0,
+"blend": "normal",
+"note": ""
+},
+"chip2_chip_rim": {
+"name": "chip2_chip_rim",
+"file": "Multipliers/chip_rim.png",
+"x": 838,
+"y": 730,
+"w": 212.0,
+"h": 155.0,
+"blend": "normal",
+"note": ""
+},
+"chip2_chip_glints": {
+"name": "chip2_chip_glints",
+"file": "Multipliers/chip_glints.png",
+"x": 838,
+"y": 730,
+"w": 212.0,
+"h": 155.0,
+"blend": "normal",
+"note": ""
+},
+"chip3_chip_shadow": {
+"name": "chip3_chip_shadow",
+"file": "Multipliers/chip_shadow.png",
+"x": 838,
+"y": 858,
+"w": 212.0,
+"h": 155.0,
+"blend": "normal",
+"note": ""
+},
+"chip3_chip_bg_1000": {
+"name": "chip3_chip_bg_1000",
+"file": "Multipliers/chip_bg_1000.png",
+"x": 838,
+"y": 858,
+"w": 212.0,
+"h": 155.0,
+"blend": "normal",
+"note": ""
+},
+"chip3_chip_rim": {
+"name": "chip3_chip_rim",
+"file": "Multipliers/chip_rim.png",
+"x": 838,
+"y": 858,
+"w": 212.0,
+"h": 155.0,
+"blend": "normal",
+"note": ""
+},
+"chip3_chip_glints": {
+"name": "chip3_chip_glints",
+"file": "Multipliers/chip_glints.png",
+"x": 838,
+"y": 858,
+"w": 212.0,
+"h": 155.0,
+"blend": "normal",
+"note": ""
+},
+"chip4_chip_shadow": {
+"name": "chip4_chip_shadow",
+"file": "Multipliers/chip_shadow.png",
+"x": 838,
+"y": 986,
+"w": 212.0,
+"h": 155.0,
+"blend": "normal",
+"note": ""
+},
+"chip4_chip_bg_5": {
+"name": "chip4_chip_bg_5",
+"file": "Multipliers/chip_bg_5.png",
+"x": 838,
+"y": 986,
+"w": 212.0,
+"h": 155.0,
+"blend": "normal",
+"note": ""
+},
+"chip4_chip_rim": {
+"name": "chip4_chip_rim",
+"file": "Multipliers/chip_rim.png",
+"x": 838,
+"y": 986,
+"w": 212.0,
+"h": 155.0,
+"blend": "normal",
+"note": ""
+},
+"chip4_chip_glints": {
+"name": "chip4_chip_glints",
+"file": "Multipliers/chip_glints.png",
+"x": 838,
+"y": 986,
+"w": 212.0,
+"h": 155.0,
+"blend": "normal",
+"note": ""
+},
+"chip5_chip_shadow": {
+"name": "chip5_chip_shadow",
+"file": "Multipliers/chip_shadow.png",
+"x": 838,
+"y": 1114,
+"w": 212.0,
+"h": 155.0,
+"blend": "normal",
+"note": ""
+},
+"chip5_chip_bg_15": {
+"name": "chip5_chip_bg_15",
+"file": "Multipliers/chip_bg_15.png",
+"x": 838,
+"y": 1114,
+"w": 212.0,
+"h": 155.0,
+"blend": "normal",
+"note": ""
+},
+"chip5_chip_rim": {
+"name": "chip5_chip_rim",
+"file": "Multipliers/chip_rim.png",
+"x": 838,
+"y": 1114,
+"w": 212.0,
+"h": 155.0,
+"blend": "normal",
+"note": ""
+},
+"chip5_chip_glints": {
+"name": "chip5_chip_glints",
+"file": "Multipliers/chip_glints.png",
+"x": 838,
+"y": 1114,
+"w": 212.0,
+"h": 155.0,
+"blend": "normal",
+"note": ""
+},
+"frame": {
+"name": "frame",
+"file": "Board/frame.png",
+"x": 0,
+"y": 585,
+"w": 1080.0,
+"h": 712.0,
+"blend": "normal",
+"note": ""
+},
+"cell11_hourglass_tilebg": {
+"name": "cell11_hourglass_tilebg",
+"file": "Symbols/hourglass_tilebg.png",
+"x": 7.8,
+"y": 580.5,
+"w": 320.0,
+"h": 280.0,
+"blend": "normal",
+"note": ""
+},
+"cell11_hourglass": {
+"name": "cell11_hourglass",
+"file": "Symbols/hourglass.png",
+"x": 7.8,
+"y": 580.5,
+"w": 320.0,
+"h": 280.0,
+"blend": "normal",
+"note": ""
+},
+"cell12_J": {
+"name": "cell12_J",
+"file": "Symbols/J.png",
+"x": 7.8,
+"y": 795.5,
+"w": 320.0,
+"h": 280.0,
+"blend": "normal",
+"note": ""
+},
+"cell13_wild": {
+"name": "cell13_wild",
+"file": "Symbols/wild.png",
+"x": 7.8,
+"y": 1010.5,
+"w": 320.0,
+"h": 280.0,
+"blend": "normal",
+"note": ""
+},
+"cell21_super_wild": {
+"name": "cell21_super_wild",
+"file": "Symbols/super_wild.png",
+"x": 272.5,
+"y": 580.5,
+"w": 320.0,
+"h": 280.0,
+"blend": "normal",
+"note": ""
+},
+"cell22_sun_tilebg": {
+"name": "cell22_sun_tilebg",
+"file": "Symbols/sun_tilebg.png",
+"x": 272.5,
+"y": 795.5,
+"w": 320.0,
+"h": 280.0,
+"blend": "normal",
+"note": ""
+},
+"cell22_sun": {
+"name": "cell22_sun",
+"file": "Symbols/sun.png",
+"x": 272.5,
+"y": 795.5,
+"w": 320.0,
+"h": 280.0,
+"blend": "normal",
+"note": ""
+},
+"cell23_Q": {
+"name": "cell23_Q",
+"file": "Symbols/Q.png",
+"x": 272.5,
+"y": 1010.5,
+"w": 320.0,
+"h": 280.0,
+"blend": "normal",
+"note": ""
+},
+"cell31_K": {
+"name": "cell31_K",
+"file": "Symbols/K.png",
+"x": 537.1,
+"y": 580.5,
+"w": 320.0,
+"h": 280.0,
+"blend": "normal",
+"note": ""
+},
+"cell32_chest_tilebg": {
+"name": "cell32_chest_tilebg",
+"file": "Symbols/chest_tilebg.png",
+"x": 537.1,
+"y": 795.5,
+"w": 320.0,
+"h": 280.0,
+"blend": "normal",
+"note": ""
+},
+"cell32_chest": {
+"name": "cell32_chest",
+"file": "Symbols/chest.png",
+"x": 537.1,
+"y": 795.5,
+"w": 320.0,
+"h": 280.0,
+"blend": "normal",
+"note": ""
+},
+"cell33_A": {
+"name": "cell33_A",
+"file": "Symbols/A.png",
+"x": 537.1,
+"y": 1010.5,
+"w": 320.0,
+"h": 280.0,
+"blend": "normal",
+"note": ""
+},
+"chip1_label_2x": {
+"name": "chip1_label_2x",
+"file": "Multipliers/label_2x.png",
+"x": 881.8,
+"y": 634.5,
+"w": 124.5,
+"h": 90.0,
+"blend": "normal",
+"note": ""
+},
+"chip1_coat": {
+"name": "chip1_coat",
+"file": "Multipliers/chip_coat.png",
+"x": 838,
+"y": 602,
+"w": 212.0,
+"h": 155.0,
+"blend": "normal",
+"note": ""
+},
+"chip2_label_3x": {
+"name": "chip2_label_3x",
+"file": "Multipliers/label_3x.png",
+"x": 883.2,
+"y": 762.5,
+"w": 121.5,
+"h": 90.0,
+"blend": "normal",
+"note": ""
+},
+"chip2_coat": {
+"name": "chip2_coat",
+"file": "Multipliers/chip_coat.png",
+"x": 838,
+"y": 730,
+"w": 212.0,
+"h": 155.0,
+"blend": "normal",
+"note": ""
+},
+"chip3_label_1000x": {
+"name": "chip3_label_1000x",
+"file": "Multipliers/label_1000x.png",
+"x": 814.8,
+"y": 889.2,
+"w": 258.5,
+"h": 92.5,
+"blend": "normal",
+"note": ""
+},
+"chip3_coat": {
+"name": "chip3_coat",
+"file": "Multipliers/chip_coat.png",
+"x": 838,
+"y": 858,
+"w": 212.0,
+"h": 155.0,
+"blend": "normal",
+"note": ""
+},
+"chip4_label_5x": {
+"name": "chip4_label_5x",
+"file": "Multipliers/label_5x.png",
+"x": 882.8,
+"y": 1018.5,
+"w": 122.5,
+"h": 90.0,
+"blend": "normal",
+"note": ""
+},
+"chip4_coat": {
+"name": "chip4_coat",
+"file": "Multipliers/chip_coat.png",
+"x": 838,
+"y": 986,
+"w": 212.0,
+"h": 155.0,
+"blend": "normal",
+"note": ""
+},
+"chip5_label_15x": {
+"name": "chip5_label_15x",
+"file": "Multipliers/label_15x.png",
+"x": 867.5,
+"y": 1146.5,
+"w": 153.0,
+"h": 90.0,
+"blend": "normal",
+"note": ""
+},
+"chip5_coat": {
+"name": "chip5_coat",
+"file": "Multipliers/chip_coat.png",
+"x": 838,
+"y": 1114,
+"w": 212.0,
+"h": 155.0,
+"blend": "normal",
+"note": ""
+},
+"autoplay_shadow": {
+"name": "autoplay_shadow",
+"file": "UI/autoplay_shadow.png",
+"x": 66.2,
+"y": 1646.2,
+"w": 185.5,
+"h": 185.5,
+"blend": "normal",
+"note": ""
+},
+"autoplay": {
+"name": "autoplay",
+"file": "UI/autoplay.png",
+"x": 89.2,
+"y": 1669.2,
+"w": 139.5,
+"h": 139.5,
+"blend": "normal",
+"note": ""
+},
+"turbo_shadow": {
+"name": "turbo_shadow",
+"file": "UI/turbo_shadow.png",
+"x": 825.2,
+"y": 1646.2,
+"w": 185.5,
+"h": 185.5,
+"blend": "normal",
+"note": ""
+},
+"turbo": {
+"name": "turbo",
+"file": "UI/turbo.png",
+"x": 848.2,
+"y": 1669.2,
+"w": 139.5,
+"h": 139.5,
+"blend": "normal",
+"note": ""
+},
+"ex_shadow": {
+"name": "ex_shadow",
+"file": "UI/ex_shadow.png",
+"x": 761.2,
+"y": 1452.8,
+"w": 174.5,
+"h": 174.5,
+"blend": "normal",
+"note": ""
+},
+"ex_button": {
+"name": "ex_button",
+"file": "UI/ex_button.png",
+"x": 784.2,
+"y": 1475.8,
+"w": 128.5,
+"h": 128.5,
+"blend": "normal",
+"note": ""
+},
+"minus_shadow": {
+"name": "minus_shadow",
+"file": "UI/minus_shadow.png",
+"x": 258.2,
+"y": 1696.2,
+"w": 127.5,
+"h": 127.5,
+"blend": "normal",
+"note": ""
+},
+"minus": {
+"name": "minus",
+"file": "UI/minus.png",
+"x": 273.2,
+"y": 1711.2,
+"w": 97.5,
+"h": 97.5,
+"blend": "normal",
+"note": ""
+},
+"plus_shadow": {
+"name": "plus_shadow",
+"file": "UI/plus_shadow.png",
+"x": 694.2,
+"y": 1696.2,
+"w": 127.5,
+"h": 127.5,
+"blend": "normal",
+"note": ""
+},
+"plus": {
+"name": "plus",
+"file": "UI/plus.png",
+"x": 709.2,
+"y": 1711.2,
+"w": 97.5,
+"h": 97.5,
+"blend": "normal",
+"note": ""
+},
+"spin_shadow": {
+"name": "spin_shadow",
+"file": "UI/spin_shadow.png",
+"x": 387.5,
+"y": 1426.0,
+"w": 304.0,
+"h": 304.0,
+"blend": "normal",
+"note": ""
+},
+"spin_glow": {
+"name": "spin_glow",
+"file": "UI/spin_glow.png",
+"x": 397.5,
+"y": 1436.0,
+"w": 284.0,
+"h": 284.0,
+"blend": "normal",
+"note": "rim light; pulse it"
+},
+"spin_base": {
+"name": "spin_base",
+"file": "UI/spin_base.png",
+"x": 417.5,
+"y": 1456.0,
+"w": 244.0,
+"h": 244.0,
+"blend": "normal",
+"note": ""
+},
+"spin_arrows": {
+"name": "spin_arrows",
+"file": "UI/spin_arrows.png",
+"x": 462.8,
+"y": 1502.5,
+"w": 153.5,
+"h": 152.5,
+"blend": "normal",
+"note": "rotate around its centre while spinning"
+},
+"bet_window_fill": {
+"name": "bet_window_fill",
+"file": "UI/bet_window_fill.png",
+"x": 382,
+"y": 1710,
+"w": 316.0,
+"h": 100.0,
+"blend": "normal",
+"note": "flat #CB3434 at 65% (alpha); recolour freely"
+},
+"bet_window_border": {
+"name": "bet_window_border",
+"file": "UI/bet_window_border.png",
+"x": 382,
+"y": 1710,
+"w": 316.0,
+"h": 100.0,
+"blend": "normal",
+"note": ""
+},
+"balance_bar_fill": {
+"name": "balance_bar_fill",
+"file": "UI/balance_bar_fill.png",
+"x": 13,
+"y": 1823,
+"w": 1054.0,
+"h": 82.0,
+"blend": "normal",
+"note": "flat #CB3434 at 65% (alpha); recolour freely"
+},
+"balance_bar_border": {
+"name": "balance_bar_border",
+"file": "UI/balance_bar_border.png",
+"x": 13,
+"y": 1823,
+"w": 1054.0,
+"h": 82.0,
+"blend": "normal",
+"note": ""
+},
+"icon_sound": {
+"name": "icon_sound",
+"file": "UI/icon_sound.png",
+"x": 911,
+"y": 1840,
+"w": 57.0,
+"h": 48.0,
+"blend": "normal",
+"note": ""
+},
+"icon_menu": {
+"name": "icon_menu",
+"file": "UI/icon_menu.png",
+"x": 1005,
+"y": 1846,
+"w": 45.0,
+"h": 38.0,
+"blend": "normal",
+"note": ""
+}
+}

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>Fortune Bull 1000</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; }
+  #wrap { position: fixed; inset: 0; }
+  #demo { position: fixed; top: 8px; left: 8px; z-index: 5; font: 600 12px/1.2 system-ui, sans-serif; color: #ffe6b0; }
+  #demo summary { cursor: pointer; background: rgba(40, 8, 14, .85); border: 1px solid #c98a3a; border-radius: 8px; padding: 6px 10px; list-style: none; }
+  #demo .list { margin-top: 6px; display: grid; grid-template-columns: repeat(2, auto); gap: 4px; background: rgba(20, 4, 8, .9); border: 1px solid #c98a3a; border-radius: 8px; padding: 8px; }
+  #demo button { font: inherit; color: #ffe6b0; background: #5a1420; border: 1px solid #c98a3a; border-radius: 6px; padding: 5px 8px; cursor: pointer; text-align: left; }
+  #demo button:hover { background: #7a1c2c; }
+  #demo .hint { grid-column: 1 / -1; opacity: .7; font-weight: 400; padding-top: 4px; }
+</style>
+</head>
+<body>
+<div id="wrap"></div>
+<details id="demo">
+  <summary>DEMO</summary>
+  <div class="list">
+    <button data-force="win">1 line win</button>
+    <button data-force="wild">2 wild win</button>
+    <button data-force="superwild">3 super wild nudge</button>
+    <button data-force="nudge4">N 4 nudges</button>
+    <button data-force="big">4 big win</button>
+    <button data-force="mega">5 mega win</button>
+    <button data-force="super">6 super win</button>
+    <button data-force="epic">7 epic win</button>
+    <button data-force="tease">8 wild tease</button>
+    <button data-force="m1000">9 1000x win</button>
+    <button data-force="nudgechip">G nudge chip</button>
+    <button data-force="nudgechain">H nudge chain</button>
+    <button data-force="clash">C multiplier clash</button>
+    <button data-buy="nudge">BUY bull nudge</button>
+    <button data-buy="super">BUY super bull</button>
+    <button data-force="nowin">0 no win</button>
+    <button data-force="max">M max win</button>
+    <div class="hint">Space = spin / quick stop</div>
+  </div>
+</details>
+<script src="lib/pixi.min.js"></script>
+<script src="lib/pixi-filters.js"></script>
+<script src="lib/gsap.min.js"></script>
+<script src="lib/CustomEase.min.js"></script>
+<script src="src/engine.js"></script>
+<script src="src/audio.js"></script>
+<script src="src/sfx.js"></script>
+<script src="src/fx.js"></script>
+<script src="src/vfx.js"></script>
+<script src="src/buy.js"></script>
+<script src="src/game.js"></script>
+</body>
+</html>
