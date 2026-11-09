@@ -17,10 +17,11 @@
   // default = V1: the game with the original symbols (assets_v1/Symbols) and original wild clips (clips/_v1)
   // ?v2 = same game with the simplified symbols, new wild seals and their clips (assets/Symbols, clips/)
   // ?v3 = the Sapphire Treasury art set (assets_v2/, same file names); a part missing there falls back to assets/
-  const VER = params.has("v3") ? 3 : params.has("v2") ? 2 : 1;
+  // ?v4 = V1 with the V4 bull (red sash on the other shoulder, living-gold arm with an armband): assets_v4 + clips/v4
+  const VER = params.has("v4") ? 4 : params.has("v3") ? 3 : params.has("v2") ? 2 : 1;
   const ART = VER === 3 ? "assets_v2" : "assets";
-  const OLD_SYM = VER === 1 ? /^Symbols\/(chest|hourglass|sun|wild|super_wild)(_|$)/ : null;
-  const artSrc = (p) => `${OLD_SYM && OLD_SYM.test(p) ? "assets_v1" : ART}/${p}.webp`;
+  const OLD_SYM = VER === 1 || VER === 4 ? /^Symbols\/(chest|hourglass|sun|wild|super_wild)(_|$)/ : null;
+  const artSrc = (p) => `${VER === 4 && p === "Character/bull" ? "assets_v4" : OLD_SYM && OLD_SYM.test(p) ? "assets_v1" : ART}/${p}.webp`;
   window.ART = ART; window.ART_SRC = artSrc;
   const V2ART = ART === "assets_v2", V2_LAB = { wild: 66, super: 62 };     // label centre below the symbol centre
   const BASE_TS = +(params.get("ts") || 1);          // ?ts=0.1 = slow motion (QA video capture)
@@ -76,6 +77,10 @@
   const fxPts = await (await fetch("assets/fx_points.json")).json();
   let clipList = {};
   try { clipList = await (await fetch("assets/clips/clips.json")).json(); } catch (e) { clipList = {}; }
+  if (VER === 4) {                                   // V4 bull clips replace the bull_* entries (same placement, own tracks)
+    try { const v4 = await (await fetch("assets/clips/v4/clips.json")).json();
+      for (const [k, c] of Object.entries(v4)) clipList[k] = Object.assign({}, c, { dir: "v4/" }); } catch (e) { console.warn("v4 clips", e); }
+  }
   // ---------- clip downloads (Kling) ----------
   // Mobile load order: the art and the two clips the intro and popup need (idle, roar) download together and hold the
   // TAP TO PLAY screen; sounds and the other clips (moves, wilds) follow after it and switch on when ready (until then
@@ -87,7 +92,7 @@
   for (const [name, c] of Object.entries(clipList)) {
     try {
       const v = document.createElement("video");
-      const dir = VER === 1 && /^(super_)?wild_/.test(name) ? "_v1/" : "";    // V1 = original wild clips
+      const dir = c.dir || ((VER === 1 || VER === 4) && /^(super_)?wild_/.test(name) ? "_v1/" : "");    // V1/V4 = original wild clips
       v.muted = true; v.playsInline = true; v.loop = !!c.loop; v.preload = "auto";
       v.crossOrigin = "anonymous";
       v.defaultPlaybackRate = v.playbackRate = BASE_TS;          // clips follow ?ts= slow motion too
@@ -1573,6 +1578,9 @@
   fxTop.addChildAt(vignette, 0);
   // magic flame in the bull's open hand (idle clip) that rides up into his raised fist (roar clip)
   const HAND_CLIP = { x: 78, y: 492 }, FIST_CLIP = { x: 120, y: 292 };
+  { const h = clips.bull_idle && clips.bull_idle.cfg.hand; if (h) { HAND_CLIP.x = h[0]; HAND_CLIP.y = h[1]; } }   // V4: its own hand
+  // a roar clip with its own hand track (V4) drives the flame from that; otherwise the open hand -> raised fist blend
+  const bigTrack = () => { const b = clips.bull_big; return b && b.sprite.visible && b.cfg.track ? trackAt(b.cfg.track, b.video.currentTime) : null; };
   const flame = { c: null, boost: 0 };
   flame.c = VFX.magicFlame(bull, 200, 330);
   // the fingers sit IN FRONT of the fire: the same clip frame, masked to a soft ellipse over the hand, on top of the flame
@@ -1610,13 +1618,16 @@
   function handNow() {
     const mv = bullDir.cur;
     if (mv && mv.started && !mv.ended && mv.c.cfg.track) { const q = trackAt(mv.c.cfg.track, mv.c.video.currentTime); return { x: q[1], y: q[2], p: q[3], k: 0 }; }
+    const bq = bigTrack();
+    if (bq) return { x: bq[1], y: bq[2], p: bq[3], k: 0 };
     const k = roarK();
     return { x: HAND_CLIP.x + (FIST_CLIP.x - HAND_CLIP.x) * k, y: HAND_CLIP.y + (FIST_CLIP.y - HAND_CLIP.y) * k, p: 1, k };
   }
   function placeFlame(fc, hero, inPopup) {
     const h = hero ? null : handNow();
-    const k = hero ? roarK() : Math.max(h.k, Math.min(1, Math.max(0, h.p - 1)));
-    const cx = hero ? HAND_CLIP.x + (FIST_CLIP.x - HAND_CLIP.x) * k : h.x, cy = hero ? HAND_CLIP.y + (FIST_CLIP.y - HAND_CLIP.y) * k : h.y;
+    const hq = hero && clips.bull_big && clips.bull_big.cfg.track ? trackAt(clips.bull_big.cfg.track, clips.bull_big.video.currentTime) : null;
+    const k = hq ? Math.min(1, Math.max(0, hq[3] - 1)) : hero ? roarK() : Math.max(h.k, Math.min(1, Math.max(0, h.p - 1)));
+    const cx = hq ? hq[1] : hero ? HAND_CLIP.x + (FIST_CLIP.x - HAND_CLIP.x) * k : h.x, cy = hq ? hq[2] : hero ? HAND_CLIP.y + (FIST_CLIP.y - HAND_CLIP.y) * k : h.y;
     let gx, gy;
     if (hero) {
       gx = hero.x - hero.width / 2 + cx * hero.width / 720; gy = hero.y - hero.height / 2 + cy * hero.height / 1280;
