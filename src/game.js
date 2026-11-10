@@ -35,6 +35,18 @@
   const app = new PIXI.Application({ backgroundColor: 0x000000, antialias: !MOBILE, autoDensity: true,
     resolution: Math.min(window.devicePixelRatio || 1, 2), resizeTo: window });
   document.getElementById("wrap").appendChild(app.view);
+  PIXI.Filter.defaultResolution = app.renderer.resolution;   // filters (keyed clips, chips) as sharp as the screen
+  // ?fps: a small frame-rate readout (average and slowest frame over the last half second), to check a phone
+  if (params.has("fps")) {
+    const el = document.createElement("div");
+    el.style.cssText = "position:fixed;right:6px;top:6px;z-index:20;font:600 12px/1.3 system-ui,sans-serif;color:#9f9;background:rgba(0,0,0,.6);padding:3px 6px;border-radius:6px;pointer-events:none";
+    document.body.appendChild(el);
+    let n = 0, worst = 0, t0 = performance.now(), last = t0;
+    const loop = (t) => { n++; worst = Math.max(worst, t - last); last = t;
+      if (t - t0 > 500) { el.textContent = `${Math.round((n * 1000) / (t - t0))} fps  slowest ${Math.round(worst)} ms  x${app.renderer.resolution}`; n = 0; worst = 0; t0 = t; }
+      requestAnimationFrame(loop); };
+    requestAnimationFrame(loop);
+  }
   const root = new PIXI.Container();
   const backdrop = new PIXI.Sprite();
   app.stage.addChild(backdrop, root);
@@ -1930,8 +1942,10 @@
       i.video.currentTime = 0; { const p = i.video.play(); if (p && p.catch) p.catch(() => {}); }
     };
   }
+  const wildUploads = (on) => { const b = mobWild && mobWild.base_; if (b && b.resource) b.resource.autoUpdate = on; };
   function playCellClip(id, reel, row) {
     const w = clips[id + "_win"]; if (!w) return;
+    wildUploads(true);
     const v = reels[reel].view(row);
     const sp = new PIXI.Sprite(w.sprite.texture); sp.anchor.set(0.5); sp.width = w.cfg.w; sp.height = w.cfg.h;
     sp.filters = w.sprite.filters; sp.clipId = id;
@@ -1940,7 +1954,7 @@
     cellClipKick(id);
     winObjs.push({ destroy: () => {
       const k = cellClipSprites.indexOf(sp); if (k >= 0) cellClipSprites.splice(k, 1);
-      sp.destroy(); v.a.visible = true;
+      sp.destroy(); v.a.visible = true; if (!cellClipSprites.length) wildUploads(false);
       if (!cellClipSprites.some((o) => o.clipId === id || mobWild) && clips[id + "_idle"]) clips[id + "_idle"].video.pause();
     } });
   }
@@ -2463,6 +2477,7 @@
     colReel.update(dt);
     if (mobBull) {
       mobBull.tick(); if (mobWild) mobWild.tick();
+      if (mobWild && mobWild.base_ && !mobWild.upInit_) { mobWild.upInit_ = true; if (!cellClipSprites.length) wildUploads(false); }
       const live = mobBull.live && !!clips.bull_idle;
       if (bullClipC.visible !== live) { bullClipC.visible = live; bullSpr.visible = !live; eyes.forEach((e) => (e.visible = !live)); }
     }
