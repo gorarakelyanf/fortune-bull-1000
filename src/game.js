@@ -843,6 +843,15 @@
   }
   function flashAt(x, y, tint, s, life) { topP.emit({ tex: FX.tex.glow, x, y, s0: s, s1: s * 1.3, life: life || 0.35, tint, a0: 0.9, a1: 0 }); }
   let shakeT = 0, shakeA = 0;
+  // hit-stop: the whole game holds for a few frames on a heavy impact (real time), then carries on; and a phone buzz
+  let hitStopOn = false;
+  function hitStop(ms) {
+    if (hitStopOn || S.turbo) return;
+    const ts = gsap.globalTimeline.timeScale(), low = ts * 0.05; hitStopOn = true;
+    gsap.globalTimeline.timeScale(low);
+    setTimeout(() => { hitStopOn = false; if (Math.abs(gsap.globalTimeline.timeScale() - low) < 1e-6) gsap.globalTimeline.timeScale(ts); }, ms);
+  }
+  const buzz = (ms) => { try { if (navigator.vibrate && !SFX.muted()) navigator.vibrate(ms); } catch (e) { /* not supported */ } };
   function shake(a, t) { shakeA = Math.max(shakeA, a); shakeT = Math.max(shakeT, t); }
 
   // ---------- bull reactions (code until the Kling clips exist) ----------
@@ -933,7 +942,7 @@
     if (!mv || !mv.started || mv.ended) return;
     const v = mv.c.video;
     mv.t = v.currentTime;
-    const r = gsap.globalTimeline.timeScale() * bullRate(mv, mv.t);
+    const r = Math.min(8, Math.max(0.07, gsap.globalTimeline.timeScale() * bullRate(mv, mv.t)));   // browsers refuse rates under 1/16
     if (Math.abs(v.playbackRate - r) > 0.01) v.playbackRate = r;
     for (let i = mv.waits.length - 1; i >= 0; i--) if (mv.t >= mv.waits[i].t) { mv.waits[i].res(); mv.waits.splice(i, 1); }
     if (v.ended) mv.finish("end"); else mv.watch();
@@ -1106,7 +1115,7 @@
     starFlash(p.x, p.y, v >= 10 ? 1.2 : 0.8, 0xfff0c0);
     ringAt(p.x, p.y, 0xffee88, 2.0, 0.25); flashAt(p.x, p.y, 0xfff0c0, 1.1, 0.08);
     burstAt(p.x, p.y, 0xffd060, 12);
-    shake(v >= 10 ? 8 : 5, 0.15); SFX.impact(v >= 10);
+    shake(v >= 10 ? 8 : 5, 0.15); SFX.impact(v >= 10); if (v >= 10) hitStop(60); buzz(v >= 10 ? 30 : 15);
   }
   function pulseChip(big) {
     const v = colReel.views[3];
@@ -1404,7 +1413,7 @@
   }
   function slamFx(P) {
     const y0 = 596;                                           // the frame's top bar
-    shake(10, 0.25); SFX.slam(); SFX.impact(true);
+    shake(10, 0.25); SFX.slam(); SFX.impact(true); hitStop(70); buzz(40);
     VFX.shockwave(P.x, y0, { amp: 30, radius: 900, dur: 0.25 }); VFX.zoomPunch(P.x, y0 + 300, 0.16, 0.12);
     flashAt(P.x, y0, 0xfff2cd, 1.4, 0.06); flashAt(P.x, y0 - 20, 0xffaa32, 2.6, 0.22);
     ringAt(P.x, y0, 0xffaa32, 2.6, 0.3);
@@ -1912,7 +1921,12 @@
     } else popShine.mask = popTitleMask;
     if (titlePulse) titlePulse.kill();
     gsap.killTweensOf(popTitle.scale);
-    gsap.fromTo(popTitle.scale, { x: base * 1.12, y: base * 1.12 }, { x: base, y: base, duration: 0.16, ease: "back.out(1.2)" });
+    const up = first ? 1.12 : 1.38;                    // a tier-up slams in; the first title just arrives
+    gsap.fromTo(popTitle.scale, { x: base * up, y: base * up }, { x: base, y: base, duration: first ? 0.16 : 0.26, ease: first ? "back.out(1.2)" : "back.out(2.6)" });
+    if (!first) {
+      popCoins.emit({ tex: FX.tex.glow, x: 540, y: 760, s0: 7, s1: 11, life: 0.32, tint: look.glow, a0: 0.85, a1: 0, blend: PIXI.BLEND_MODES.ADD });
+      hitStop(70); buzz(50);
+    }
     titlePulse = gsap.to(popTitle.scale, { x: base * 1.03, y: base * 1.03, duration: 0.7, yoyo: true, repeat: -1, ease: "sine.inOut", delay: 0.26 });
     ringAt(540, 760, look.burst, 6, 0.6, popCoins);
 
@@ -1920,7 +1934,7 @@
     popTitleMask.text = popTitle.text; popAmtGlow.tint = look.glow;
     if (popRays) popRays.setTint(look.burst);
     if (!first) VFX.shockwave(540, 740, { amp: 30, radius: 1200, dur: 0.3 });
-    for (let k = 0; k < 18; k++) {
+    for (let k = 0; k < 18 + 12 * Math.max(0, TIER_ORDER.indexOf(t)); k++) {
       const a = Math.random() * Math.PI * 2, v = 600 + Math.random() * 900;
       popCoins.emit({ tex: FX.tex.dot, x: 540, y: 790, vx: Math.cos(a) * v, vy: Math.sin(a) * v, drag: 2.6, s0: 0.35 + Math.random() * 0.3, s1: 0,
         life: 0.7 + Math.random() * 0.3, tint: Math.random() < 0.4 ? 0xffffff : look.burst, stretch: 380, blend: PIXI.BLEND_MODES.ADD });
@@ -2130,7 +2144,16 @@
       colTeaseOn();
       landed.push(colReel.teaseStop(colFinal, { vSlow: 4.2, tau: 0.2, t1: 0.95, t2: 0.85, over: 0.14,
         extra: (n) => Array.from({ length: n }, (_, k) => stripAt(colC, k - n - 2)),
-        onTick: (left, v) => { if (v < 11) colTeaseTick(left); } }).then(colTeaseOff));
+        onTick: (left, v) => {
+          if (v < 11) colTeaseTick(left);
+          // a 500x / 1000x chip passing the centre: the roll hangs on it for a moment and the bull leans in
+          const val = Engine.STRIP[colReel.syms[3]];
+          if (left > 0 && val >= 500 && v < 14 && colReel.tween && !quick) {
+            const tw = colReel.tween; tw.timeScale(0.4); gsap.delayedCall(0.3, () => { if (colReel.tween === tw && !quick) tw.timeScale(1); });
+            SFX.tease(0.4); flameKick(1.2); bullReact("tease");
+            flashAt(COL_CX, COL_CY, 0xfff0b0, 1.6, 0.3); ringAt(COL_CX, COL_CY, 0xffe08a, 1.6, 0.35);
+          }
+        } }).then(colTeaseOff));
     } else landed.push(colReel.stop(colFinal, tb || quick));
     await Promise.all(landed);
     gsap.to(tease, { alpha: 0, duration: 0.25, onComplete: () => (tease.visible = false) });
@@ -2158,7 +2181,7 @@
         ringAt(x, y, id === "wild" ? 0xd9a0ff : 0xff8a3a, 1.8, 0.5); flashAt(x, y, 0xffe0a0, 1.3, 0.3);
         burstAt(x, y, id === "wild" ? 0xe0b0ff : 0xffa050, 16, boardP); boom(x, y, 1.0, id === "wild" ? 0xe8c8ff : null, boardFx);
         VFX.shockwave(x, y, { amp: 12, radius: 300, wave: 90, dur: 0.45 }); starFlash(x, y, 1.6, id === "wild" ? 0xe0b0ff : 0xffc080);
-        if (id === "super_wild") SFX.superLand(); else SFX.wildLand();
+        if (id === "super_wild") { SFX.superLand(); hitStop(50); buzz(30); } else { SFX.wildLand(); buzz(15); }
       }
     }
   }
@@ -2187,7 +2210,7 @@
     if (v < 0) { ringAt(COL_CX, COL_CY, 0x5ff0ff, 2, 0.5); burstAt(COL_CX, COL_CY, 0x7ff4ff, 14); SFX.wildLand(); lightBeam(COL_CX, COL_CY, 0x7ff4ff); }
     if (v >= 10) lightBeam(COL_CX, COL_CY, v >= 100 ? 0xffe8a0 : 0xffc860);
     if (v >= 50) {
-      shake(v >= 500 ? 16 : 8, 0.35); flashAt(COL_CX, COL_CY, 0xffffff, 2.4, 0.45); burstAt(COL_CX, COL_CY, 0xffe08a, 28);
+      shake(v >= 500 ? 16 : 8, 0.35); hitStop(v >= 500 ? 110 : 70); buzz(v >= 500 ? 80 : 40); flashAt(COL_CX, COL_CY, 0xffffff, 2.4, 0.45); burstAt(COL_CX, COL_CY, 0xffe08a, 28);
       ringAt(COL_CX, COL_CY, 0xfff0b0, 3, 0.6); SFX.impact(v >= 500);
       lightning(COL_CX, COL_CY);
     }
@@ -2282,12 +2305,28 @@
   // ---------- ticker: ambient life ----------
   let idleWatchT = 0;
   document.addEventListener("visibilitychange", () => { idleWatchT = 0; });
+  let idleLifeT = 0;
   let time = 0, sparkT = 0, frameSweepT = 2, chipGlintT = 1.5, dustT = 0, emberT = 0;
   app.ticker.add(() => {
     const dt = Math.min(0.05, app.ticker.deltaMS / 1000) * gsap.globalTimeline.timeScale();
     time += dt;
     reels.forEach((rl) => rl.update(dt));
     colReel.update(dt);
+    // idle life: after 5 s without a spin a shimmer runs across the symbols, the spin button calls, the flame flares
+    if (S.state === "idle" && !S.auto && !pop.visible) {
+      idleLifeT += dt;
+      if (idleLifeT > 5) {
+        idleLifeT = -2;                                  // then every 7 s
+        reels.forEach((rl, reel) => [0, 1, 2].forEach((row) => {
+          const v = rl.view(row), d = (reel + row) * 0.09;
+          gsap.fromTo(v.inner.scale, { x: 1, y: 1 }, { x: 1.05, y: 1.05, duration: 0.16, delay: d, yoyo: true, repeat: 1, ease: "sine.inOut" });
+          gsap.delayedCall(d, () => { if (S.state === "idle") boardP.emit({ tex: FX.tex.spark, x: REEL_CX[reel] + 60, y: rowY(row) - 50, s0: 0.1, s1: 0.5, life: 0.4, a0: 1, a1: 0, vr: 3, tint: 0xfff0c8 }); });
+        }));
+        gsap.fromTo(spinC.scale, { x: 1, y: 1 }, { x: 1.06, y: 1.06, duration: 0.22, delay: 0.5, yoyo: true, repeat: 3, ease: "sine.inOut" });
+        gsap.delayedCall(0.5, () => { if (S.state === "idle") ringAt(scx, scy, 0xffd060, 1.6, 0.5); });
+        flameKick(0.7);
+      }
+    } else idleLifeT = 0;
     ambP.update(dt); dust.update(dt); boardP.update(dt); topP.update(dt); popCoins.update(dt);
     // bull breathing + eye flicker
     const br = Math.sin(time * Math.PI * 2 / 3.4);
