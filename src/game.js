@@ -25,11 +25,14 @@
   const artSrc = (p) => `${VER === 4 && p === "Character/bull" ? "assets_v4" : OLD_SYM && OLD_SYM.test(p) ? "assets_v1" : ART}/${p}.webp`;
   window.ART = ART; window.ART_SRC = artSrc;
   const V2ART = ART === "assets_v2", V2_LAB = { wild: 66, super: 62 };     // label centre below the symbol centre
+  // ?mobile = the phone build: one shared bull video + one shared wild video (src/segvideo.js), a still bull whenever the
+  // video is not really playing, taps unlock video, steady video speed, no edge smoothing, lighter effects
+  const MOBILE = params.has("mobile");
   const BASE_TS = +(params.get("ts") || 1);          // ?ts=0.1 = slow motion (QA video capture)
   gsap.globalTimeline.timeScale(BASE_TS);
 
   // ---------- app ----------
-  const app = new PIXI.Application({ backgroundColor: 0x000000, antialias: true, autoDensity: true,
+  const app = new PIXI.Application({ backgroundColor: 0x000000, antialias: !MOBILE, autoDensity: true,
     resolution: Math.min(window.devicePixelRatio || 1, 2), resizeTo: window });
   document.getElementById("wrap").appendChild(app.view);
   const root = new PIXI.Container();
@@ -60,7 +63,7 @@
     CustomEase.create("fbStop", "M0,0 C0.126,0.382 0.24,0.77 0.375,0.924 0.441,1 0.5,1.022 0.647,1.021 0.726,1.02 0.853,1.013 1,1");
     CustomEase.create("fbStopTurbo", "M0,0 C0,0 0.383,0.757 0.639,1.013 0.703,1.077 1,1 1,1");
   }
-  VFX.init({ app, root, lite: params.has("lite") });
+  VFX.init({ app, root, lite: params.has("lite") || MOBILE });
   const loadC = new PIXI.Container();
   root.addChild(loadC);
   const loadTitle = new PIXI.Text("FORTUNE BULL", FX.gold(110));
@@ -90,6 +93,28 @@
   const BOOT_CLIPS = new Set(["bull_idle", "bull_big"]);
   let clipSink = null;                                              // set once the scene can take a late clip
   if (V2ART) for (const n of Object.keys(clipList)) if (n.startsWith("wild_") || n.startsWith("super_wild_")) delete clipList[n];
+  let mobBull = null, mobWild = null;
+  if (MOBILE && window.SegVideo) {
+    try {
+      const mc = await (await fetch("assets/clips/m/clips.json")).json();
+      mobBull = new SegVideo.SegPlayer("assets/clips/m/" + mc.bull.file, mc.bull.segments, { fps: mc.fps, minRate: 0.5, maxRate: 2.5 });
+      mobWild = new SegVideo.SegPlayer("assets/clips/m/" + mc.wilds.file, mc.wilds.segments, { fps: mc.fps, minRate: 1, maxRate: 1 });
+      const metaOf = (pl) => new Promise((res) => { if (pl.v.readyState >= 1) res(); pl.v.addEventListener("loadedmetadata", res, { once: true }); pl.v.addEventListener("error", res, { once: true }); });
+      const bm = metaOf(mobBull), wm = metaOf(mobWild);
+      const entry = (video, cfg, pl, meta, frame) => ({ video, sprite: null, cfg, meta, ready: Promise.resolve(), start: () => {}, shared: pl, frame });
+      for (const [name, sg] of Object.entries(mc.bull.segments))
+        clipPend[name] = entry(mobBull.clips[name], Object.assign({ key: "green", loop: !!sg.loop }, sg.cfg), mobBull, bm, null);
+      for (const id of ["wild", "super_wild"]) {
+        const fr = mc.wilds.symbols[id], cw = mc.wilds.cell.w, ch = mc.wilds.cell.h;
+        clipPend[id + "_win"] = entry(mobWild.alias(id + "_win", "win"), { w: cw, h: ch, key: "green", loop: false, then: id + "_idle" }, mobWild, wm, fr);
+        clipPend[id + "_idle"] = entry(mobWild.alias(id + "_idle", "idle"), { w: cw, h: ch, key: "green", loop: true }, mobWild, wm, fr);
+      }
+      // the TAP TO PLAY screen waits for the bull video's first picture (8 s at most: the still bull covers a slow one)
+      clipReady.push(Promise.race([new Promise((res) => { mobBull.v.addEventListener("loadeddata", res, { once: true }); mobBull.v.addEventListener("error", res, { once: true }); }),
+        new Promise((res) => setTimeout(res, 8000))]));
+      clipList = {};
+    } catch (e) { console.warn("mobile clips", e); }
+  }
   for (const [name, c] of Object.entries(clipList)) {
     try {
       const v = document.createElement("video");
@@ -158,7 +183,12 @@
     const o = clipPend[name]; if (!o || clips[name]) return;
     const v = o.video, c = o.cfg;
     if (!v.videoWidth || v.error) { console.warn("clip not loaded", name, v.error ? v.error.code + " " + v.error.message : "no size", "ready", v.readyState, "net", v.networkState); return; }
-    const tex = PIXI.Texture.from(v, { resourceOptions: { autoPlay: false, updateFPS: 30 } });
+    let tex;
+    if (o.shared) {                                   // phone build: one texture per shared video, wilds as halves of it
+      const pl = o.shared;
+      if (!pl.base_) pl.base_ = PIXI.BaseTexture.from(pl.v, { resourceOptions: { autoPlay: false, updateFPS: pl.fps } });
+      tex = o.frame ? new PIXI.Texture(pl.base_, new PIXI.Rectangle(o.frame[0], o.frame[1], o.frame[2], o.frame[3])) : new PIXI.Texture(pl.base_);
+    } else tex = PIXI.Texture.from(v, { resourceOptions: { autoPlay: false, updateFPS: 30 } });
     const sp = new PIXI.Sprite(tex);
     sp.position.set(c.x || 0, c.y || 0); sp.width = c.w; sp.height = c.h; sp.visible = false;
     if (c.key === "green") sp.filters = [keyFilter];
@@ -182,13 +212,20 @@
   [bgL, ambBack, bullL, ambFront, boardL].forEach((l) => world.addChild(l));
   VFX.setWorld(world);
   // emission per second, independent of the frame rate
-  const nEmit = (rate) => { const x = rate * Math.min(0.05, app.ticker.deltaMS / 1000) * gsap.globalTimeline.timeScale(); return Math.floor(x) + (Math.random() < x % 1 ? 1 : 0); };
+  const nEmit = (rate) => { const x = rate * (MOBILE ? 0.6 : 1) * Math.min(0.05, app.ticker.deltaMS / 1000) * gsap.globalTimeline.timeScale(); return Math.floor(x) + (Math.random() < x % 1 ? 1 : 0); };
 
   const bg = new PIXI.Sprite(T("BG/bg_main"));
   bgL.addChild(bg);
   backdrop.texture = T("BG/bg_main");
   backdrop.tint = 0x3a3030;
-  backdrop.filters = [new PIXI.BlurFilter(18)];
+  if (MOBILE) {
+    // phone build: blurred once (drawn tiny, then stretched smooth) instead of a full-screen blur pass every frame
+    try {
+      const src = backdrop.texture.baseTexture.resource.source, c = document.createElement("canvas");
+      c.width = 36; c.height = 64; c.getContext("2d").drawImage(src, 0, 0, 36, 64);
+      backdrop.texture = PIXI.Texture.from(c, { scaleMode: PIXI.SCALE_MODES.LINEAR });
+    } catch (e) { backdrop.filters = [new PIXI.BlurFilter(18)]; }
+  } else backdrop.filters = [new PIXI.BlurFilter(18)];
   fit();
 
   // bull: container pivoted at the bottom centre so breathing grows from the board
@@ -213,16 +250,22 @@
   // Kling bull: idle loop replaces the still, eyes come from the clip. Clips that arrive after boot slot in above the
   // idle (moves fade in over it) and below the hand flame / finger mask, which are added to the bull later.
   const bullClipAt = bull.children.length;
+  const bullClipC = MOBILE ? new PIXI.Container() : null;
+  if (bullClipC) { bull.addChildAt(bullClipC, bullClipAt); bullClipC.visible = false; }
+  const bullLive = () => !mobBull || mobBull.live;
   function attachBullClip(n) {
     const o = clips[n], sp = o.sprite;
     // relative to the bull's REST point: a clip that arrives during the intro (the bull slides up from +120 px) or a
     // shake must not bake that offset in
     sp.position.set(o.cfg.x - (bl.x + bl.w / 2), o.cfg.y - (bl.y + bl.h));
     const idle = clips.bull_idle && clips.bull_idle.sprite;
-    const at = n === "bull_idle" ? bullClipAt : idle && idle.parent === bull ? bull.getChildIndex(idle) + 1 : bullClipAt;
-    bull.addChildAt(sp, Math.min(at, bull.children.length));
+    if (bullClipC) bullClipC.addChild(sp);              // the phone build: one layer, shown only while the video is live
+    else {
+      const at = n === "bull_idle" ? bullClipAt : idle && idle.parent === bull ? bull.getChildIndex(idle) + 1 : bullClipAt;
+      bull.addChildAt(sp, Math.min(at, bull.children.length));
+    }
     if (n === "bull_idle") {
-      bullSpr.visible = false; eyes.forEach((e) => (e.visible = false));
+      if (!bullClipC) { bullSpr.visible = false; eyes.forEach((e) => (e.visible = false)); }
       sp.visible = true; const p = o.video.play(); if (p && p.catch) p.catch(() => {});
     }
   }
@@ -887,7 +930,7 @@
     if (kind === "big") {
       // the roar sound lands on the open mouth: it fires on the clip's own clock at events.roar (the sound needs
       // ~0.45 s to reach full voice, so the event sits that much before the mouth opens wide)
-      const mv = bullPlay("bull_big");
+      const mv = bullLive() ? bullPlay("bull_big") : null;
       const at = mv && mv.c.cfg.events && mv.c.cfg.events.roar;
       if (!mv) SFX.roar();
       else if (mv.fresh) { if (at == null) SFX.roar(); else mv.at("roar").then(() => { if (!mv.ended || mv.why === "end") SFX.roar(); }); }
@@ -934,7 +977,7 @@
         setTimeout(swap, 300);
       };
       mv.watch = () => {                                   // a stalled video must not hold the game
-        if (mv.t !== lastT || document.hidden) { lastT = mv.t; seen = performance.now(); } else if (performance.now() - seen > 1500) mv.finish("stall");   // a hidden tab is not a stall
+        if (mv.t !== lastT || document.hidden) { lastT = mv.t; seen = performance.now(); } else if (performance.now() - seen > (MOBILE ? 2500 : 1500)) mv.finish("stall");   // a hidden tab is not a stall
       };
       c.video.onended = () => mv.finish();
       c.video.currentTime = 0; c.video.playbackRate = BASE_TS * bullRate(mv, 0);
@@ -1442,7 +1485,7 @@
   // the bull smashes his flaming fist onto the frame (Kling punch clip). On contact the board jolts, the symbols hop
   // outward from the hit, sparks and fire fly off the top bar.
   async function bullSlam(short) {
-    const mv = bullPlay("bull_punch");
+    const mv = bullLive() ? bullPlay("bull_punch") : null;
     if (!mv) return bullSlamCode();
     if (mv.fresh) {
       gsap.fromTo(bullAura, { alpha: 0.35 }, { alpha: 0, duration: 1.2, ease: "power2.in" });
@@ -1515,7 +1558,7 @@
   const RIM_VIOLET = [0.6, 0.28, 1.0];
   const rgbOf = (t) => [((t >> 16) & 255) / 255, ((t >> 8) & 255) / 255, (t & 255) / 255];
   async function bullOrb(to, tint, label, k) {
-    const mv = bullPlay("bull_throw", k);
+    const mv = bullLive() ? bullPlay("bull_throw", k) : null;
     if (!mv) return bullOrbCode(to, tint, label);
     await mv.startedP;
     const tRel = (mv.c.cfg.events || {}).release || 1.94;
@@ -1728,7 +1771,7 @@
       // fingers over the flame: copy the visible bull clip sprite, mask it around the hand
       const src = bullDir.cur && bullDir.cur.started && !bullDir.cur.ended ? bullDir.cur.c.sprite
         : (clips.bull_big && clips.bull_big.sprite.visible ? clips.bull_big.sprite : clips.bull_idle && clips.bull_idle.sprite);
-      handFront.visible = !!src && fc.visible;
+      handFront.visible = !!src && fc.visible && (!bullClipC || bullClipC.visible);   // not over the still bull
       if (handFront.visible) {
         if (handFront.texture !== src.texture) handFront.texture = src.texture;
         handFront.filters = src.filters; handFront.position.copyFrom(src.position); handFront.scale.copyFrom(src.scale);
@@ -1898,7 +1941,7 @@
     winObjs.push({ destroy: () => {
       const k = cellClipSprites.indexOf(sp); if (k >= 0) cellClipSprites.splice(k, 1);
       sp.destroy(); v.a.visible = true;
-      if (!cellClipSprites.some((o) => o.clipId === id) && clips[id + "_idle"]) clips[id + "_idle"].video.pause();
+      if (!cellClipSprites.some((o) => o.clipId === id || mobWild) && clips[id + "_idle"]) clips[id + "_idle"].video.pause();
     } });
   }
 
@@ -2027,7 +2070,7 @@
       popCoins.emit({ tex: FX.tex.dot, x: 540, y: 790, vx: Math.cos(a) * v, vy: Math.sin(a) * v, drag: 2.6, s0: 0.35 + Math.random() * 0.3, s1: 0,
         life: 0.7 + Math.random() * 0.3, tint: Math.random() < 0.4 ? 0xffffff : look.burst, stretch: 380, blend: PIXI.BLEND_MODES.ADD });
     }
-    SFX.fanfare(TIER_ORDER.indexOf(t)); shake(first ? 12 : 8, 0.3); if (!again) bullReact("big");
+    SFX.fanfare(TIER_ORDER.indexOf(t)); shake(first ? 12 : 8, 0.3); if (!again) { bullReact(first ? "big" : "tease"); if (!first) flameKick(1.2); }
   }
   async function bigWin(amount, x) {
     popFaders.forEach((o) => (o.alpha = 1));
@@ -2418,6 +2461,11 @@
     time += dt;
     reels.forEach((rl) => rl.update(dt));
     colReel.update(dt);
+    if (mobBull) {
+      mobBull.tick(); if (mobWild) mobWild.tick();
+      const live = mobBull.live && !!clips.bull_idle;
+      if (bullClipC.visible !== live) { bullClipC.visible = live; bullSpr.visible = !live; eyes.forEach((e) => (e.visible = !live)); }
+    }
     if (multTag && !multTag.destroyed && plaque.visible && plaqueBig.visible)   // the xN tag rides just after the counting digits
       multTag.position.set(plaque.x + (plaqueBig.textWidth * plaqueBig.scale.x * plaque.scale.x) / 2 + (multTag.width * multTag.scale.x) / 2 + 22, plaque.y + 8);
     if (booms.size) { const k = 0.55 * gsap.globalTimeline.timeScale(); booms.forEach((b) => { if (b.destroyed) booms.delete(b); else b.animationSpeed = k; }); }
@@ -2563,7 +2611,11 @@
     if (e.key === "b" && buyUI && S.state === "idle") { buyUI.open(); return; }
     if (KEYS[e.key] && S.state === "idle") spin(KEYS[e.key]);
   });
-  window.G = { spin, S, reels, colReel, Engine, clips, feature, bullSlam, bullCharge, bullOrb, bullPlay, bullDir, bullReact, buy: (k) => spin(null, k), buyUI: () => buyUI, state: () => S.state, last: null, popOpen: () => pop.visible && !!popTap, tapPop: () => popTap && popTap() };
+  // taps unlock the phone's videos (iOS Low Power Mode / data saver refuse play() outside a gesture)
+  if (MOBILE) ["pointerdown", "touchend", "click", "keydown"].forEach((ev) => window.addEventListener(ev, () => {
+    if (mobBull) mobBull.unlock(); if (mobWild) mobWild.unlock();
+  }, { capture: true, passive: true }));
+  window.G = { mobBull: () => mobBull, mobWild: () => mobWild, bullView: () => ({ still: bullSpr.visible, clip: !!(bullClipC ? bullClipC.visible : clips.bull_idle), alpha: bull.worldAlpha }), spin, S, reels, colReel, Engine, clips, feature, bullSlam, bullCharge, bullOrb, bullPlay, bullDir, bullReact, buy: (k) => spin(null, k), buyUI: () => buyUI, state: () => S.state, last: null, popOpen: () => pop.visible && !!popTap, tapPop: () => popTap && popTap() };
   document.querySelectorAll("[data-force]").forEach((b) => b.addEventListener("click", () => { SFX.unlock(); if (S.state === "idle") spin(b.dataset.force); }));
   document.querySelectorAll("[data-buy]").forEach((b) => b.addEventListener("click", () => { SFX.unlock(); if (S.state === "idle") spin(null, b.dataset.buy); }));
 })().catch((e) => {
