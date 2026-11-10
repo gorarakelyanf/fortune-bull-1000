@@ -561,7 +561,10 @@
           const now = gsap.globalTimeline.time(), dtt = Math.max(1e-3, now - lastT);
           if (this.onSpeed) this.onSpeed(Math.abs(tr.p - lastP) / dtt);
           lastP = tr.p; lastT = now;
-          if (!landed && !this.queue && tr.p >= D - 0.02) { landed = true; this.views.forEach((v, i) => { if (v.blur) v.set(this.syms[i], false); }); if (this.onLand) this.onLand(); }
+          if (!landed && !this.queue && tr.p >= D - 0.02) {
+            landed = true; this.views.forEach((v, i) => { if (v.blur) v.set(this.syms[i], false); }); if (this.onLand) this.onLand();
+            const r = this._res; this._res = null; r && r();        // the round goes on from the landing
+          }
         };
         const done = () => {
           this.offset = 0; this.layout(); this.state = "idle"; this.speed = 0; this.tween = null;
@@ -571,7 +574,7 @@
         };
         this.tween = gsap.timeline({ onComplete: done })
           .to(tr, { p: D + over, duration: T, ease, onUpdate: step })
-          .to(tr, { p: D, duration: 0.22, ease: "power2.inOut", onUpdate: step });
+          .to(tr, { p: D, duration: 0.14, ease: "power2.inOut", onUpdate: step });
       });
     }
     // Porco's per-symbol "drop": a small landing squash on the visible symbols
@@ -850,7 +853,7 @@
   // hit-stop: the whole game holds for a few frames on a heavy impact (real time), then carries on; and a phone buzz
   let hitStopOn = false;
   function hitStop(ms) {
-    if (hitStopOn || S.turbo) return;
+    if (hitStopOn || S.turbo || S.respin) return;
     const ts = gsap.globalTimeline.timeScale(), low = ts * 0.05; hitStopOn = true;
     gsap.globalTimeline.timeScale(low);
     setTimeout(() => { hitStopOn = false; if (Math.abs(gsap.globalTimeline.timeScale() - low) < 1e-6) gsap.globalTimeline.timeScale(ts); }, ms);
@@ -1235,9 +1238,9 @@
   }
   // Garuda nudge step: counter flip -> 0.12 s -> nudge (0.18 s) -> streak up -> badge pop; steps ~1.75 s apart
   async function nudgePhase(r) {
-    if (featureOn) feature(true); else await bullCharge();
     const chipPos = { x: COL_CX, y: COL_CY };
     const chipStart = r.startMult < 0;
+    if (featureOn) feature(true); else if (!chipStart) await bullCharge();
     let acc = chipStart ? 0 : r.startMult, maxSteps = r.superSteps + r.chipSteps;
     const pad = (n) => String(n).padStart(2, "0");
     const cnt = (k, popIt) => {
@@ -1255,14 +1258,14 @@
     r.bullActed = true;                                                       // the feature start (roar or throw) is his action
     await FX.tween(cntBox.scale, { x: 1, y: 1, duration: 0.25, ease: "back.out(1.7)" });
     const sw = r.superCells.map((c) => superCounter(c));
-    if (chipStart) { await bullOrb({ x: COL_CX, y: COL_CY }, 0x5ff0ff); await nudgeChipFire(r.chipSteps); }
+    if (chipStart) { await bullOrb({ x: COL_CX, y: COL_CY }, 0x5ff0ff, null, 1.25); feature(true); await nudgeChipFire(r.chipSteps); }
     else {
       pulseChip(false);
       await streakToBadge(r.startMult);
       badgeIn(); accTxt.text = "x" + acc; SFX.impact(false);
     }
     for (let k = 0; k < r.nudges.length; k++) {
-      const STEP = (S.turbo ? 0.5 : k === 0 ? 1.05 : 0.75) + (r.nudges[k] < 0 ? 0.45 : 0);
+      const STEP = (S.turbo ? 0.5 : k === 0 ? 1.0 : 0.68) + (r.nudges[k] < 0 ? 0.35 : 0);
       const t0 = gsap.globalTimeline.time();
       if (k < r.superSteps && sw.length) {
         const s = sw[Math.floor(k / Engine.NUDGES) % sw.length];
@@ -1301,7 +1304,7 @@
   // Garuda "power-up clash": the bull's lightning pulls the next-higher medallion out; it swaps with the real one, then loses
   function clashWanted(r) {
     const up = Engine.STRIP[stripAt(r.multIndex, 1)];
-    return r.startMult >= 5 && up > r.startMult && (S.forceKind === "clash" || Math.random() < 0.3);
+    return r.startMult >= 5 && up > r.startMult && (S.forceKind === "clash" || (r.totalX >= 5 && Math.random() < 0.3));
   }
   async function clash(r) {
     feature(true);
@@ -1310,9 +1313,9 @@
     bullReact("big");
     gsap.fromTo(featRays, { alpha: 1 }, { alpha: 0.55, duration: 0.8 });
     flashAt(chest.x, chest.y, 0xfff0c0, 3, 0.4); SFX.rumble(1.2);
-    await FX.wait(S.turbo ? 0.3 : 0.7);
+    await FX.wait(S.turbo ? 0.25 : 0.4);
     const zap = new PIXI.Graphics(); zap.blendMode = PIXI.BLEND_MODES.ADD; fxTop.addChild(zap);
-    const zt = gsap.to({}, { duration: 1.0, onUpdate: () => {
+    const zt = gsap.to({}, { duration: 0.6, onUpdate: () => {
       zap.clear();
       for (let b = 0; b < 2; b++) {
         const tgt = b ? { x: COL_CX, y: COL_CY } : { x: COL_CX, y: COL_CY - COL_P };
@@ -1325,7 +1328,7 @@
       if (Math.random() < 0.4) burstAt(COL_CX, COL_CY - (Math.random() < 0.5 ? COL_P : 0), 0xffd060, 8);
     } });
     SFX.impact(false);
-    await FX.wait(1.0); zt.kill(); zap.destroy();
+    await FX.wait(0.6); zt.kill(); zap.destroy();
     const mk = (v) => {
       const c = new PIXI.Container();
       for (const t of [chipBgTex(v), T("Multipliers/chip_rim"), chipLabelTex(v)]) { const s = new PIXI.Sprite(t); s.anchor.set(0.5); c.addChild(s); }
@@ -1337,7 +1340,7 @@
     vA.visible = false; vB.visible = false;
     const cx = COL_CX - 40, cy = COL_CY - COL_P / 2;
     await Promise.all([FX.tween(A, { x: cx, y: cy, duration: 0.2 }), FX.tween(B, { x: cx, y: cy, duration: 0.2 })]);
-    const t = { v: 0 }, D = S.turbo ? 1.2 : 2.4;
+    const t = { v: 0 }, D = S.turbo ? 1.0 : 1.5;
     await FX.tween(t, { v: 1, duration: D, ease: "none", onUpdate: () => {
       const ph = t.v * D * 25;
       A.x = cx + Math.sin(ph) * 70; B.x = cx - Math.sin(ph) * 70;
@@ -1352,7 +1355,7 @@
       FX.tween(B, { x: COL_CX, y: COL_CY, duration: 0.25, ease: "power2.out" }), FX.tween(B.scale, { x: 1, y: 1, duration: 0.25 })]);
     vA.visible = true; vB.visible = true; A.destroy({ children: true }); B.destroy({ children: true });
     ringAt(COL_CX, COL_CY, 0xfff0b0, 2, 0.25); SFX.impact(false); shake(5, 0.15);
-    await FX.wait(0.4);
+    await FX.wait(0.2);
   }
 
   // ---------- the bull acts on the board (Garuda-style), timed to the bull_big clip (fist up 0.8-3.5 s) ----------
@@ -1388,7 +1391,7 @@
       gsap.fromTo(featRays, { alpha: 1 }, { alpha: 0.55, duration: 1.4 });
       VFX.rgbFlash(6, 0.3); flameKick(1.2);
       feature(true);
-      await FX.wait(S.turbo ? 0.15 : 0.3);
+      await FX.wait(0.15);
       return;
     }
     bullReact("big");
@@ -1720,6 +1723,7 @@
 
   async function present(r) {
     S.state = "present"; presentAt = performance.now();
+    S.canSkip = !r.nudges.length && !TIER_ORDER.includes(Engine.tier(r.totalX)); S.respin = false;
     const cells = new Set();
     r.lines.forEach((l) => l.rows.forEach((row, reel) => cells.add(reel * 3 + row)));
     // dim the losing cells: black over their parchment (Garuda 0.65) + darker symbols
@@ -1763,22 +1767,31 @@
     // rail plaque pops 0.6 -> 1.05 -> 1 and counts the base win (it replaces the footer total while it shows)
     plaqueBg.alpha = 1; plaqueGlow.alpha = 0.5; plaqueTxt.visible = true; plaqueBig.visible = false;
     plaque.visible = true; wbTotal.visible = false;
-    plaqueShown.v = r.baseWin * 0.15; drawPlaque();
+    // a win below the stake (no feature) is a net loss: it goes straight to its total, with no multiplier flight
+    const quiet = rung === 0 && !r.nudges.length, firstCount = quiet ? r.win : r.baseWin;
+    plaqueShown.v = firstCount * 0.15; drawPlaque();
     plaque.alpha = 0; plaque.scale.set(0.6 * PLAQUE_S);
     gsap.to(plaque, { alpha: 1, duration: 0.1 });
     gsap.timeline().to(plaque.scale, { x: 1.05 * PLAQUE_S, y: 1.05 * PLAQUE_S, duration: 0.1, ease: "back.out(2)" })
       .to(plaque.scale, { x: PLAQUE_S, y: PLAQUE_S, duration: 0.1 });
-    await FX.tween(plaqueShown, { v: r.baseWin, duration: S.turbo ? 0.2 : 0.35, ease: "power1.out", onUpdate: () => { drawPlaque(); SFX.tick(); } });
+    await FX.tween(plaqueShown, { v: firstCount, duration: S.turbo ? 0.2 : quiet ? 0.28 : 0.35, ease: "power1.out", onUpdate: () => { drawPlaque(); SFX.tick(); } });
     SFX.line();
-    await FX.wait(S.turbo ? 0.2 : 0.5);
+    await FX.wait(rung === 0 ? 0.08 : S.turbo ? 0.1 : 0.25);
     // multiplier phase
     if (r.nudges.length) {
       const acc = await nudgePhase(r);
       await laserApply(Math.max(1, acc));
+    } else if (r.mult > 1 && quiet) {
+      pulseChip(false);
+      const mt = new PIXI.Text("x" + r.mult, FX.gold(40, { fill: FX.TIER_FILL.mega })); mt.anchor.set(0.5); mt.position.set(plaque.x + 230, plaque.y);
+      plaqueL.addChild(mt); winObjs.push(mt); multTag = mt;
+      gsap.fromTo(mt.scale, { x: 1.4, y: 1.4 }, { x: 1, y: 1, duration: 0.2, ease: "back.out(1.6)" });
     } else if (r.mult > 1) {
       if (clashWanted(r)) await clash(r);
-      else if (r.mult >= 5) { await bullOrb({ x: COL_CX, y: COL_CY }, multTint(r.mult) === 0xffd070 ? 0xffb040 : multTint(r.mult), r.mult >= 25 ? r.mult : null, r.mult >= 25 ? 1 : 1.3); r.bullActed = true; }
-      await multHit(r.mult, r.bullActed);
+      // the bull throws fire at the column for every multiplier of 5x and more, except on a win below the stake
+      // (a net loss stays quiet). Small totals get a quick throw, popup wins the full one.
+      else if (r.mult >= 5 && rung > 0) { await bullOrb({ x: COL_CX, y: COL_CY }, multTint(r.mult) === 0xffd070 ? 0xffb040 : multTint(r.mult), r.mult >= 25 ? r.mult : null, r.totalX >= 10 ? 1.15 : 1.7); r.bullActed = true; }
+      await multHit(r.mult, r.bullActed || rung === 0);
     } else {
       pulseChip(false);
     }
@@ -1791,8 +1804,8 @@
       const mt = new PIXI.Text("x" + r.mult, FX.gold(46, { fill: FX.TIER_FILL.mega })); mt.anchor.set(0.5); mt.position.set(plaque.x + 250, plaque.y);
       plaqueL.addChild(mt); winObjs.push(mt); multTag = mt;
       gsap.fromTo(mt.scale, { x: 1.6, y: 1.6 }, { x: 1, y: 1, duration: 0.3, ease: "back.out(1.6)" });
-      await FX.wait(S.turbo ? 0.25 : 0.45);
-    } else if (r.mult > 1) {
+      await FX.wait(S.turbo ? 0.15 : 0.25);
+    } else if (r.mult > 1 && !quiet) {
       gsap.to(plaqueBg, { alpha: 0, duration: 0.15 }); gsap.to(plaqueGlow, { alpha: 0.95, duration: 0.15 });
       plaqueTxt.visible = false; plaqueBig.visible = true; plaqueShown.v = r.baseWin; drawBig();
       gsap.fromTo(plaqueBig, { alpha: 0 }, { alpha: 1, duration: 0.1 });
@@ -1812,7 +1825,7 @@
       await bigWin(r.win, r.totalX);
       plaque.visible = false; plaque.alpha = 1; totShown.v = r.win; showTotal(r.win);
     } else {
-      await FX.wait(S.turbo ? 0.4 : 0.9);                               // read the result, then the rail settles to TOTAL WIN
+      await FX.wait(rung === 0 ? 0.3 : S.turbo ? 0.25 : 0.5);          // read the result, then the rail settles to TOTAL WIN
       gsap.to(plaque, { alpha: 0, duration: 0.2, onComplete: () => { plaque.visible = false; plaque.alpha = 1; totShown.v = r.win; showTotal(r.win); } });
     }
     balanceStreak();
@@ -1967,11 +1980,12 @@
     popTitle.renderable = popTitleMask.renderable = !art;   // after the mask swap: un-masking makes the old mask renderable again
     if (titlePulse) titlePulse.kill();
     gsap.killTweensOf(popTitle.scale);
+    const again = performance.now() - (setTierTitle.at || 0) < 350; setTierTitle.at = performance.now();   // a tap jumped tiers
     const up = first ? 1.12 : 1.38;                    // a tier-up slams in; the first title just arrives
     gsap.fromTo(popTitle.scale, { x: base * up, y: base * up }, { x: base, y: base, duration: first ? 0.16 : 0.26, ease: first ? "back.out(1.2)" : "back.out(2.6)" });
     if (!first) {
       popCoins.emit({ tex: FX.tex.glow, x: 540, y: 760, s0: 7, s1: 11, life: 0.32, tint: look.glow, a0: 0.85, a1: 0, blend: PIXI.BLEND_MODES.ADD });
-      hitStop(70); buzz(50);
+      if (!again) { hitStop(70); buzz(50); }
     }
     titlePulse = gsap.to(popTitle.scale, { x: base * 1.03, y: base * 1.03, duration: 0.7, yoyo: true, repeat: -1, ease: "sine.inOut", delay: 0.26 });
     ringAt(540, 760, look.burst, 6, 0.6, popCoins);
@@ -1986,7 +2000,7 @@
       popCoins.emit({ tex: FX.tex.dot, x: 540, y: 790, vx: Math.cos(a) * v, vy: Math.sin(a) * v, drag: 2.6, s0: 0.35 + Math.random() * 0.3, s1: 0,
         life: 0.7 + Math.random() * 0.3, tint: Math.random() < 0.4 ? 0xffffff : look.burst, stretch: 380, blend: PIXI.BLEND_MODES.ADD });
     }
-    SFX.fanfare(TIER_ORDER.indexOf(t)); shake(first ? 12 : 8, 0.3); bullReact("big");
+    SFX.fanfare(TIER_ORDER.indexOf(t)); shake(first ? 12 : 8, 0.3); if (!again) bullReact("big");
   }
   async function bigWin(amount, x) {
     popFaders.forEach((o) => (o.alpha = 1));
@@ -1999,10 +2013,10 @@
     const final = Engine.tier(x);
     const steps = TIER_ORDER.slice(0, TIER_ORDER.indexOf(final) + 1);
     // explicit tier segments: every tier gets a readable dwell; linear count, the last segment eases out (critique #9)
-    const ENV = { big: 1.4, mega: 2.0, super: 2.6, epic: 3.5, max: 4.4 }, tk = S.turbo ? 0.6 : 1;
+    const ENV = { big: 2.6, mega: 4.0, super: 5.4, epic: 7.0, max: 9.0 }, tk = S.turbo ? 0.6 : 1;   // timing pass: studio curve, tiers >= 1.4 s
     const bet = BETS[S.betIdx], marks = steps.map((t, i) => (i === 0 ? 0 : TIER_X[t] * bet)).concat([amount]);
     // intermediate tiers: a fixed readable dwell (>= 0.55 s even in turbo); the final tier gets the rest and decelerates
-    const midDur = Math.max(0.55, 0.75 * tk), lastDur = Math.max(1.0, ENV[final] * tk - midDur * (steps.length - 1));
+    const midDur = Math.max(0.7, 1.4 * tk), lastDur = Math.max(1.0, ENV[final] * tk - midDur * (steps.length - 1));
     let cur = -1, done = false;
     const shown = { v: 0 };
     popAmt.text = FX.money(amount);                    // the digits are sized once, for the final amount
@@ -2055,7 +2069,7 @@
         gsap.fromTo(popAmt.scale, { x: amtK * 1.08, y: amtK * 1.08 }, { x: amtK, y: amtK, duration: 0.18, ease: "back.out(1.2)" });
         ringAt(540, 930 + POP_DY, 0xffd060, 4, 0.5); SFX.impact(true); coinRate = 8;
         gsap.to(popHint, { alpha: 1, duration: 0.4 });
-        const auto = gsap.delayedCall(S.auto ? 1.0 : 1.6, close);
+        const auto = gsap.delayedCall(S.auto ? 0.6 : 1.1, close);
         popTap = () => { auto.kill(); close(); };
       };
       const close = () => {
@@ -2132,7 +2146,13 @@
     const now = performance.now();
     if (S.state === "idle") { spinAt = now; return spin(); }
     if (S.state === "spinning") { if (now - spinAt < 450) return; quick = true; if (skipWait) skipWait(); if (colReel.tween) colReel.tween.timeScale(4); return; }
-    if (S.state === "present") { if (now - Math.max(spinAt, presentAt) < 500) return; gsap.globalTimeline.timeScale(2 * BASE_TS); }
+    if (S.state === "present") {
+      if (now - Math.max(spinAt, presentAt) < 500) return;
+      // an ordinary win (no feature, no popup): the tap skips the rest of the show and the next spin starts at once.
+      // A feature or a popup win only speeds up: the player should not lose those by a stray tap.
+      if (S.canSkip) { S.respin = true; gsap.globalTimeline.timeScale(8 * BASE_TS); }
+      else gsap.globalTimeline.timeScale(2 * BASE_TS);
+    }
   }
   async function spin(force, buyKind) {
     if (S.state !== "idle") return;
@@ -2169,7 +2189,7 @@
     // A stop request lands ~0.15 s later (the final symbols scroll in), so requests go out that much earlier.
     reels.forEach((rl) => rl.start(0, tb)); colReel.start(0, tb);
     // Porco: each reel may start its stop when the previous one has; stops come one loop apart (~0.4 s)
-    const tStop = tb ? [0.2, 0.3, 0.4, 0.5] : [0.6, 1.0, 1.4, 1.7], LEAD = 0;
+    const tStop = tb ? [0.2, 0.3, 0.4, 0.5] : [0.32, 0.55, 0.78, 1.0], LEAD = 0;     // timing pass 2026-11-10 (was 0.6/1.0/1.4/1.7)
     const wildsEarly = [0, 1].reduce((a, reel) => a + r.grid[reel].filter((s) => Engine.WILDS.has(s)).length, 0);
     const doTease = wildsEarly >= 2 && !tb;
     await waitSkippable(Math.max(0.02, tStop[0] - LEAD));
@@ -2181,7 +2201,7 @@
           vignette.visible = true; gsap.to(vignette, { alpha: 0.55, duration: 0.3 });
           SFX.tease(1.5); bullReact("tease");
           reels[2].vmax = 30;
-          await waitSkippable(1.5);
+          await waitSkippable(1.1);
           reels[2].vmax = reels[2].vNormal;
         } else await waitSkippable(quick ? 0.03 : tStop[i] - tStop[i - 1]);
       }
@@ -2195,7 +2215,8 @@
     const colFinal = [2, 1, 0, -1, -2].map((k) => stripAt(colC, k));
     if (r.win > 0 && !tb && !quick) {                // a win to multiply: the column rolls on, ticking chip by chip
       colTeaseOn();
-      landed.push(colReel.teaseStop(colFinal, { vSlow: 4.2, tau: 0.2, t1: 0.95, t2: 0.85, over: 0.14,
+      const small = r.win < r.stake && !r.nudges.length;            // a short roll for a win below the stake
+      landed.push(colReel.teaseStop(colFinal, { vSlow: small ? 5.5 : 4.2, tau: 0.2, t1: small ? 0.42 : 0.85, t2: small ? 0.45 : 0.75, over: 0.09,
         extra: (n) => Array.from({ length: n }, (_, k) => stripAt(colC, k - n - 2)),
         onTick: (left, v) => {
           if (v < 11) colTeaseTick(left);
@@ -2217,7 +2238,8 @@
     if (r.win > 0) await present(r);
     else { showMsg("SPIN TO WIN"); }
     gsap.globalTimeline.timeScale(BASE_TS);
-    S.state = "idle"; setUiLocked(false);
+    S.state = "idle"; setUiLocked(false); S.canSkip = false;
+    if (S.respin) { S.respin = false; if (!S.auto) { spinAt = performance.now(); return spin(); } }
     if (S.auto > 0) gsap.delayedCall(r.win > 0 ? 1.0 : 0.3, () => { if (S.state === "idle" && S.auto > 0) spin(); });
   }
   function onReelLand(i, r) {
