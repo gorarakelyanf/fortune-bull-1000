@@ -778,7 +778,7 @@
   let curGrid = START.map((c) => c.slice());
   function setUiLocked(locked) {
     [ui.minus, ui.plus, ui.ex].forEach((b) => { b.alpha = locked ? 0.55 : 1; b.body.eventMode = locked ? "none" : "static"; });
-    if (buyUI) buyUI.setEnabled(!locked);
+    if (buyUI) buyUI.setEnabled(!locked && !(S.auto > 0));
   }
   function changeBet(d) {
     if (S.state !== "idle") return;
@@ -799,10 +799,17 @@
     gsap.to(ui.turbo.aura, { alpha: S.turbo ? 0.6 : 0, duration: 0.25 });
     if (S.turbo) { burstAt(ui.turbo.x, ui.turbo.y, 0x9fe0ff, 14); }
   }
+  function stopAuto() {
+    S.auto = 0; autoBadge.visible = false; gsap.to(ui.autoplay.aura, { alpha: 0, duration: 0.2 });
+    if (buyUI) buyUI.setEnabled(S.state === "idle");                    // BUY is closed while autoplay runs
+  }
   function toggleAuto() {
-    if (S.auto > 0) { S.auto = 0; autoBadge.visible = false; gsap.to(ui.autoplay.aura, { alpha: 0, duration: 0.2 }); return; }
+    if (S.auto > 0) { stopAuto(); return; }
+    if (S.balance < stake()) { showMsg("NOT ENOUGH BALANCE"); gsap.fromTo(ui.balance_bar, { alpha: 0.4 }, { alpha: 1, duration: 0.15, repeat: 5, yoyo: true }); return; }
+    if (buyUI && buyUI.isOpen && buyUI.isOpen()) return;                // not behind an open BUY panel
     S.auto = 50; autoTxt.text = "50"; autoBadge.visible = true;
     gsap.to(ui.autoplay.aura, { alpha: 0.5, duration: 0.2 });
+    if (buyUI) buyUI.setEnabled(false);
     if (S.state === "idle") onSpinPress();
   }
   function toggleSound() { SFX.setMuted(!SFX.muted()); muteSlash.visible = SFX.muted(); }
@@ -858,7 +865,8 @@
     gsap.globalTimeline.timeScale(low);
     setTimeout(() => { hitStopOn = false; if (Math.abs(gsap.globalTimeline.timeScale() - low) < 1e-6) gsap.globalTimeline.timeScale(ts); }, ms);
   }
-  const buzz = (ms) => { try { if (navigator.vibrate && !SFX.muted()) navigator.vibrate(ms); } catch (e) { /* not supported */ } };
+  // only once the player has really touched the page (browsers block and log it otherwise)
+  const buzz = (ms) => { try { if (navigator.vibrate && !SFX.muted() && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) navigator.vibrate(ms); } catch (e) { /* not supported */ } };
   function shake(a, t) { shakeA = Math.max(shakeA, a); shakeT = Math.max(shakeT, t); }
 
   // ---------- bull reactions (code until the Kling clips exist) ----------
@@ -917,12 +925,17 @@
         setTimeout(swap, 300);
       };
       mv.watch = () => {                                   // a stalled video must not hold the game
-        if (mv.t !== lastT) { lastT = mv.t; seen = performance.now(); } else if (performance.now() - seen > 1500) mv.finish("stall");
+        if (mv.t !== lastT || document.hidden) { lastT = mv.t; seen = performance.now(); } else if (performance.now() - seen > 1500) mv.finish("stall");   // a hidden tab is not a stall
       };
       c.video.onended = () => mv.finish();
       c.video.currentTime = 0; c.video.playbackRate = BASE_TS * bullRate(mv, 0);
       c.sprite.alpha = 0; c.sprite.visible = true;
-      const pr = c.video.play(); if (pr && pr.catch) pr.catch((e) => { console.warn("bull move", name, String(e)); mv.finish("play"); });
+      // play() can be interrupted once (the previous move's clean-up pause, a tab switch): try again before giving up
+      const pr = c.video.play(); if (pr && pr.catch) pr.catch((e) => {
+        if (mv.ended) return;
+        const p2 = c.video.play();
+        if (p2 && p2.catch) p2.catch((e2) => { console.warn("bull move", name, String(e2)); mv.finish("play"); });
+      });
       gsap.to(c.sprite, { alpha: 1, duration: 0.1, ease: "none", onComplete: () => { if (!mv.ended) idle.sprite.visible = false; } });
       mv.started = true; startRes();
     }));
@@ -952,6 +965,8 @@
     const r = Math.min(8, Math.max(0.07, gsap.globalTimeline.timeScale() * bullRate(mv, mv.t)));   // browsers refuse rates under 1/16
     if (Math.abs(v.playbackRate - r) > 0.01) v.playbackRate = r;
     for (let i = mv.waits.length - 1; i >= 0; i--) if (mv.t >= mv.waits[i].t) { mv.waits[i].res(); mv.waits.splice(i, 1); }
+    // back from a hidden tab the browser may have left the move's video paused: resume it rather than cut the move
+    if (v.paused && !v.ended && !document.hidden) { const p = v.play(); if (p && p.catch) p.catch(() => {}); }
     if (v.ended) mv.finish("end"); else mv.watch();
   }
   // clip px of a bull move -> game px
@@ -1852,12 +1867,12 @@
     const w = clips[id + "_win"], i = clips[id + "_idle"];
     if (!w || clipBusy[id + "_win"]) return;
     clipBusy[id + "_win"] = true;
-    w.video.currentTime = 0; w.video.play();
+    w.video.currentTime = 0; { const p = w.video.play(); if (p && p.catch) p.catch(() => {}); }
     w.video.onended = () => {
       clipBusy[id + "_win"] = false;
       if (!i) return;
       cellClipSprites.forEach((sp) => { if (sp.clipId === id) sp.texture = i.sprite.texture; });
-      i.video.currentTime = 0; i.video.play();
+      i.video.currentTime = 0; { const p = i.video.play(); if (p && p.catch) p.catch(() => {}); }
     };
   }
   function playCellClip(id, reel, row) {
@@ -2157,7 +2172,11 @@
   async function spin(force, buyKind) {
     if (S.state !== "idle") return;
     const buyCost = buyKind ? Engine.BUY[buyKind].cost * BETS[S.betIdx] : 0;
-    if (S.balance < (buyKind ? buyCost : stake())) { showMsg("NOT ENOUGH BALANCE"); gsap.fromTo(ui.balance_bar, { alpha: 0.4 }, { alpha: 1, duration: 0.15, repeat: 5, yoyo: true }); return; }
+    if (S.balance < (buyKind ? buyCost : stake())) {
+      showMsg("NOT ENOUGH BALANCE"); gsap.fromTo(ui.balance_bar, { alpha: 0.4 }, { alpha: 1, duration: 0.15, repeat: 5, yoyo: true });
+      if (S.auto > 0) stopAuto();                          // autoplay ends when the money does
+      return;
+    }
     clearWin();
     S.state = "spinning"; quick = false; setUiLocked(true); S.forceKind = force || null;
     const bet = BETS[S.betIdx];
@@ -2173,7 +2192,7 @@
     window.G.last = r;
     setBalance(S.balance - r.stake, false);
     if (buyKind) { showMsg(Engine.BUY[buyKind].name + "!"); await bullCharge(); }
-    if (S.auto > 0) { S.auto--; autoTxt.text = String(S.auto); if (!S.auto) { autoBadge.visible = false; gsap.to(ui.autoplay.aura, { alpha: 0, duration: 0.2 }); } }
+    if (S.auto > 0) { S.auto--; autoTxt.text = String(S.auto); if (!S.auto) stopAuto(); }
     showMsg("GOOD LUCK!");
     SFX.spin(); bullReact("spin");
     arrowSpeed = 6.3;                                   // ~360 deg/s while the reels run (Garuda)
@@ -2240,7 +2259,7 @@
     gsap.globalTimeline.timeScale(BASE_TS);
     S.state = "idle"; setUiLocked(false); S.canSkip = false;
     if (S.respin) { S.respin = false; if (!S.auto) { spinAt = performance.now(); return spin(); } }
-    if (S.auto > 0) gsap.delayedCall(r.win > 0 ? 1.0 : 0.3, () => { if (S.state === "idle" && S.auto > 0) spin(); });
+    if (S.auto > 0) gsap.delayedCall(r.win > 0 ? 1.0 : 0.3, () => { if (S.state === "idle" && S.auto > 0 && !(buyUI && buyUI.isOpen && buyUI.isOpen())) spin(); });
   }
   function onReelLand(i, r) {
     SFX.reelStop(i);
@@ -2532,4 +2551,14 @@
   window.G = { spin, S, reels, colReel, Engine, clips, feature, bullSlam, bullCharge, bullOrb, bullPlay, bullDir, buy: (k) => spin(null, k), buyUI: () => buyUI, state: () => S.state, last: null, popOpen: () => pop.visible && !!popTap, tapPop: () => popTap && popTap() };
   document.querySelectorAll("[data-force]").forEach((b) => b.addEventListener("click", () => { SFX.unlock(); if (S.state === "idle") spin(b.dataset.force); }));
   document.querySelectorAll("[data-buy]").forEach((b) => b.addEventListener("click", () => { SFX.unlock(); if (S.state === "idle") spin(null, b.dataset.buy); }));
-})().catch((e) => { console.error(e); document.body.insertAdjacentHTML("beforeend", `<pre style="color:#f88;position:fixed;top:0;left:0;z-index:9">${e.stack || e}</pre>`); });
+})().catch((e) => {
+  console.error(e);
+  if (window.G && window.G.state && window.G.state() !== "boot") return;        // a late error must not cover a running game
+  const d = document.createElement("div");
+  d.style.cssText = "position:fixed;inset:0;z-index:9;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;background:#12060a;color:#ffe6b0;font:600 20px/1.4 system-ui,sans-serif;text-align:center;padding:24px";
+  d.innerHTML = '<div>The game could not load.<br>Please check your connection and try again.</div>';
+  const b = document.createElement("button"); b.textContent = "RELOAD";
+  b.style.cssText = "font:700 20px system-ui,sans-serif;color:#2a0c04;background:linear-gradient(#fff2c4,#fbc460 45%,#ce7422);border:0;border-radius:28px;padding:14px 44px;cursor:pointer";
+  b.onclick = () => location.reload();
+  d.appendChild(b); document.body.appendChild(d);
+});
