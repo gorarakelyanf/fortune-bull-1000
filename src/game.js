@@ -724,6 +724,7 @@
   // win bar text: LINE n: icons amount / TOTAL WIN: amount
   const wb = new PIXI.Container(); board.addChild(wb);
   const wbLine = new PIXI.Container(); wb.addChild(wbLine);
+  board.setChildIndex(plaqueL, board.children.length - 1);   // win digits draw above the win-bar text
   const wbTotal = new PIXI.Container(); wb.addChild(wbTotal);
   const sep = new PIXI.Graphics(); wb.addChild(sep);
   for (const [y, half] of [[1344, 250], [1402, 300]]) {
@@ -753,6 +754,7 @@
   function showMsg(t) { msgTxt.text = t; msgTxt.visible = true; wbTotal.visible = false; wbLine.visible = false; sep.visible = false; }
   function showLine(line, amount) {
     msgTxt.visible = false; wbLine.visible = true; sep.visible = true; wbTotal.visible = true;
+    if (!(plaque.visible && plaqueBig.visible)) { gsap.killTweensOf(wbLine); wbLine.alpha = 1; }
     lineLab.text = `LINE ${line.line}:`; lineVal.text = FX.money(amount);
     lineIcons.removeChildren();
     let x = 0;
@@ -843,9 +845,10 @@
     const b = new PIXI.AnimatedSprite(FX.tex.impactFrames); b.anchor.set(0.5); b.position.set(x, y);
     b.scale.set(sc || 1); b.rotation = Math.random() * Math.PI * 2; b.blendMode = PIXI.BLEND_MODES.ADD;
     if (tint) b.tint = tint;
-    b.loop = false; b.animationSpeed = 0.55 * gsap.globalTimeline.timeScale(); b.onComplete = () => b.destroy();
-    (parent || fxTop).addChild(b); b.play();
+    b.loop = false; b.animationSpeed = 0.55 * gsap.globalTimeline.timeScale(); b.onComplete = () => { booms.delete(b); b.destroy(); };
+    booms.add(b); (parent || fxTop).addChild(b); b.play();
   }
+  const booms = new Set();                        // live explosions: their speed follows the game clock (main ticker)
   // painted dust puffs (normal blend) rolling out from a point
   function smokeAt(x, y, n, sc) {
     for (let k = 0; k < n; k++) {
@@ -1064,7 +1067,10 @@
   const plaqueShown = { v: 0 };
   const syncTotal = () => { totShown.v = plaqueShown.v; drawTotal(); };   // every copy shows one value
   const drawPlaque = () => { plaqueTxt.text = FX.money(plaqueShown.v); const k = Math.min(1, 300 / plaqueTxt.width); plaqueTxt.scale.set(k); syncTotal(); };
-  const drawBig = () => { plaqueBig.text = FX.money(plaqueShown.v); plaqueBig.scale.set(Math.min(0.62, 700 / Math.max(1, plaqueBig.textWidth))); syncTotal(); };
+  const drawBig = () => {
+    plaqueBig.text = FX.money(plaqueShown.v); plaqueBig.scale.set(Math.min(0.62, 700 / Math.max(1, plaqueBig.textWidth))); syncTotal();
+    if (multTag && !multTag.destroyed && plaqueBig.visible) multTag.position.set(plaque.x + (plaqueBig.width * plaque.scale.x) / 2 + multTag.width / 2 + 18, plaque.y + 8);
+  };
 
   // nudge counter box (00/05) above the column, pink running-total badge under it
   const cntBox = new PIXI.Container(); cntBox.position.set(COL_CX, 488); cntBox.visible = false; plaqueL.addChild(cntBox);
@@ -1823,6 +1829,7 @@
     } else if (r.mult > 1 && !quiet) {
       gsap.to(plaqueBg, { alpha: 0, duration: 0.15 }); gsap.to(plaqueGlow, { alpha: 0.95, duration: 0.15 });
       plaqueTxt.visible = false; plaqueBig.visible = true; plaqueShown.v = r.baseWin; drawBig();
+      gsap.to(wbLine, { alpha: 0, duration: 0.12 });                   // the line row steps aside for the big digits
       gsap.fromTo(plaqueBig, { alpha: 0 }, { alpha: 1, duration: 0.1 });
       const cuDur = S.turbo ? 0.3 : 0.5 + 0.35 * Math.min(1, Math.log10(Math.max(2, r.mult)) / 2); let cuT = -1;
       bigTw = FX.tween(plaqueShown, { v: r.win, duration: cuDur, ease: "power1.in", onUpdate: function () {
@@ -1838,10 +1845,10 @@
     if (popWin) {
       gsap.to(plaque, { alpha: 0, duration: 0.15 });                  // the board copy leaves; the popup owns the count
       await bigWin(r.win, r.totalX);
-      plaque.visible = false; plaque.alpha = 1; totShown.v = r.win; showTotal(r.win);
+      plaque.visible = false; plaque.alpha = 1; plaqueBig.visible = false; wbLine.alpha = 1; totShown.v = r.win; showTotal(r.win);
     } else {
       await FX.wait(rung === 0 ? 0.3 : S.turbo ? 0.25 : 0.5);          // read the result, then the rail settles to TOTAL WIN
-      gsap.to(plaque, { alpha: 0, duration: 0.2, onComplete: () => { plaque.visible = false; plaque.alpha = 1; totShown.v = r.win; showTotal(r.win); } });
+      gsap.to(plaque, { alpha: 0, duration: 0.2, onComplete: () => { plaque.visible = false; plaque.alpha = 1; plaqueBig.visible = false; totShown.v = r.win; showTotal(r.win); gsap.to(wbLine, { alpha: 1, duration: 0.15 }); } });
     }
     balanceStreak();
     setBalance(S.balance + r.win, true);
@@ -2406,6 +2413,9 @@
     time += dt;
     reels.forEach((rl) => rl.update(dt));
     colReel.update(dt);
+    if (multTag && !multTag.destroyed && plaque.visible && plaqueBig.visible)   // the xN tag rides just after the counting digits
+      multTag.position.set(plaque.x + (plaqueBig.textWidth * plaqueBig.scale.x * plaque.scale.x) / 2 + (multTag.width * multTag.scale.x) / 2 + 22, plaque.y + 8);
+    if (booms.size) { const k = 0.55 * gsap.globalTimeline.timeScale(); booms.forEach((b) => { if (b.destroyed) booms.delete(b); else b.animationSpeed = k; }); }
     // idle life: after 5 s without a spin a shimmer runs across the symbols, the spin button calls, the flame flares
     if (S.state === "idle" && !S.auto && !pop.visible) {
       idleLifeT += dt;
