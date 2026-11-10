@@ -80,7 +80,7 @@
   try { clipList = await (await fetch("assets/clips/clips.json")).json(); } catch (e) { clipList = {}; }
   if (VER === 4) {                                   // V4 bull clips replace the bull_* entries (same placement, own tracks)
     try { const v4 = await (await fetch("assets/clips/v4/clips.json")).json();
-      for (const [k, c] of Object.entries(v4)) clipList[k] = Object.assign({}, c, { dir: "v4/" }); } catch (e) { console.warn("v4 clips", e); }
+      for (const [k, c] of Object.entries(v4)) clipList[k] = Object.assign({}, c, { sub: "v4/" }); /* "sub" = clip folder; "dir" is the throw's direction */ } catch (e) { console.warn("v4 clips", e); }
   }
   // ---------- clip downloads (Kling) ----------
   // Mobile load order: the art and the two clips the intro and popup need (idle, roar) download together and hold the
@@ -93,7 +93,7 @@
   for (const [name, c] of Object.entries(clipList)) {
     try {
       const v = document.createElement("video");
-      const dir = c.dir || ((VER === 1 || VER === 4) && /^(super_)?wild_/.test(name) ? "_v1/" : "");    // V1/V4 = original wild clips
+      const dir = c.sub || ((VER === 1 || VER === 4) && /^(super_)?wild_/.test(name) ? "_v1/" : "");    // V1/V4 = original wild clips
       v.muted = true; v.playsInline = true; v.loop = !!c.loop; v.preload = "auto";
       v.crossOrigin = "anonymous";
       v.defaultPlaybackRate = v.playbackRate = BASE_TS;          // clips follow ?ts= slow motion too
@@ -157,7 +157,7 @@
   function activateClip(name) {
     const o = clipPend[name]; if (!o || clips[name]) return;
     const v = o.video, c = o.cfg;
-    if (!v.videoWidth || v.error) { console.warn("clip not loaded", name); return; }
+    if (!v.videoWidth || v.error) { console.warn("clip not loaded", name, v.error ? v.error.code + " " + v.error.message : "no size", "ready", v.readyState, "net", v.networkState); return; }
     const tex = PIXI.Texture.from(v, { resourceOptions: { autoPlay: false, updateFPS: 30 } });
     const sp = new PIXI.Sprite(tex);
     sp.position.set(c.x || 0, c.y || 0); sp.width = c.w; sp.height = c.h; sp.visible = false;
