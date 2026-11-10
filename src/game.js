@@ -18,7 +18,8 @@
   // ?v2 = same game with the simplified symbols, new wild seals and their clips (assets/Symbols, clips/)
   // ?v3 = the Sapphire Treasury art set (assets_v2/, same file names); a part missing there falls back to assets/
   // ?v4 = V1 with the V4 bull (red sash on the other shoulder, living-gold arm with an armband): assets_v4 + clips/v4
-  const VER = params.has("v4") ? 4 : params.has("v3") ? 3 : params.has("v2") ? 2 : 1;
+  // PRODUCTION DEFAULT (2026-11-10) = V4: the gold-arm bull with the original symbols. ?v1 = the armoured bull.
+  const VER = params.has("v1") ? 1 : params.has("v3") ? 3 : params.has("v2") ? 2 : 4;
   const ART = VER === 3 ? "assets_v2" : "assets";
   const OLD_SYM = VER === 1 || VER === 4 ? /^Symbols\/(chest|hourglass|sun|wild|super_wild)(_|$)/ : null;
   const artSrc = (p) => `${VER === 4 && p === "Character/bull" ? "assets_v4" : OLD_SYM && OLD_SYM.test(p) ? "assets_v1" : ART}/${p}.webp`;
@@ -114,7 +115,7 @@
   for (const v of Engine.MULT_VALUES) { add(`Multipliers/chip_bg_${v}`); add(`Multipliers/label_${v}x`); }
   add("Multipliers/chip_bg_nudge"); Engine.NUDGE_CHIPS.forEach((v) => add(`Multipliers/label_nudge${-v}`));
   if (V2ART) { add("Multipliers/chip_bg_nudge5"); add("UI/buy_button"); }
-  ["title_big", "title_mega", "title_super", "title_epic", "title_max", "value_plate"].forEach((n) => files.push(`assets/Popup/${n}.webp`));
+  ["title_big", "title_mega", "title_super", "title_epic", "title_max"].forEach((n) => files.push(`assets/Popup/${n}.webp`));
   ["chip_coat", "chip_glints", "chip_rim", "chip_shadow"].forEach((n) => add("Multipliers/" + n));
   ["autoplay", "autoplay_shadow", "balance_bar_border", "balance_bar_fill", "bet_window_border", "bet_window_fill",
     "ex_button", "ex_shadow", "icon_menu", "icon_sound", "minus", "minus_shadow", "plus", "plus_shadow", "spin_arrows",
@@ -742,7 +743,10 @@
     totVal.text = FX.money(totShown.v);
     const w = totLab.width + 14 + totVal.width;
     totLab.position.set(540 - w / 2, 1374); totVal.position.set(540 - w / 2 + totLab.width + 14, 1374);
+    // the round's "xN" tag sits right after the total, whatever its length
+    if (multTag && !multTag.destroyed && wbTotal.visible) multTag.position.set(540 + w / 2 + multTag.width / 2 + 22, 1374);
   }
+  let multTag = null;
   function showMsg(t) { msgTxt.text = t; msgTxt.visible = true; wbTotal.visible = false; wbLine.visible = false; sep.visible = false; }
   function showLine(line, amount) {
     msgTxt.visible = false; wbLine.visible = true; sep.visible = true; wbTotal.visible = true;
@@ -875,12 +879,12 @@
   // clips.json per move: rates [[clip t, playbackRate]], events {name: clip t}, track [[t, x, y, flame power]] (clip px).
   const bullDir = { cur: null, queue: [], chain: Promise.resolve() };
   const BULL_TURBO = 1.35, BULL_HURRY = 2.6;
-  function bullPlay(name) {
+  function bullPlay(name, k) {
     const c = clips[name], idle = clips.bull_idle;
     if (!c || !idle) return null;
     const same = [bullDir.cur].concat(bullDir.queue).find((m) => m && m.name === name && !m.ended);
     if (same) { same.fresh = false; return same; }
-    const mv = { name, c, fresh: true, hurry: false, started: false, ended: false, waits: [], t: 0 };
+    const mv = { name, c, fresh: true, hurry: false, started: false, ended: false, waits: [], t: 0, k: k || 1 };
     let startRes, doneRes;
     mv.startedP = new Promise((r) => (startRes = r)); mv.done = new Promise((r) => (doneRes = r));
     mv.at = (ev) => {
@@ -924,7 +928,7 @@
   function bullRate(mv, t) {
     let r = 1;
     for (const [t0, k] of (mv.c.cfg.rates || [])) if (t >= t0) r = k;
-    return r * (S.turbo ? BULL_TURBO : 1) * (mv.hurry ? BULL_HURRY : 1);
+    return r * (mv.k || 1) * (S.turbo ? BULL_TURBO : 1) * (mv.hurry ? BULL_HURRY : 1);
   }
   // game seconds a move takes from clip time t0 to t1 (not hurried)
   function bullSpan(name, t0, t1) {
@@ -1124,12 +1128,12 @@
     ringAt(COL_CX, COL_CY, 0xffd060, 1.3, 0.45);
   }
   // Garuda multiplier hit: 0.5 s charge in place (1.6x, hot glow), 0.3 s flight, 0.2 s impact, 0.2 s absorb
-  async function multHit(v) {
+  async function multHit(v, struck) {
     const chip = colReel.views[3], from = { x: COL_CX, y: COL_CY }, to = { x: plaque.x, y: plaque.y };
     const glow = new PIXI.Sprite(FX.tex.glow); glow.anchor.set(0.5); glow.position.set(from.x, from.y);
     glow.tint = 0xfff275; glow.blendMode = PIXI.BLEND_MODES.ADD; glow.alpha = 0; glow.scale.set(0.6); fxTop.addChild(glow);
-    const cd = S.turbo ? 0.25 : 0.5;
-    SFX.tease(cd);
+    const cd = struck ? 0.16 : S.turbo ? 0.25 : 0.5;    // already struck by the bull's fireball: no second wind-up
+    if (!struck) SFX.tease(cd);
     gsap.to(glow, { alpha: 0.5, duration: cd }); gsap.to(glow.scale, { x: 1.5, y: 1.15, duration: cd, ease: "power2.out" });
     await FX.tween(chip.inner.scale, { x: 1.6, y: 1.6, duration: cd, ease: "power2.out" });
     const c = new PIXI.Container(); c.position.set(from.x, from.y); c.scale.set(1.6);
@@ -1379,6 +1383,14 @@
   }
   // feature start: the bull roars and blasts energy into the reels, then the board catches fire
   async function bullCharge() {
+    if (clips.bull_punch) {                              // production: the punch starts the feature
+      await bullSlam(true);
+      gsap.fromTo(featRays, { alpha: 1 }, { alpha: 0.55, duration: 1.4 });
+      VFX.rgbFlash(6, 0.3); flameKick(1.2);
+      feature(true);
+      await FX.wait(S.turbo ? 0.15 : 0.3);
+      return;
+    }
     bullReact("big");
     await FX.wait(S.turbo ? 0.3 : 0.7);
     gsap.fromTo(featRays, { alpha: 1 }, { alpha: 0.55, duration: 1.4 });
@@ -1399,7 +1411,7 @@
   }
   // the bull smashes his flaming fist onto the frame (Kling punch clip). On contact the board jolts, the symbols hop
   // outward from the hit, sparks and fire fly off the top bar.
-  async function bullSlam() {
+  async function bullSlam(short) {
     const mv = bullPlay("bull_punch");
     if (!mv) return bullSlamCode();
     if (mv.fresh) {
@@ -1409,7 +1421,7 @@
       mv.at("hit").then(() => { gsap.to(flame, { boost: 0, duration: 0.4 }); if (!mv.ended) slamFx(bullPt(mv.c, mv.c.cfg.hit || [145, 708])); });
     }
     await mv.at("hit");
-    await FX.wait(S.turbo ? 0.2 : 0.35);
+    await FX.wait(short ? 0.08 : S.turbo ? 0.2 : 0.35);
   }
   function slamFx(P) {
     const y0 = 596;                                           // the frame's top bar
@@ -1473,12 +1485,12 @@
   // the bull charges the fire in his hand (it takes the orb's colour), winds up and hurls it as a comet (Kling throw clip)
   const RIM_VIOLET = [0.6, 0.28, 1.0];
   const rgbOf = (t) => [((t >> 16) & 255) / 255, ((t >> 8) & 255) / 255, (t & 255) / 255];
-  async function bullOrb(to, tint, label) {
-    const mv = bullPlay("bull_throw");
+  async function bullOrb(to, tint, label, k) {
+    const mv = bullPlay("bull_throw", k);
     if (!mv) return bullOrbCode(to, tint, label);
     await mv.startedP;
     const tRel = (mv.c.cfg.events || {}).release || 1.94;
-    const cd = Math.max(0.3, bullSpan("bull_throw", Math.min(mv.t, tRel), tRel));
+    const cd = Math.max(0.3, bullSpan("bull_throw", Math.min(mv.t, tRel), tRel) / (mv.k || 1));
     if (flame.c) flame.c.setRim(rgbOf(tint));
     SFX.orbCharge(cd); gsap.to(flame, { boost: 0.3, duration: cd });
     // a charge glow rides the hand, sparks are pulled into it
@@ -1765,17 +1777,19 @@
       await laserApply(Math.max(1, acc));
     } else if (r.mult > 1) {
       if (clashWanted(r)) await clash(r);
-      else if (r.mult >= 25) { await bullOrb({ x: COL_CX, y: COL_CY }, 0xffb040, r.mult); r.bullActed = true; }
-      await multHit(r.mult);
+      else if (r.mult >= 5) { await bullOrb({ x: COL_CX, y: COL_CY }, multTint(r.mult) === 0xffd070 ? 0xffb040 : multTint(r.mult), r.mult >= 25 ? r.mult : null, r.mult >= 25 ? 1 : 1.3); r.bullActed = true; }
+      await multHit(r.mult, r.bullActed);
     } else {
       pulseChip(false);
     }
     // the plaque turns into big gold digits counting to the total (popup wins count once, in the popup)
     let bigTw = null;
     const tier = Engine.tier(r.totalX), popWin = TIER_ORDER.includes(tier);
+    let slamP = null;
+    if (r.totalX >= 5 && !r.bullActed) { slamP = bullSlam(); r.bullActed = true; }
     if (r.mult > 1 && popWin) {
       const mt = new PIXI.Text("x" + r.mult, FX.gold(46, { fill: FX.TIER_FILL.mega })); mt.anchor.set(0.5); mt.position.set(plaque.x + 250, plaque.y);
-      plaqueL.addChild(mt); winObjs.push(mt);
+      plaqueL.addChild(mt); winObjs.push(mt); multTag = mt;
       gsap.fromTo(mt.scale, { x: 1.6, y: 1.6 }, { x: 1, y: 1, duration: 0.3, ease: "back.out(1.6)" });
       await FX.wait(S.turbo ? 0.25 : 0.45);
     } else if (r.mult > 1) {
@@ -1788,12 +1802,12 @@
         if (now - cuT > 0.07) { cuT = now; SFX.rise(pr); }
       } }).then(() => { SFX.line(); gsap.fromTo(plaqueBig.scale, { x: 1.12, y: 1.12 }, { x: 1, y: 1, duration: 0.25, ease: "back.out(2)" }); });
       const mt = new PIXI.Text("x" + r.mult, FX.gold(40, { fill: FX.TIER_FILL.mega })); mt.anchor.set(0.5); mt.position.set(plaque.x + 300, plaque.y);
-      plaqueL.addChild(mt); winObjs.push(mt);
+      plaqueL.addChild(mt); winObjs.push(mt); multTag = mt;
       gsap.fromTo(mt.scale, { x: 1.6, y: 1.6 }, { x: 1, y: 1, duration: 0.3, ease: "back.out(1.6)" });
     }
     if (bigTw) await bigTw;
+    if (slamP) await slamP;
     if (popWin) {
-      if (!r.bullActed) await bullSlam();
       gsap.to(plaque, { alpha: 0, duration: 0.15 });                  // the board copy leaves; the popup owns the count
       await bigWin(r.win, r.totalX);
       plaque.visible = false; plaque.alpha = 1; totShown.v = r.win; showTotal(r.win);
@@ -1886,24 +1900,55 @@
   const popTitle = new PIXI.Text("BIG WIN", FX.gold(150, { strokeThickness: 18, dropShadowDistance: 8, dropShadowBlur: 8 }));
   popTitle.anchor.set(0.5); popTitle.position.set(540, 720);
   const popAmt = new PIXI.BitmapText("0", { fontName: "gold_digits", fontSize: 193 }); popAmt.anchor.set(0.5); popAmt.position.set(540, 930);
-  const popHint = new PIXI.Text("TAP TO CONTINUE", FX.plain(44, "#ffe6b0")); popHint.anchor.set(0.5); popHint.position.set(540, 1180); popHint.alpha = 0;
+  const popHint = new PIXI.Text("TAP TO CONTINUE", FX.plain(44, "#ffe6b0")); popHint.anchor.set(0.5); popHint.position.set(540, 1300); popHint.alpha = 0;
   pop.addChild(popDark);
   const popRays = VFX.godrays(pop, { gain: 0.42, tint: 0xffc860 });
-  pop.addChild(popGlow, popBurst, popBurst2);
-  if (popHero) pop.addChild(popHero, popHero.heroMask);
-  const popFlame = popHero ? VFX.magicFlame(pop, 230, 380) : null;
+  // everything of the celebration sits in one body, set lower so the bull, title and amount centre on the screen
+  const POP_DY = 215;
+  const popBody = new PIXI.Container(); popBody.y = POP_DY; pop.addChild(popBody);
+  popBody.addChild(popGlow, popBurst, popBurst2);
+  if (popHero) popBody.addChild(popHero, popHero.heroMask);
+  const popFlame = popHero ? VFX.magicFlame(popBody, 230, 380) : null;
   const popAmtGlow = new PIXI.Sprite(FX.tex.glow); popAmtGlow.anchor.set(0.5); popAmtGlow.position.set(540, 930); popAmtGlow.scale.set(5.2, 1.5);
   popAmtGlow.blendMode = PIXI.BLEND_MODES.ADD; popAmtGlow.alpha = 0.6;
   const popTitleMask = new PIXI.Text("BIG WIN", popTitle.style); popTitleMask.anchor.set(0.5); popTitleMask.position.copyFrom(popTitle.position);
   const popShine = new PIXI.Sprite(FX.tex.shine); popShine.anchor.set(0.5); popShine.scale.set(1.3, 12); popShine.rotation = 0.35;
   popShine.blendMode = PIXI.BLEND_MODES.ADD; popShine.alpha = 0.8; popShine.position.set(-300, 720); popShine.mask = popTitleMask;
   const POP_ART = (n) => PIXI.Assets.get(`assets/Popup/${n}.webp`);
-  const popPlate = new PIXI.Sprite(POP_ART("value_plate") || PIXI.Texture.EMPTY); popPlate.anchor.set(0.5, 0.62); popPlate.position.set(540, 935);
-  popPlate.scale.set(980 / Math.max(1, popPlate.texture.width)); popPlate.visible = !!POP_ART("value_plate");
-  const popTitleArt = new PIXI.Sprite(PIXI.Texture.EMPTY); popTitleArt.anchor.set(0.5, 0.62); popTitleArt.position.set(540, 712);
+  // amount plate, drawn in code: a gold-rimmed lacquer pill that stretches to the amount (9-slice); the lacquer takes
+  // the tier's colour. No generated art: the same gold as the UI text, clean at every width.
+  const plateTex = (lacquer) => {
+    const c = document.createElement("canvas"); c.width = 420; c.height = 210; const g = c.getContext("2d");
+    const pill = (i) => { const r = (210 - 2 * i) / 2; g.beginPath(); g.moveTo(i + r, i); g.lineTo(420 - i - r, i); g.arc(420 - i - r, 105, r, -Math.PI / 2, Math.PI / 2);
+      g.lineTo(i + r, 210 - i); g.arc(i + r, 105, r, Math.PI / 2, Math.PI * 1.5); g.closePath(); };
+    if (lacquer) {
+      const lg = g.createLinearGradient(0, 18, 0, 192); lg.addColorStop(0, "#ffffff"); lg.addColorStop(0.45, "#8c8c8c"); lg.addColorStop(1, "#4a4a4a");
+      pill(17); g.fillStyle = lg; g.fill();
+      g.save(); pill(17); g.clip();                     // gloss on the upper half, inner shadow at the top edge
+      const gl = g.createLinearGradient(0, 24, 0, 100); gl.addColorStop(0, "rgba(255,255,255,0.42)"); gl.addColorStop(1, "rgba(255,255,255,0)");
+      g.fillStyle = gl; g.beginPath(); g.ellipse(210, 30, 260, 62, 0, 0, Math.PI * 2); g.fill();
+      const sh = g.createLinearGradient(0, 17, 0, 44); sh.addColorStop(0, "rgba(0,0,0,0.5)"); sh.addColorStop(1, "rgba(0,0,0,0)");
+      g.fillStyle = sh; g.fillRect(0, 17, 420, 30); g.restore();
+    } else {
+      pill(0); g.fillStyle = "#2a0c04"; g.fill();
+      const gg = g.createLinearGradient(0, 4, 0, 206); gg.addColorStop(0, "#fff2c4"); gg.addColorStop(0.42, "#fbc460"); gg.addColorStop(0.6, "#e59a34"); gg.addColorStop(1, "#b9661c");
+      pill(5); g.fillStyle = gg; g.fill();
+      pill(14); g.fillStyle = "#5a2206"; g.fill();
+      g.globalCompositeOperation = "destination-out"; pill(17); g.fillStyle = "#000"; g.fill(); g.globalCompositeOperation = "source-over";
+      g.lineWidth = 2; g.strokeStyle = "rgba(255,250,225,0.85)"; pill(7); g.stroke();   // thin light line on the rim
+    }
+    return PIXI.Texture.from(c);
+  };
+  const popPlate = new PIXI.Container(); popPlate.position.set(540, 938);
+  const plateLac = new PIXI.NineSlicePlane(plateTex(true), 110, 100, 110, 100), plateRim = new PIXI.NineSlicePlane(plateTex(false), 110, 100, 110, 100);
+  popPlate.addChild(plateLac, plateRim);
+  const setPlate = (w) => { [plateLac, plateRim].forEach((n) => { n.width = w; n.height = 210; n.position.set(-w / 2, -105); }); };
+  setPlate(700);
+  const PLATE_TINT = { big: 0x1c7a3e, mega: 0x2046b4, super: 0xa41824, epic: 0x7024ac, max: 0x3a2a14 };
+  const popTitleArt = new PIXI.Sprite(PIXI.Texture.EMPTY); popTitleArt.anchor.set(0.5, 0.5); popTitleArt.position.set(540, 748);
   const popArtMask = new PIXI.Sprite(PIXI.Texture.EMPTY); popArtMask.anchor.copyFrom(popTitleArt.anchor); popArtMask.position.copyFrom(popTitleArt.position);
   let titleBase = 1, artBase = 1;
-  pop.addChild(popCoins.c, popFlare, popAmtGlow, popPlate, popTitle, popTitleMask, popTitleArt, popArtMask, popShine, popAmt, popHint);
+  popBody.addChild(popCoins.c, popFlare, popAmtGlow, popPlate, popTitle, popTitleMask, popTitleArt, popArtMask, popShine, popAmt, popHint);
   const popFaders = [popDark, popGlow, popBurst, popBurst2, popCoins.c, popFlare, popTitle, popHint, popAmtGlow, popShine, popPlate, popTitleArt].concat(popHero ? [popHero] : [], popRays ? [popRays] : [], popFlame ? [popFlame] : []);
   pop.eventMode = "static"; pop.hitArea = new PIXI.Rectangle(0, 0, W, H);
   let popTap = null, titlePulse = null;
@@ -1914,11 +1959,12 @@
     const base = Math.min(1, 980 / (popTitle.width / popTitle.scale.x));
     titleBase = base;
     const art = POP_ART("title_" + t);                 // custom title lettering + crest per tier; text only as fallback
-    popTitle.renderable = popTitleMask.renderable = !art; popTitleArt.visible = !!art;
+    popTitleArt.visible = !!art;
     if (art) {
-      popTitleArt.texture = popArtMask.texture = art; artBase = 940 / art.width;
+      popTitleArt.texture = popArtMask.texture = art; artBase = Math.min(1, 980 / art.width);
       popShine.mask = popArtMask;
     } else popShine.mask = popTitleMask;
+    popTitle.renderable = popTitleMask.renderable = !art;   // after the mask swap: un-masking makes the old mask renderable again
     if (titlePulse) titlePulse.kill();
     gsap.killTweensOf(popTitle.scale);
     const up = first ? 1.12 : 1.38;                    // a tier-up slams in; the first title just arrives
@@ -1930,10 +1976,11 @@
     titlePulse = gsap.to(popTitle.scale, { x: base * 1.03, y: base * 1.03, duration: 0.7, yoyo: true, repeat: -1, ease: "sine.inOut", delay: 0.26 });
     ringAt(540, 760, look.burst, 6, 0.6, popCoins);
 
+    plateLac.tint = PLATE_TINT[t] || 0x5a0d1c;
     popGlow.tint = look.glow; popBurst.tint = popBurst2.tint = look.burst; flare1.tint = look.flare; flare2.tint = 0xffffff;
     popTitleMask.text = popTitle.text; popAmtGlow.tint = look.glow;
     if (popRays) popRays.setTint(look.burst);
-    if (!first) VFX.shockwave(540, 740, { amp: 30, radius: 1200, dur: 0.3 });
+    if (!first) VFX.shockwave(540, 740 + POP_DY, { amp: 30, radius: 1200, dur: 0.3 });
     for (let k = 0; k < 18 + 12 * Math.max(0, TIER_ORDER.indexOf(t)); k++) {
       const a = Math.random() * Math.PI * 2, v = 600 + Math.random() * 900;
       popCoins.emit({ tex: FX.tex.dot, x: 540, y: 790, vx: Math.cos(a) * v, vy: Math.sin(a) * v, drag: 2.6, s0: 0.35 + Math.random() * 0.3, s1: 0,
@@ -1959,7 +2006,8 @@
     let cur = -1, done = false;
     const shown = { v: 0 };
     popAmt.text = FX.money(amount);                    // the digits are sized once, for the final amount
-    const amtK = Math.min(0.75, 940 / Math.max(1, popAmt.textWidth));
+    const amtK = Math.min(0.75, 800 / Math.max(1, popAmt.textWidth));
+    setPlate(Math.min(1000, Math.max(520, popAmt.textWidth * amtK + 180)));     // the plate always contains the amount
     const draw = () => { popAmt.text = FX.money(shown.v); popAmt.scale.set(amtK); };
     let coinRate = 12, coinAcc = 0;                    // coins per second, set by the tier on show: BIG 12 .. EPIC 21
     const coinTick = () => {
@@ -1979,7 +2027,7 @@
         popTitleMask.scale.copyFrom(popTitle.scale);
         const ts = (popTitle.scale.x / titleBase) * artBase; popTitleArt.scale.set(ts); popArtMask.scale.set(ts);
         popAmtGlow.alpha = 0.45 + 0.25 * Math.sin(performance.now() / 160);
-        if (popRays) popRays.update(performance.now() / 1000, 540, 380);
+        if (popRays) popRays.update(performance.now() / 1000, 540, 380 + POP_DY);
         if (popFlame && popHero) placeFlame(popFlame, popHero, true);
       }
       popFlare.alpha = 0.75 + 0.25 * Math.sin(performance.now() / 110);
@@ -2005,7 +2053,7 @@
         countTw.kill(); shown.v = amount; draw();
         if (cur < steps.length - 1) { cur = steps.length - 1; setTierTitle(steps[cur], cur === 0); }   // tap: straight to the final tier
         gsap.fromTo(popAmt.scale, { x: amtK * 1.08, y: amtK * 1.08 }, { x: amtK, y: amtK, duration: 0.18, ease: "back.out(1.2)" });
-        ringAt(540, 930, 0xffd060, 4, 0.5); SFX.impact(true); coinRate = 8;
+        ringAt(540, 930 + POP_DY, 0xffd060, 4, 0.5); SFX.impact(true); coinRate = 8;
         gsap.to(popHint, { alpha: 1, duration: 0.4 });
         const auto = gsap.delayedCall(S.auto ? 1.0 : 1.6, close);
         popTap = () => { auto.kill(); close(); };
@@ -2016,7 +2064,7 @@
         gsap.to(popFaders, { alpha: 0, duration: 0.3 });
         // the amount shrinks and flies down to the win bar
         gsap.to(popAmt.scale, { x: popAmt.scale.x * 0.3, y: popAmt.scale.y * 0.3, duration: 0.4, ease: "power2.in" });
-        gsap.to(popAmt, { y: 1374, alpha: 0.3, duration: 0.4, ease: "power2.in", onComplete: () => {
+        gsap.to(popAmt, { y: 1374 - POP_DY, alpha: 0.3, duration: 0.4, ease: "power2.in", onComplete: () => {
           ringAt(540, 1374, 0xffd060, 2, 0.3); SFX.line();
           pop.visible = false; popCoins.clear(); popAmt.position.set(540, 930); res();
         } });
@@ -2095,6 +2143,11 @@
     const bet = BETS[S.betIdx];
     let r;
     if (buyKind) r = Engine.buySpin(buyKind, bet, false);
+    else if (force === "max") {
+      // DEMO only: a max win is too rare to find by seed search (none in tens of millions), so the demo sets up a
+      // real, possible outcome: two full lines of WILDs with the 1000x chip (capped at the max win), settled by the engine as usual
+      r = Engine.settle([["wild", "wild", "K"], ["wild", "wild", "J"], ["wild", "wild", "A"]], Engine.STRIP.indexOf(1000), bet, stake());
+    }
     else if (force) { const f = Engine.findRound(force, bet, S.ex, 1 + Math.floor(Math.random() * 1e6)); r = f ? f.round : Engine.spin(bet, S.ex); }
     else r = Engine.spin(bet, S.ex);
     window.G.last = r;
