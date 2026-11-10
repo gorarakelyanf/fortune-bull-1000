@@ -117,7 +117,12 @@
   R.wildLand = () => one("wild_land", { vol: 0.75, vary: 40 }, SY.wildLand);
   R.superLand = () => one("superwild_land", { vol: 0.85 }, SY.wildLand);
   R.tease = (d) => (d >= 1.2 ? one("tease_riser", { vol: 0.9 }, () => SY.tease(d)) : one("orb_charge", { vol: 0.6, rate: 1.15 }, () => SY.tease(d)));
-  R.win = (n) => one("win_line", { vol: 0.75 }, () => SY.win(n));
+  // rung 0 = a win below the stake (quiet), 1 = normal, 2 = strong (brighter, with a bell on top)
+  R.win = (n, rung) => { rung = rung == null ? 1 : rung;
+    one("win_line", { vol: rung ? 0.75 : 0.3, rate: rung === 2 ? 1.08 : 1 }, () => SY.win(n));
+    if (rung === 2) one("bell", { vol: 0.5, rate: 1.25, delay: 0.12 }); };
+  // a short note that climbs with k (0..1): count-ups and feature steps
+  R.rise = (k) => one("bell", { vol: 0.16 + 0.14 * k, rate: 1.0 + 1.1 * k }, SY.plink);
   // multiplier tease: a riser under the slow roll, and a click per chip that climbs in pitch as the column slows (k 0..1)
   R.colTease = () => one("tease_riser", { vol: 0.55, rate: 1.1 }, () => SY.tease(1.6));
   R.colTick = (k) => one("ui_click", { vol: 0.5 + 0.3 * k, rate: 0.9 + 0.45 * k }, SY.click);
@@ -129,7 +134,7 @@
   };
   R.coin = () => { if (!has("coins_shower")) return SY.coin(); const t = performance.now(); if (t - lastCoin > 2400) { lastCoin = t; one("coins_shower", { vol: 0.6 }); } };
   R.plink = () => one("bell", { vol: 0.14, rate: 1.7 + Math.random() * 0.4 }, SY.plink);
-  R.nudge = () => { const a = A(); if (a && a.has("nudge_clank_1")) a.playRandom(["nudge_clank_1", "nudge_clank_2"], { vol: 0.95 }); else SY.nudge(); };
+  R.nudge = (k) => { const a = A(); if (a && a.has("nudge_clank_1")) a.playRandom(["nudge_clank_1", "nudge_clank_2"], { vol: 0.95, rate: 1 + 0.35 * (k || 0) }); else SY.nudge(); };
   R.fly = () => { const a = A(); if (a && a.has("fly_1")) a.playRandom(["fly_1", "fly_2"], { vol: 0.55, vary: 60 }); else SY.fly(); };
   R.impact = (big) => one(big ? "impact_big" : "impact_magic", { vol: big ? 0.9 : 0.7, vary: 30 }, () => SY.impact(big));
   R.fanfare = (level) => one(level === 0 ? "bigwin_hit" : "tier_up", { vol: 0.95 }, () => SY.fanfare(level));

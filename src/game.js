@@ -214,7 +214,9 @@
   const bullClipAt = bull.children.length;
   function attachBullClip(n) {
     const o = clips[n], sp = o.sprite;
-    sp.position.set(o.cfg.x - bull.x, o.cfg.y - bull.y);
+    // relative to the bull's REST point: a clip that arrives during the intro (the bull slides up from +120 px) or a
+    // shake must not bake that offset in
+    sp.position.set(o.cfg.x - (bl.x + bl.w / 2), o.cfg.y - (bl.y + bl.h));
     const idle = clips.bull_idle && clips.bull_idle.sprite;
     const at = n === "bull_idle" ? bullClipAt : idle && idle.parent === bull ? bull.getChildIndex(idle) + 1 : bullClipAt;
     bull.addChildAt(sp, Math.min(at, bull.children.length));
@@ -1091,6 +1093,14 @@
     }
   }
 
+  // the colour a multiplier value reads as (its chip), for the hit flash
+  const multTint = (v) => v >= 500 ? 0xff5a3c : v >= 100 ? 0xffe8a0 : v >= 25 ? 0xff60d0 : v >= 10 ? 0x5a9cff : v >= 5 ? 0x50c8ff : v >= 3 ? 0x60ff90 : 0xffd070;
+  const screenFlash = new PIXI.Graphics().beginFill(0xffffff).drawRect(-200, -200, W + 400, H + 400).endFill();
+  screenFlash.blendMode = PIXI.BLEND_MODES.ADD; screenFlash.alpha = 0; screenFlash.visible = false; fxTop.addChild(screenFlash);
+  function flashScreen(tint, a, dur) {
+    gsap.killTweensOf(screenFlash); screenFlash.tint = tint; screenFlash.visible = true;
+    gsap.fromTo(screenFlash, { alpha: a }, { alpha: 0, duration: dur, ease: "power2.out", onComplete: () => (screenFlash.visible = false) });
+  }
   function impactAt(p, v) {
     VFX.shockwave(p.x, p.y, { amp: v >= 10 ? 30 : 18, radius: v >= 10 ? 900 : 600 });
     starFlash(p.x, p.y, v >= 10 ? 1.2 : 0.8, 0xfff0c0);
@@ -1126,6 +1136,11 @@
       if (nEmit(40)) topP.emit({ tex: FX.tex.spark, x: q.x, y: q.y, vx: (Math.random() - 0.5) * 90, vy: (Math.random() - 0.5) * 90, s0: 0.35, s1: 0, life: 0.2, tint: 0xffd700 });
     } });
     impactAt(to, v);
+    const hitK = Math.min(1, Math.log10(Math.max(2, v)) / 2);          // 2x = 0.15 ... 100x+ = 1
+    flashScreen(multTint(v), 0.1 + 0.14 * hitK, 0.3);
+    gsap.killTweensOf(plaque.scale);
+    gsap.fromTo(plaque.scale, { x: PLAQUE_S * (1.18 + 0.22 * hitK), y: PLAQUE_S * (1.18 + 0.22 * hitK) }, { x: PLAQUE_S, y: PLAQUE_S, duration: 0.35, ease: "back.out(2.2)" });
+    if (v >= 10) { flameKick(1.3); bullReact("tease"); } else if (v >= 5) { flameKick(0.8); bullReact("win"); } else flameKick(0.4);
     await FX.tween(c.scale, { x: 1.8, y: 1.8, duration: 0.07 });
     await FX.tween(c.scale, { x: 1.4, y: 1.4, duration: 0.13 });
     gsap.to(c, { alpha: 0, duration: 0.2, ease: "power2.in" });
@@ -1242,8 +1257,13 @@
         beam(s, chipPos, 0xff8a3a); await FX.wait(S.turbo ? 0.1 : 0.18);      // the nudge starts while the beam flies
       }
       await FX.wait(0.06);
-      SFX.nudge(); shake(4, 0.12);
-      await colReel.nudge(0.18);
+      // escalation: every nudge hits harder and higher than the one before; the last one lands in slow motion
+      const esc = r.nudges.length > 1 ? k / (r.nudges.length - 1) : 1, lastN = k === r.nudges.length - 1 && r.nudges.length > 1 && !S.turbo;
+      if (lastN) { SFX.tease(0.5); gsap.to(vignette, { alpha: 0.5, duration: 0.25, onStart: () => (vignette.visible = true) }); await FX.wait(0.3); }
+      SFX.nudge(esc); shake(4 + 6 * esc, 0.12 + 0.08 * esc);
+      if (fireFrame.visible) gsap.to(fireFrame, { alpha: 0.62 + 0.38 * esc, duration: 0.2 });
+      await colReel.nudge(lastN ? 0.42 : 0.18);
+      if (lastN) gsap.to(vignette, { alpha: 0, duration: 0.3, onComplete: () => (vignette.visible = false) });
       cnt(k + 1, true);                                                       // the count changes when the nudge lands
       const v = r.nudges[k];
       if (v < 0) {
@@ -1254,8 +1274,10 @@
         await FX.wait(0.08);
         await streakToBadge(v);
         badgeIn(); acc += v; accTxt.text = "x" + acc;
-        gsap.fromTo(accum.scale, { x: 1.25, y: 1.25 }, { x: 1, y: 1, duration: 0.2 });
-        ringAt(accum.x, accum.y, 0xff55ff, 1.4, 0.3); SFX.impact(false);
+        const pk = 1.25 + 0.5 * esc;
+        gsap.fromTo(accum.scale, { x: pk, y: pk }, { x: 1, y: 1, duration: 0.2 + 0.15 * esc, ease: "back.out(2)" });
+        ringAt(accum.x, accum.y, 0xff55ff, 1.4 + esc, 0.3); SFX.impact(lastN || v >= 50); SFX.rise(esc);
+        if (lastN || v >= 50) flashScreen(multTint(v), 0.14, 0.3);
       }
       const el = gsap.globalTimeline.time() - t0;
       if (el < STEP) await FX.wait(STEP - el);
@@ -1704,12 +1726,18 @@
         }
       }
     }
-    SFX.win(r.lines.length);
-    bullReact("win");
+    // win ladder: the celebration follows the size. 0 = less than the stake (a net loss: quiet, no coins, no bull),
+    // 1 = up to 5x, 2 = 5x and more (bigger wins go on to the popup)
+    const rung = r.win < r.stake ? 0 : r.totalX >= 5 ? 2 : 1;
+    SFX.win(r.lines.length, rung);
+    if (rung) bullReact(rung === 2 ? "tease" : "win");
+    if (rung === 2) { flameKick(1.0); flashScreen(0xffd070, 0.1, 0.35); }
     showLine(r.lines[0], r.lines[0].pay * BETS[S.betIdx]);
-    [...cells].forEach((c, ci) => {
+    if (rung) [...cells].forEach((c, ci) => {
       const from = { x: REEL_CX[Math.floor(c / 3)], y: rowY(c % 3) };
-      for (let k = 0; k < 3; k++) coinTrail(from, { x: 540, y: 1374 }, 0.12 + ci * 0.05 + k * 0.08, winBarPop);
+      for (let k = 0; k < (rung === 2 ? 6 : 3); k++) coinTrail(from, { x: 540, y: 1374 }, 0.12 + ci * 0.05 + k * 0.08, winBarPop);
+      const v = reels[Math.floor(c / 3)].view(c % 3);               // winners beat together, in time
+      gsap.fromTo(v.inner.scale, { x: 1, y: 1 }, { x: 1.07, y: 1.07, duration: 0.16, delay: 0.3, yoyo: true, repeat: rung === 2 ? 5 : 3, ease: "sine.inOut" });
     });
     // rail plaque pops 0.6 -> 1.05 -> 1 and counts the base win (it replaces the footer total while it shows)
     plaqueBg.alpha = 1; plaqueGlow.alpha = 0.5; plaqueTxt.visible = true; plaqueBig.visible = false;
@@ -1745,7 +1773,11 @@
       gsap.to(plaqueBg, { alpha: 0, duration: 0.15 }); gsap.to(plaqueGlow, { alpha: 0.95, duration: 0.15 });
       plaqueTxt.visible = false; plaqueBig.visible = true; plaqueShown.v = r.baseWin; drawBig();
       gsap.fromTo(plaqueBig, { alpha: 0 }, { alpha: 1, duration: 0.1 });
-      bigTw = FX.tween(plaqueShown, { v: r.win, duration: S.turbo ? 0.3 : 0.5, ease: "power1.out", onUpdate: drawBig });
+      const cuDur = S.turbo ? 0.3 : 0.5 + 0.35 * Math.min(1, Math.log10(Math.max(2, r.mult)) / 2); let cuT = -1;
+      bigTw = FX.tween(plaqueShown, { v: r.win, duration: cuDur, ease: "power1.in", onUpdate: function () {
+        drawBig(); const pr = this.progress(), now = gsap.globalTimeline.time();
+        if (now - cuT > 0.07) { cuT = now; SFX.rise(pr); }
+      } }).then(() => { SFX.line(); gsap.fromTo(plaqueBig.scale, { x: 1.12, y: 1.12 }, { x: 1, y: 1, duration: 0.25, ease: "back.out(2)" }); });
       const mt = new PIXI.Text("x" + r.mult, FX.gold(40, { fill: FX.TIER_FILL.mega })); mt.anchor.set(0.5); mt.position.set(plaque.x + 300, plaque.y);
       plaqueL.addChild(mt); winObjs.push(mt);
       gsap.fromTo(mt.scale, { x: 1.6, y: 1.6 }, { x: 1, y: 1, duration: 0.3, ease: "back.out(1.6)" });
