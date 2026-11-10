@@ -117,7 +117,10 @@
     2.32,
     1.0
    ]
-  ]
+  ],
+  "events": {
+   "roar": 1.75
+  }
  },
  "bull_punch": {
   "file": "bull_punch.mp4",

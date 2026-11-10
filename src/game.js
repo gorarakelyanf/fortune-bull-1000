@@ -884,8 +884,14 @@
       gsap.fromTo(bullAura, { alpha: 0.55 }, { alpha: 0, duration: kind === "big" ? 2.2 : 1.4, ease: "power2.in" });
       gsap.fromTo(bull.scale, { x: 1.025, y: 1.025 }, { x: 1, y: 1, duration: 0.9, ease: "elastic.out(1,0.5)" });
     }
-    if (kind === "big") SFX.roar();
-    if (kind === "big") bullPlay("bull_big");
+    if (kind === "big") {
+      // the roar sound lands on the open mouth: it fires on the clip's own clock at events.roar (the sound needs
+      // ~0.45 s to reach full voice, so the event sits that much before the mouth opens wide)
+      const mv = bullPlay("bull_big");
+      const at = mv && mv.c.cfg.events && mv.c.cfg.events.roar;
+      if (!mv) SFX.roar();
+      else if (mv.fresh) { if (at == null) SFX.roar(); else mv.at("roar").then(() => { if (!mv.ended || mv.why === "end") SFX.roar(); }); }
+    }
   }
   const clipBusy = {};
   // ---------- bull moves: Kling one-shots over the idle loop (each starts and ends on the idle's first frame) ----------
@@ -1440,7 +1446,6 @@
     if (!mv) return bullSlamCode();
     if (mv.fresh) {
       gsap.fromTo(bullAura, { alpha: 0.35 }, { alpha: 0, duration: 1.2, ease: "power2.in" });
-      SFX.roar();
       mv.at("swing").then(() => { if (!mv.hurry) SFX.fly(); gsap.to(flame, { boost: 0.5, duration: 0.15 }); });
       mv.at("hit").then(() => { gsap.to(flame, { boost: 0, duration: 0.4 }); if (!mv.ended) slamFx(bullPt(mv.c, mv.c.cfg.hit || [145, 708])); });
     }
@@ -2558,7 +2563,7 @@
     if (e.key === "b" && buyUI && S.state === "idle") { buyUI.open(); return; }
     if (KEYS[e.key] && S.state === "idle") spin(KEYS[e.key]);
   });
-  window.G = { spin, S, reels, colReel, Engine, clips, feature, bullSlam, bullCharge, bullOrb, bullPlay, bullDir, buy: (k) => spin(null, k), buyUI: () => buyUI, state: () => S.state, last: null, popOpen: () => pop.visible && !!popTap, tapPop: () => popTap && popTap() };
+  window.G = { spin, S, reels, colReel, Engine, clips, feature, bullSlam, bullCharge, bullOrb, bullPlay, bullDir, bullReact, buy: (k) => spin(null, k), buyUI: () => buyUI, state: () => S.state, last: null, popOpen: () => pop.visible && !!popTap, tapPop: () => popTap && popTap() };
   document.querySelectorAll("[data-force]").forEach((b) => b.addEventListener("click", () => { SFX.unlock(); if (S.state === "idle") spin(b.dataset.force); }));
   document.querySelectorAll("[data-buy]").forEach((b) => b.addEventListener("click", () => { SFX.unlock(); if (S.state === "idle") spin(null, b.dataset.buy); }));
 })().catch((e) => {
