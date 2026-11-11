@@ -1,0 +1,21 @@
+<?xml version="1.0"?>
+<font>
+<info face="gold_digits" size="193" />
+<common lineHeight="241" base="193" scaleW="2106" scaleH="212" pages="1" />
+<pages><page id="0" file="gold_digits.png" /></pages>
+<chars count="13">
+<char id="48" x="0" y="0" width="173" height="202" xoffset="0" yoffset="9" xadvance="165" page="0" chnl="15" />
+<char id="49" x="177" y="0" width="135" height="200" xoffset="0" yoffset="5" xadvance="127" page="0" chnl="15" />
+<char id="50" x="316" y="0" width="172" height="201" xoffset="0" yoffset="5" xadvance="164" page="0" chnl="15" />
+<char id="51" x="492" y="0" width="170" height="205" xoffset="0" yoffset="5" xadvance="162" page="0" chnl="15" />
+<char id="52" x="666" y="0" width="175" height="200" xoffset="0" yoffset="7" xadvance="167" page="0" chnl="15" />
+<char id="53" x="845" y="0" width="179" height="212" xoffset="0" yoffset="-2" xadvance="171" page="0" chnl="15" />
+<char id="54" x="1028" y="0" width="168" height="211" xoffset="0" yoffset="0" xadvance="160" page="0" chnl="15" />
+<char id="55" x="1200" y="0" width="165" height="205" xoffset="0" yoffset="2" xadvance="157" page="0" chnl="15" />
+<char id="56" x="1369" y="0" width="179" height="211" xoffset="0" yoffset="0" xadvance="171" page="0" chnl="15" />
+<char id="57" x="1552" y="0" width="178" height="210" xoffset="0" yoffset="-1" xadvance="170" page="0" chnl="15" />
+<char id="44" x="1734" y="0" width="93" height="120" xoffset="0" yoffset="140" xadvance="85" page="0" chnl="15" />
+<char id="46" x="1831" y="0" width="85" height="87" xoffset="0" yoffset="124" xadvance="77" page="0" chnl="15" />
+<char id="120" x="1920" y="0" width="182" height="157" xoffset="0" yoffset="54" xadvance="174" page="0" chnl="15" />
+</chars>
+</font>
