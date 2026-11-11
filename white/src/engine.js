@@ -1,42 +1,43 @@
-// Fortune Bull 1000 - math engine (pure; runs in the browser and in node for sim.mjs).
-// 3x3, 5 fixed lines, WILD + SUPER WILD substitute, multiplier column (5 visible, centre applies).
-// Each SUPER WILD on a winning line nudges the column NUDGES steps; every nudge adds the new centre value.
-// NUDGE chips (strip values -3 / -5): landing in the centre on a win starts 3 / 5 nudges (the chip itself adds 0);
-// a NUDGE chip reached by a nudge adds its steps to the count.
-// Feature buys (BUY / buySpin): one paid spin with a guaranteed NUDGE chip in the centre, settled by the same code as spin().
+// Fortune Bull 1000 - WHITE math engine (pure; runs in the browser and in node). tools/port_from_stone.py copies it to
+// src/engine.js (the white engine no longer follows the stone one).
+// Follows the product spec "Fortune Guardian 1000 - Buy Bonus and Extra Bet" v1.0 (11 Nov 2026):
+//  - 3x3, 5 fixed lines, WILD + SUPER WILD substitute; pays in multiples of the Base Bet.
+//  - MAIN multiplier = the column's centre chip. A CHARGE chip (value -N) in the centre of a win runs N actions; each
+//    action draws one Direct Multiplier (added) or a nested CHARGE (its actions are added to the same run).
+//  - FORTUNE CHOICE, natural: a SUPER WILD on a winning line triggers it; the SUPER WILDs' counts (2..8) are the
+//    Choices (at most 9). 9 positions are made once (Direct Multiplier / CHARGE / Choice +2) and picked one at a time,
+//    never refilled; Choice +2 only while remaining Choices + 2 <= remaining positions. Bonus Total starts at 0;
+//    bonus win = raw line win x Bonus Total, a separate award next to the main win (line win x main multiplier).
+//  - EXTRA BET modes 1..3 (debit 1.5 / 8 / 15 x Base Bet) restrict the Direct Multiplier and CHARGE pools; payouts
+//    stay on the Base Bet; the mode holds for the whole round, a natural Fortune Choice included.
+//  - BUY BONUS: 100 x Base Bet -> Fortune Choice at once (no spin): random Choices, a starting multiplier added before
+//    the first pick, the buy pools; pays Base Bet x Bonus Total. No Extra Bet pools or surcharge.
+//  - MAX WIN 50,000 x Base Bet (main + linked bonus together): only the headroom is paid, everything after stops.
+// Math's own weights are not part of the spec, so the weights here are ours: TUNE below, solved to 97.01% per mode
+// by tools/tune_spec.cjs and checked by Monte Carlo with tools/sim_spec.cjs.
 (function (root) {
   const SYMBOLS = ["J", "Q", "K", "A", "hourglass", "sun", "chest", "wild", "super_wild"];
   const WILDS = new Set(["wild", "super_wild"]);
-  // pays in multiples of the total bet, for 3 on a line
-  const PAY = { J: 0.2, Q: 0.25, K: 0.3, A: 0.4, hourglass: 0.6, sun: 0.8, chest: 1.0, wild: 4, super_wild: 4 };
+  const PAY = { J: 0.2, Q: 0.25, K: 0.3, A: 0.4, hourglass: 0.6, sun: 0.8, chest: 1.0, wild: 4, super_wild: 4 };   // x bet for 3 on a line
   const PAY_SCALE = 1.013;
-  const WEIGHTS = { J: 18, Q: 17, K: 16, A: 15, hourglass: 9, sun: 8, chest: 7, wild: 3.2, super_wild: 0.79 };   // white: rarer, each carries 2-8 charges
-  const EX_COST = 1.5;                      // EX doubles the SUPER WILD rate for 1.5x the bet
-  const NUDGES = 2;
-  const EX_BOOST = 1.75;
-  const MAX_WIN = 5000;                     // x total bet
   const LINES = [[1, 1, 1], [0, 0, 0], [2, 2, 2], [0, 1, 2], [2, 1, 0]];
-  const MULT_W = { 1: 34, 2: 24, 3: 16, 5: 11, 10: 7, 15: 4.5, 20: 2.6, 25: 1.6, 50: 0.7, 100: 0.25, 500: 0.05, 1000: 0.02, "-3": 3.6, "-5": 1.3 };
-  const NUDGE_EX = 1.8;                     // EX also lands NUDGE chips this much more often
-  const NUDGE_CHIPS = [-3, -5];
-  const SW_CHARGES = { 2: 55, 3: 20, 4: 11, 5: 6, 6: 4, 7: 2, 8: 2 };   // white: a SUPER WILD's own charge count (Garuda: 2..8)
-  const MAX_STEPS = 40;
-  const MULT_VALUES = [1, 2, 3, 5, 10, 15, 20, 25, 50, 100, 500, 1000];
+  const MAX_WIN = 50000;                        // x Base Bet
+  const MAX_ACTIONS = 5000;                     // a safety stop for one CHARGE run (the cap ends real runs long before)
+  const MULT_VALUES = [1, 2, 3, 5, 10, 15, 20, 25, 50, 100, 200, 500, 1000];
+  const CHARGE_COUNTS = [2, 3, 4, 5, 8, 10, 15, 20, 25, 50, 100, 200, 500, 1000];
+  const SW_CHARGES = { 2: 55, 3: 20, 4: 11, 5: 6, 6: 4, 7: 2, 8: 2 };   // a SUPER WILD's count = its Fortune Choice Choices
+  const NUDGE_CHIPS = [-3, -5];                 // the base game's CHARGE chips (art: label_nudge3 / 5)
 
-  // Feature buys. Each buy is ONE spin for cost x bet (EX does not apply), settled by settle() exactly like spin():
-  //  - grid: drawn cell by cell from WEIGHTS with SUPER WILD x swBoost (the same lever EX uses), and the whole grid
-  //    is redrawn until the buy's promise holds (rejection sampling, so it is the boosted base-game grid conditioned
-  //    on "a win" / "a SUPER WILD on a winning line");
-  //  - centre: one of `chips`, picked with the base-game MULT_W ratio (NUDGE 3 : NUDGE 5 = 3.6 : 1.3), then a
-  //    uniform random strip index holding that chip, as in spin().
-  // Prices are whole multiples of the bet; swBoost is the single tuning knob that puts the RTP at 96.25%
-  // (exact enumeration of all 9^9 grids + Monte Carlo: node tools/sim_buy.cjs).
-  const BUY = {
-    nudge: { name: "BULL CHARGE", cost: 8, chips: [-3, -5], need: "win", swBoost: 1.16,
-      desc: "A sure win with CHARGE 3 or CHARGE 5 in the centre" },
-    super: { name: "SUPER BULL", cost: 11, chips: [-5], need: "superwin", swBoost: 0.95,
-      desc: "A sure win with CHARGE 5 and a SUPER WILD in the win" },
-  };
+  // ---- tuning (tools/sim_spec.cjs): RTP ~97.0% for the base game, each Extra Bet mode (on its debit) and the Buy ----
+  const TUNE = Object.assign({
+    sw: 0.79,                                   // SUPER WILD symbol weight (base game and every mode)
+    b0: 0.1351,                                 // base game: tilt of the step pool (BASE_STEP x value^-b0)
+    a: [0, 1.1561, 0.9744, 5.107],              // Extra Bet modes: Direct Multiplier pool = value^-a
+    chargeShare: [0, 0.035, 0.03, 0.03],        // share of CHARGE chips among the column draws per mode
+    buyA: 3.7973,                               // buy pool exponent
+    fc: { mult: 0.8, charge: 0.12, choice2: 0.08 },   // Fortune Choice position kinds
+  }, (typeof globalThis !== "undefined" && globalThis.__WB_TUNE) || {});   // tools/tune_spec.cjs overrides
+  const WEIGHTS = { J: 18, Q: 17, K: 16, A: 15, hourglass: 9, sun: 8, chest: 7, wild: 3.2, super_wild: TUNE.sw };
 
   function mulberry32(a) {
     return function () {
@@ -46,25 +47,68 @@
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
   }
-
-  function pick(w, rng) {
-    let tot = 0;
-    for (const k in w) tot += w[k];
-    let r = rng() * tot;
-    for (const k in w) { r -= w[k]; if (r < 0) return k; }
-    return Object.keys(w)[0];
+  // a weight table -> a sampler (cumulative array, binary search)
+  function table(w) {
+    const keys = Object.keys(w).filter((k) => w[k] > 0), vals = keys.map(Number), cum = [];
+    let t = 0; keys.forEach((k) => { t += w[k]; cum.push(t); });
+    const draw = (rng) => { const r = rng() * t; let lo = 0, hi = cum.length - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (cum[m] > r) hi = m; else lo = m + 1; } return vals[lo]; };
+    return { w, vals, total: t, draw, p: (v) => (w[v] || 0) / t };
   }
+  const pow = (values, a) => { const o = {}; values.forEach((v) => (o[v] = Math.pow(v, -a))); return o; };
+  const chargeW = (counts) => pow(counts, 3);   // CHARGE N: weight N^-3, so the big counts are very rare
 
-  // a fixed multiplier strip (deterministic shuffle), so nudges always show real neighbours
-  const STRIP = (function () {
-    const rng = mulberry32(1000), out = [];
-    const counts = { 1: 70, 2: 48, 3: 32, 5: 22, 10: 14, 15: 9, 20: 5, 25: 4, 50: 2, 100: 1, 500: 1, 1000: 1, "-3": 3, "-5": 2 };
-    for (const v in counts) for (let i = 0; i < counts[v]; i++) out.push(+v);
+  // ---- modes: 0 = base game, 1..3 = Extra Bet, "buy" = Buy Bonus ----
+  // col: the column draws (landing chip and every CHARGE action), values > 0 = Direct Multipliers, < 0 = CHARGE N
+  // fc:  Fortune Choice position rewards: share of Direct Multiplier / CHARGE / Choice +2 and their pools
+  // base game: the centre lands with BASE_COL; a CHARGE action / Fortune Choice multiplier draws from BASE_STEP (the
+  // old column strip's mix, where 500x and 1000x sat once in 214 chips: ~12x a step, as the old SUPER WILD nudges)
+  const BASE_COL = { 1: 34, 2: 24, 3: 16, 5: 11, 10: 7, 15: 4.5, 20: 2.6, 25: 1.6, 50: 0.7, 100: 0.25, 500: 0.05, 1000: 0.02, "-3": 3.6, "-5": 1.3 };
+  const BASE_STEP = { 1: 70, 2: 48, 3: 32, 5: 22, 10: 14, 15: 9, 20: 5, 25: 4, 50: 2, 100: 1, 500: 1, 1000: 1 };
+  function modeDef(m) {
+    if (m === 0) {
+      const land = {}; let t = 0;
+      for (const k in BASE_COL) if (+k > 0) { land[k] = BASE_COL[k]; t += BASE_COL[k]; }
+      const mults = {}; for (const k in BASE_STEP) mults[k] = BASE_STEP[k] * Math.pow(+k, -TUNE.b0);
+      return { cost: 1, land, mults, charges: { 3: 3, 5: 2 }, landShare: 4.9 / (t + 4.9), chargeShare: 5 / 214, landCharges: { 3: 3.6, 5: 1.3 } };
+    }
+    const min = [0, 3, 15, 50][m], cmin = [0, 2, 5, 10][m];
+    const mults = pow(MULT_VALUES.filter((v) => v >= min), TUNE.a[m]);
+    return { cost: [1, 1.5, 8, 15][m], land: mults, mults, charges: chargeW(CHARGE_COUNTS.filter((n) => n >= cmin)), chargeShare: TUNE.chargeShare[m] };
+  }
+  function mix(mults, charges, share) {         // mults and CHARGE chips (as -N) mixed: share = CHARGE's part
+    const mt = table(mults), ct = table(charges), o = {};
+    for (const v of mt.vals) o[v] = (1 - share) * mt.p(v);
+    for (const n of ct.vals) o[-n] = share * ct.p(n);
+    return table(o);
+  }
+  function build(def, fcShare) {
+    const mt = table(def.mults), ct = table(def.charges);
+    return Object.assign(def, { mt, ct, colT: mix(def.mults, def.charges, def.chargeShare),
+      landT: mix(def.land || def.mults, def.landCharges || def.charges, def.landShare === undefined ? def.chargeShare : def.landShare),
+      fc: fcShare || TUNE.fc });
+  }
+  const MODES = [0, 1, 2, 3].map((m) => build(modeDef(m)));
+  const BUY_POOL = [25, 50, 100, 200, 500, 1000];
+  const BUYM = build({ cost: 100, mults: pow(BUY_POOL, TUNE.buyA), charges: chargeW(CHARGE_COUNTS), chargeShare: 0.03 });
+  BUYM.choices = table({ 1: 40, 2: 35, 3: 18, 4: 7 });   // the initial Choice count
+  const BUY = { bonus: { name: "FORTUNE CHOICE", cost: BUYM.cost,
+    desc: "Fortune Choice at once: a 25x-1000x start, then 1-4 picks. Pays bet x Bonus Total" } };
+  const EX_COST = MODES[1].cost;
+
+  // ---- the visual column strip of each mode: every allowed value at least once, in proportion otherwise ----
+  // (a deterministic shuffle; the engine's draws are independent, the game re-skins the next chip to the drawn value)
+  function stripOf(mode, seed) {
+    const rng = mulberry32(seed), out = [], L = 220;
+    for (const v of mode.colT.vals) { const n = Math.max(1, Math.round(mode.colT.p(v) * L)); for (let i = 0; i < n; i++) out.push(v); }
+    for (const v of mode.landT.vals) if (!out.includes(v)) out.push(v);
     for (let i = out.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [out[i], out[j]] = [out[j], out[i]]; }
     return out;
-  })();
+  }
+  const STRIPS = MODES.map((md, m) => stripOf(md, 1000 + m));
+  STRIPS.buy = stripOf(BUYM, 1999);
   const STRIP_BY = {};
-  STRIP.forEach((v, i) => (STRIP_BY[v] = STRIP_BY[v] || []).push(i));
+  for (const k of [0, 1, 2, 3, "buy"]) { const by = {}; STRIPS[k].forEach((v, i) => (by[v] = by[v] || []).push(i)); STRIP_BY[k] = by; }
+  let curMode = 0;                              // the mode whose strip Engine.STRIP shows (the game sets it)
 
   function evalLines(grid) {
     const wins = [];
@@ -72,83 +116,109 @@
       const cells = rows.map((r, reel) => grid[reel][r]);
       const base = cells.find((s) => !WILDS.has(s));
       const sym = base || "wild";
-      if (cells.every((s) => s === sym || WILDS.has(s))) {
-        wins.push({ line: li + 1, sym, rows, pay: PAY[sym] * PAY_SCALE, supers: cells.filter((s) => s === "super_wild").length });
-      }
+      if (cells.every((s) => s === sym || WILDS.has(s))) wins.push({ line: li + 1, sym, rows, pay: PAY[sym] * PAY_SCALE, supers: cells.filter((s) => s === "super_wild").length });
     });
     return wins;
+  }
+  const swT = table(SW_CHARGES);
+  const modeOf = (ex) => (ex === true ? 1 : ex === "buy" ? "buy" : Math.max(0, Math.min(3, ex | 0)));
+  const MD = (m) => (m === "buy" ? BUYM : MODES[m]);
+  const stripIndex = (m, v, rng) => { const c = STRIP_BY[m][v]; return c[Math.floor(rng() * c.length)]; };
+
+  // one CHARGE run of n actions: each action draws from the mode's column; returns the drawn values and their sum.
+  // room = how much may still be added before the cap (in multiplier units for this run)
+  function chargeRun(md, n, rng, room) {
+    const vals = []; let actions = n, sum = 0, capped = false;
+    while (actions > 0 && vals.length < MAX_ACTIONS) {
+      const v = md.colT.draw(rng); vals.push(v); actions--;
+      if (v < 0) actions += -v;
+      else { sum += v; if (sum >= room) { sum = room; capped = true; break; } }
+    }
+    return { vals, sum, capped };
+  }
+
+  // Fortune Choice: choices0 Choices on 9 fresh positions; per = the line win (0 for the buy: Bonus Total is paid on
+  // the bet); room = Bonus Total headroom under the cap. Returns the board, every pick and the Bonus Total.
+  function fortuneChoice(md, choices0, rng, room) {
+    // the 9 rewards: the kind by its share, then the value from that kind's pool
+    const board = [], kt = table({ 0: md.fc.mult, 1: md.fc.charge, 2: md.fc.choice2 });
+    for (let i = 0; i < 9; i++) {
+      const k = kt.draw(rng);
+      board[i] = k === 0 ? { t: "mult", v: md.mt.draw(rng) } : k === 1 ? { t: "charge", n: md.ct.draw(rng) } : { t: "choice2" };
+    }
+    const active = board.map((_, i) => i), picks = [];
+    let choices = Math.min(9, choices0), bonus = 0, capped = false;
+    while (choices > 0 && active.length && !capped) {
+      // Choice +2 is allowed only when (Choices left after this one) + 2 <= positions left after this one
+      const ok = active.filter((i) => board[i].t !== "choice2" || (choices - 1) + 2 <= active.length - 1);
+      if (!ok.length) break;
+      const pos = ok[Math.floor(rng() * ok.length)];
+      active.splice(active.indexOf(pos), 1); choices--;
+      const b = board[pos], pick = { pos, t: b.t };
+      if (b.t === "mult") { pick.v = Math.min(b.v, room - bonus); bonus += pick.v; capped = bonus >= room; }
+      else if (b.t === "charge") { const run = chargeRun(md, b.n, rng, room - bonus); pick.n = b.n; pick.vals = run.vals; pick.sum = run.sum; bonus += run.sum; capped = run.capped || bonus >= room; }
+      else { choices += 2; pick.add = 2; }
+      picks.push(pick);
+    }
+    return { choices0: Math.min(9, choices0), board, picks, bonus, capped };
+  }
+
+  // shared settlement: lines, main multiplier (centre chip + its CHARGE run), natural Fortune Choice, cap
+  function settle(grid, multIndex, bet, stake, rng, mode) {
+    rng = rng || Math.random;
+    const m = mode === undefined ? curMode : mode, md = MD(m), strip = STRIPS[m];
+    const mv = strip[((multIndex % strip.length) + strip.length) % strip.length];
+    const lines = evalLines(grid);
+    const base = lines.reduce((a, l) => a + l.pay, 0);
+    const superCells = new Set();                // a SUPER WILD counts once even on several winning lines
+    lines.forEach((l) => l.rows.forEach((r, reel) => { if (grid[reel][r] === "super_wild") superCells.add(reel * 3 + r); }));
+    const superCharges = {};
+    grid.forEach((col, reel) => col.forEach((s, row) => { if (s === "super_wild") superCharges[reel * 3 + row] = swT.draw(rng); }));
+    const superSteps = base > 0 ? [...superCells].reduce((a, c) => a + superCharges[c], 0) : 0;
+    const roomX = base > 0 ? MAX_WIN / base : 0;                         // multiplier headroom under the cap
+    // main multiplier
+    let mult = mv > 0 ? mv : 0, nudges = [], chipSteps = 0, capped = false;
+    if (base > 0 && mv < 0) { chipSteps = -mv; const run = chargeRun(md, chipSteps, rng, roomX); nudges = run.vals; mult = run.sum; capped = run.capped; }
+    mult = Math.max(1, Math.min(mult, roomX || mult));
+    if (base > 0 && mult >= roomX) capped = true;
+    // natural Fortune Choice (same mode and pools)
+    let fc = null, bonus = 0;
+    if (superSteps > 0 && !capped) { fc = fortuneChoice(md, superSteps, rng, roomX - mult); bonus = fc.bonus; capped = fc.capped; }
+    const mainX = base * mult, bonusX = base * bonus;
+    let totalX = mainX + bonusX;
+    if (totalX >= MAX_WIN - 1e-9) { totalX = MAX_WIN; capped = true; }
+    return {
+      mode: m, grid, multIndex, startMult: mv, nudges, mult: mult + bonus, mainMult: mult, lines, superCells: [...superCells], superCharges, superSteps, chipSteps, fc, bonus,
+      baseX: base, mainX, bonusX, totalX, capped, stake, win: round2(totalX * bet), baseWin: round2(base * bet), mainWin: round2(mainX * bet), bonusWin: round2(bonusX * bet),
+    };
   }
 
   function spin(bet, ex, rng) {
     rng = rng || Math.random;
-    const w = Object.assign({}, WEIGHTS);
-    if (ex) w.super_wild *= EX_BOOST;
-    const grid = [0, 1, 2].map(() => [0, 1, 2].map(() => pick(w, rng)));
-    const mw = Object.assign({}, MULT_W);
-    if (ex) { mw["-3"] *= NUDGE_EX; mw["-5"] *= NUDGE_EX; }
-    const mv = +pick(mw, rng);
-    const choices = STRIP_BY[mv];
-    const multIndex = choices[Math.floor(rng() * choices.length)];
-    return settle(grid, multIndex, bet, bet * (ex ? EX_COST : 1), rng);
+    const m = modeOf(ex), md = MD(m);
+    const grid = [0, 1, 2].map(() => [0, 1, 2].map(() => pickSym(rng)));
+    const mv = md.landT.draw(rng);
+    return settle(grid, stripIndex(m, mv, rng), bet, bet * md.cost, rng, m);
   }
+  // symbols have names, so they get their own sampler (table() is for numeric keys)
+  const symCum = (() => { let t = 0; return SYMBOLS.map((s) => (t += WEIGHTS[s])); })(), symTot = symCum[symCum.length - 1];
+  function pickSym(rng) { const r = rng() * symTot; for (let i = 0; i < symCum.length; i++) if (r < symCum[i]) return SYMBOLS[i]; return SYMBOLS[0]; }
 
-  // a bought spin (see BUY): same round shape as spin(), plus `bought: kind`; `ex` is ignored
+  // Buy Bonus: Fortune Choice at once. Bonus Total = starting multiplier + every pick; paid on the bet.
   function buySpin(kind, bet, ex, rng) {
-    const cfg = BUY[kind];
-    if (!cfg) throw new Error("Engine.buySpin: unknown buy " + kind);
     rng = rng || Math.random;
-    const w = Object.assign({}, WEIGHTS);
-    w.super_wild *= cfg.swBoost;
-    let grid = null;
-    for (let tries = 0; !grid; tries++) {
-      if (tries > 1e6) throw new Error("Engine.buySpin: the rng never met the condition");
-      const g = [0, 1, 2].map(() => [0, 1, 2].map(() => pick(w, rng)));
-      const lines = evalLines(g);
-      if (cfg.need === "superwin" ? lines.some((l) => l.supers > 0) : lines.length > 0) grid = g;
-    }
-    const mw = {};
-    cfg.chips.forEach((v) => (mw[v] = MULT_W[v]));
-    const mv = +pick(mw, rng);
-    const choices = STRIP_BY[mv];
-    const multIndex = choices[Math.floor(rng() * choices.length)];
-    const r = settle(grid, multIndex, bet, cfg.cost * bet, rng);
-    r.bought = kind;
-    return r;
-  }
-
-  // shared settlement (spin + buySpin): lines, SUPER WILD / NUDGE chip nudges, multiplier, max-win cap
-  function settle(grid, multIndex, bet, stake, rng) {
-    const mv = STRIP[multIndex];
-    const lines = evalLines(grid);
-    const base = lines.reduce((a, l) => a + l.pay, 0);
-    // a SUPER WILD counts once even if it sits on several winning lines
-    const superCells = new Set();
-    lines.forEach((l) => l.rows.forEach((r, reel) => { if (grid[reel][r] === "super_wild") superCells.add(reel * 3 + r); }));
-    const superCharges = {};                                     // white: every SUPER WILD on the grid has its own count
-    grid.forEach((col, reel) => col.forEach((s, row) => { if (s === "super_wild") superCharges[reel * 3 + row] = +pick(SW_CHARGES, rng || Math.random); }));
-    const superSteps = base > 0 ? [...superCells].reduce((a, c) => a + superCharges[c], 0) : 0;
-    const chipSteps = base > 0 && mv < 0 ? -mv : 0;
-    let steps = superSteps + chipSteps;
-    const nudges = [];
-    let idx = multIndex, mult = mv > 0 ? mv : 0;
-    for (let k = 0; k < steps && k < MAX_STEPS; k++) {
-      idx = (idx + 1) % STRIP.length;
-      const v = STRIP[idx];
-      nudges.push(v);
-      if (v < 0) steps += -v; else mult += v;
-    }
-    mult = Math.max(1, mult);
-    let totalX = base * mult;
-    const capped = totalX > MAX_WIN;
-    if (capped) totalX = MAX_WIN;
+    const room = MAX_WIN, start = Math.min(BUYM.mt.draw(rng), room);
+    const fc = fortuneChoice(BUYM, BUYM.choices.draw(rng), rng, room - start);
+    fc.start = start;
+    const totalX = Math.min(MAX_WIN, start + fc.bonus), multIndex = stripIndex("buy", start, rng);
     return {
-      grid, multIndex, startMult: mv, nudges, mult, lines, superCells: [...superCells], superCharges, superSteps, chipSteps,
-      baseX: base, totalX, capped, stake, win: round2(totalX * bet), baseWin: round2(base * bet),
+      mode: "buy", bought: "bonus", grid: null, multIndex, startMult: start, nudges: [], mult: totalX, mainMult: 0, lines: [], superCells: [], superCharges: {}, superSteps: 0,
+      chipSteps: 0, fc, bonus: totalX, baseX: 0, mainX: 0, bonusX: totalX, totalX, capped: totalX >= MAX_WIN || fc.capped, stake: BUYM.cost * bet,
+      win: round2(totalX * bet), baseWin: 0, mainWin: 0, bonusWin: round2(totalX * bet),
     };
   }
 
   function round2(v) { return Math.round(v * 100) / 100; }
-
   function tier(x) {
     if (x >= MAX_WIN) return "max";
     if (x >= 100) return "epic";
@@ -158,8 +228,9 @@
     return x > 0 ? "small" : "none";
   }
 
-  // demo search: a seed whose round matches a kind (for the DEMO keys and QA)
+  // demo / QA search: a seed whose round matches a kind
   function findRound(kind, bet, ex, start) {
+    const m = modeOf(ex), strip = STRIPS[m];
     for (let s = start || 1; s < (start || 1) + 2000000; s++) {
       const r = spin(bet, ex, mulberry32(s));
       const t = tier(r.totalX);
@@ -167,24 +238,30 @@
         nowin: r.totalX === 0,
         win: t === "small",
         wild: r.lines.some((l) => l.rows.some((row, reel) => r.grid[reel][row] === "wild")) && t === "small",
-        superwild: r.nudges.length > 0,
-        nudge4: r.nudges.length >= 4,
+        superwild: !!r.fc,
+        fc: !!r.fc, fcchoice: !!r.fc && r.fc.picks.some((p) => p.t === "choice2"), fccharge: !!r.fc && r.fc.picks.some((p) => p.t === "charge"),
+        nudge4: r.nudges.length >= 4 || (!!r.fc && r.fc.picks.length >= 4),
         big: t === "big", mega: t === "mega", super: t === "super", epic: t === "epic", max: t === "max",
         tease: r.totalX === 0 && r.grid[0].concat(r.grid[1]).filter((x) => WILDS.has(x)).length >= 2,
         m1000: r.startMult === 1000 && r.baseX > 0,
-        halo: r.nudges.length === 0 && r.mult >= 100 && r.baseX > 0 && r.win >= r.stake,      // a 100x+ throw: the halo wheel plays
+        halo: r.nudges.length === 0 && !r.fc && r.mult >= 100 && r.baseX > 0 && r.win >= r.stake,
         nudgechip: r.chipSteps > 0 && r.totalX < 100,
         nudgechain: r.nudges.some((v) => v < 0),
+        longrun: r.nudges.length > 26 || (!!r.fc && r.fc.picks.some((p) => p.vals && p.vals.length > 26)),
+        fcbig: !!r.fc && r.fc.picks.length >= 5,
         nudgetease: r.startMult < 0 && r.baseX === 0,
-        clash: r.nudges.length === 0 && r.startMult >= 5 && r.baseX > 0 && STRIP[(r.multIndex + 1) % STRIP.length] > r.startMult,
+        clash: r.nudges.length === 0 && !r.fc && r.startMult >= 5 && r.baseX > 0 && strip[(r.multIndex + 1) % strip.length] > r.startMult,
       }[kind];
       if (ok) return { seed: s, round: r };
     }
     return null;
   }
 
-  const api = { SYMBOLS, WILDS, PAY, WEIGHTS, LINES, MULT_VALUES, STRIP, NUDGES, SW_CHARGES, EX_COST, MAX_WIN,
-    EX_BOOST, NUDGE_EX, NUDGE_CHIPS, mulberry32, spin, tier, findRound, evalLines, payOf: (s) => PAY[s] * PAY_SCALE,
-    BUY, buySpin, settle, MULT_W, MAX_STEPS };
+  const api = { SYMBOLS, WILDS, PAY, WEIGHTS, LINES, MULT_VALUES, CHARGE_COUNTS, SW_CHARGES, NUDGE_CHIPS, MAX_WIN, MAX_ACTIONS,
+    MODES, BUY, BUYM, BUY_POOL, STRIPS, EX_COST, TUNE, NUDGES: 2, EX_BOOST: 1, NUDGE_EX: 1,
+    mulberry32, spin, buySpin, settle, fortuneChoice, chargeRun, tier, findRound, evalLines, payOf: (s) => PAY[s] * PAY_SCALE,
+    setMode: (m) => { curMode = modeOf(m); return curMode; }, mode: () => curMode, modeOf, stripOf: (m) => STRIPS[modeOf(m)],
+    MULT_W: BASE_COL, MAX_STEPS: MAX_ACTIONS };
+  Object.defineProperty(api, "STRIP", { get: () => STRIPS[curMode], enumerable: true });
   if (typeof module !== "undefined") module.exports = api; else root.Engine = api;
 })(typeof window !== "undefined" ? window : globalThis);

@@ -228,14 +228,30 @@ GX.plugin(function (ctx) {
     c.glow = glow; c.face = face; c.dimL = dim; c.v = v;
     return c;
   }
-  const coinOf = (v, parent) => (v < 0 ? chargeCoin(v, parent) : makeCoin(v, parent));
+  // spec Fortune Choice: a Choice +2 position = a green chip with "+2 CHOICES"
+  function choiceCoin(parent) {
+    const c = new PIXI.Container(); parent.addChild(c);
+    const glow = sp(FX.tex.glow, c); glow.blendMode = ADD; glow.tint = 0x9be060; glow.alpha = 0; glow.scale.set(1.25);
+    const face = sp(ctx.T("Multipliers/chip_bg_3"), c); sp(ctx.T("Multipliers/chip_rim"), c);
+    const t = new PIXI.Text("+2", FX.gold(70, { fill: ["#F4FFE6", "#C8F58A", "#4E9A18"], strokeThickness: 7 })); t.anchor.set(0.5); t.y = -12; c.addChild(t);
+    const l = new PIXI.Text("CHOICES", FX.gold(24, { strokeThickness: 4 })); l.anchor.set(0.5); l.y = 36; c.addChild(l);
+    const dim = sp(ctx.T("Multipliers/chip_bg_3"), c); dim.tint = 0x000000; dim.alpha = 0;
+    c.glow = glow; c.face = face; c.dimL = dim; c.v = "c2";
+    return c;
+  }
+  const coinOf = (v, parent) => (v === "c2" ? choiceCoin(parent) : v < 0 ? chargeCoin(v, parent) : makeCoin(v, parent));
+  // a picked position is spent: it stays on the wheel, dark and small (spec: positions never refill)
+  function spend(c) { c.used = true; gsap.to(c, { alpha: 0.42, duration: 0.3 }); if (c.dimL) gsap.to(c.dimL, { alpha: 0.55, duration: 0.3 }); gsap.to(c.glow, { alpha: 0, duration: 0.2 }); }
   function shLight(idx) {
     if (!SH) return;
+    const cs = SH.cs || 0.72;
     SH.coins.forEach((c, i) => {
+      if (c.used && i !== idx) { gsap.to(c.scale, { x: cs * 0.78, y: cs * 0.78, duration: 0.08 }); return; }
       const on = i === idx, rest = idx < 0;
       gsap.to(c.dimL, { alpha: rest || on ? 0 : 0.42, duration: 0.06 });
       gsap.to(c.glow, { alpha: on ? 0.95 : 0, duration: 0.06 });
-      gsap.to(c.scale, { x: on ? 0.9 : rest ? 0.72 : 0.68, y: on ? 0.9 : rest ? 0.72 : 0.68, duration: 0.08, ease: "power2.out" });
+      const k = on ? cs * 1.25 : rest ? cs : cs * 0.94;
+      gsap.to(c.scale, { x: k, y: k, duration: 0.08, ease: "power2.out" });
     });
     if (idx >= 0) sfx("tick");
   }
@@ -243,7 +259,7 @@ GX.plugin(function (ctx) {
     if (SH) { resolve(); return; }
     try {
       const turbo = !!ctx.S.turbo, H = headPos(), RX = 232, RY = 188, CX = H.x, CY = Math.max(H.y + 62, 46 + RY);
-      const vals = (d.vals || [1]).slice(0, 7), N = vals.length;
+      const vals = (d.vals || [1]).slice(0, 9), N = vals.length, CS = N > 7 ? 0.6 : 0.72;   // spec: 9 positions
       const back = new PIXI.Container(); back.position.set(CX, CY); back.scale.set(0.2); back.alpha = 0;
       layers.bullL.addChildAt(back, 0);
       const rays = sp(FX.tex.burst, back); rays.blendMode = ADD; rays.tint = 0xffb040; rays.alpha = 0.3; rays.scale.set(2.2);
@@ -272,7 +288,7 @@ GX.plugin(function (ctx) {
         }
         P.update(Math.min(0.05, dr / 60));
       };
-      me = SH = { back, front, coins, P, st, slot, CX, CY, RX, RY, pointer, tick, rel, N };
+      me = SH = { back, front, coins, P, st, slot, CX, CY, RX, RY, pointer, tick, rel, N, cs: CS };
       gsap.ticker.add(tick);
       const tl = gsap.timeline({ onComplete: resolve }); tl.timeScale(turbo ? 2 : 1);
       tl.to(back, { alpha: 1, duration: 0.2 }, 0).to(back.scale, { x: 1, y: 1, duration: 0.45, ease: "back.out(1.5)" }, 0)
@@ -281,7 +297,7 @@ GX.plugin(function (ctx) {
         tl.call(() => {
           const from = { x: ctx.COL_CX, y: ctx.COL_CY }, mid = { x: (from.x + slot(c).x) / 2 + rnd(-80, 80), y: Math.min(from.y, slot(c).y) - 160 };
           const pr = { t: 0 };
-          gsap.to(c.scale, { x: 0.72, y: 0.72, duration: 0.3, ease: "back.out(2)" });
+          gsap.to(c.scale, { x: CS, y: CS, duration: 0.3, ease: "back.out(2)" });
           gsap.to(pr, { t: 1, duration: 0.45, ease: "power2.inOut", onUpdate: () => {
             const q = FX.bezier(from, mid, slot(c), pr.t); c.position.set(q.x, q.y);
             if (Math.random() < 0.6 * M + 0.2) P.emit({ tex: FX.tex.dot, x: q.x, y: q.y, s0: 0.35, s1: 0, life: 0.3, tint: 0xffd060, blend: ADD });
@@ -295,12 +311,13 @@ GX.plugin(function (ctx) {
     if (!SH) { resolve(); return; }
     try {
       const S2 = SH, turbo = !!ctx.S.turbo, v = d.v, st = S2.st;
-      // a coin of this value; none -> the coin furthest from the pointer quietly becomes one
-      let idx = S2.coins.findIndex((c) => c.v === v);
+      // spec Fortune Choice: the engine names the position (d.pos). Else a coin of this value; none -> the coin
+      // furthest from the pointer quietly becomes one
+      let idx = d.pos !== undefined && S2.coins[d.pos] ? d.pos : S2.coins.findIndex((c) => c.v === v && !c.used);
       if (idx < 0) {
         let far = 0, fd = -1;
         S2.coins.forEach((c, i) => { const a = Math.abs(Math.atan2(Math.sin(c.ang + st.rot + Math.PI / 2), Math.cos(c.ang + st.rot + Math.PI / 2))); if (a > fd) { fd = a; far = i; } });
-        const old = S2.coins[far], nc = coinOf(v, S2.front); nc.ang = old.ang; nc.seated = true; nc.scale.set(0.72); nc.position.copyFrom(old.position);
+        const old = S2.coins[far], nc = coinOf(v, S2.front); nc.ang = old.ang; nc.seated = true; nc.scale.set(S2.cs || 0.72); nc.position.copyFrom(old.position);
         S2.coins[far] = nc; kill(old); idx = far;
       }
       const c = S2.coins[idx];
@@ -322,8 +339,9 @@ GX.plugin(function (ctx) {
         .to(st, { rot: target, duration: 1.2, ease: "power3.out" }, 0.12)
         .call(() => {
           st.selecting = false; st.lit = idx; shLight(idx);
-          gsap.fromTo(c.scale, { x: 1.4, y: 1.4 }, { x: 1.05, y: 1.05, duration: 0.3, ease: "back.out(2.4)" });
-          ctx.starFlash(c.x, c.y, 1.3, 0xfff2c0); ctx.ringAt(c.x, c.y, v < 0 ? 0xc070ff : 0xffd060, 2.0, 0.35); ctx.burstAt(c.x, c.y, 0xffd060, Math.round(16 * M));
+          const pk = (S2.cs || 0.72) / 0.72;
+          gsap.fromTo(c.scale, { x: 1.4 * pk, y: 1.4 * pk }, { x: 1.05 * pk, y: 1.05 * pk, duration: 0.3, ease: "back.out(2.4)" });
+          ctx.starFlash(c.x, c.y, 1.3, 0xfff2c0); ctx.ringAt(c.x, c.y, v === "c2" ? 0x9be060 : v < 0 ? 0xc070ff : 0xffd060, 2.0, 0.35); ctx.burstAt(c.x, c.y, 0xffd060, Math.round(16 * M));
           sfx("impact", true); ctx.hitStop && ctx.hitStop(40);
         }, null, 1.34)
       // a copy of the coin flies into the total; the wheel's coin stays for later picks
@@ -333,7 +351,7 @@ GX.plugin(function (ctx) {
           gsap.to(pr, { t: 1, duration: 0.36, ease: "power2.in", onUpdate: () => { const q = FX.bezier(g, mid, to, pr.t); f.position.set(q.x, q.y); f.scale.set(1.05 - 0.55 * pr.t); },
             onComplete: () => { ctx.ringAt(to.x, to.y, 0xffd060, 1.4, 0.3); ctx.flashAt(to.x, to.y, 0xfff0c0, 0.9, 0.18); kill(f); } });
         }, null, 1.6)
-        .call(() => { st.whip = false; shLight(-1); }, null, 1.95)
+        .call(() => { st.whip = false; spend(c); shLight(-1); }, null, 1.95)
         .to({}, { duration: 0.01 }, 1.97);
     } catch (e) { console.warn("gx superHaloPick", e); resolve(); }
   }));

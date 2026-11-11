@@ -496,7 +496,7 @@
   const CB = { k: 0.57, wx: 0.6, wy: -34.9, ww: 137.6, wh: 82.8, dk: 0.42 };
   // WHITE VERSION (user 2026-11-11: "multiplier chips equal or upper 25 should have a glowing or burning frame so they will
   // be visible during the scroll"): a soft fire glow behind the chip and a hot rim line over it, tinted per value
-  const HOT_COL = { 25: 0xff7a14, 50: 0xff5a10, 100: 0xff3a10, 500: 0xff6a08, 1000: 0xffa020 };
+  const HOT_COL = { 25: 0xff7a14, 50: 0xff5a10, 100: 0xff3a10, 200: 0xff4a0c, 500: 0xff6a08, 1000: 0xffa020 };
   const hotChips = [];
   const hotTex = (() => { let tx = null; return () => {
     if (tx) return tx;
@@ -587,7 +587,7 @@
           .to(this.cbChev, { y: -CB.wh, alpha: 0.6, duration: 0.26, ease: "power2.in" })                   // chevrons fly up
           .fromTo(this.cbGlow, { alpha: 0.9 }, { alpha: 0, duration: 0.5 }, 0)
           .to(this.cbNum, { y: 0, duration: 0.34, ease: "back.out(2)" }, 0.12)                              // the count rolls in
-          .to(cnt, { v: n, duration: 0.12 * Math.max(0, n - 1), ease: "none", onUpdate: () => {
+          .to(cnt, { v: n, duration: Math.min(1.4, 0.12 * Math.max(0, n - 1)), ease: "none", onUpdate: () => {
             const k = Math.round(cnt.v); if (k !== shown) { shown = k; this.chargeDigits(k); gsap.fromTo(this.cbNum.scale, { x: 1.25, y: 1.25 }, { x: 1, y: 1, duration: 0.11 }); }
           } }, 0.4)
           .fromTo(this.cbNum.scale, { x: 1.6, y: 1.6 }, { x: 1, y: 1, duration: 0.32, ease: "back.out(3)" })
@@ -609,7 +609,7 @@
     return { bx: m(CHIP_SMALL.bx, CHIP_BIG.bx), by: m(CHIP_SMALL.by, CHIP_BIG.by), l: m(CHIP_SMALL.l, CHIP_BIG.l) };
   }
   function chipBgTex(v) { return COINS && v > 0 ? T(`Multipliers/coin_${v}`) : T(`Multipliers/chip_bg_${v < 0 ? (V2ART && v === -5 ? "nudge5" : "nudge") : v}`); }
-  function chipLabelTex(v) { return T(`Multipliers/label_${v < 0 ? "nudge" + -v : v + "x"}`); }
+  function chipLabelTex(v) { return T(`Multipliers/label_${v < 0 ? "nudge" + (v === -3 ? 3 : 5) : v + "x"}`); }
 
   // ---------- procedural fire (GPU): flames licking up around a rounded rect ----------
   const FIRE_VERT = `
@@ -866,11 +866,12 @@
       make: () => new SymView(c, REEL_CX[r]),
       rand: () => { const s = Engine.SYMBOLS; const w = Engine.WEIGHTS; let t = 0; for (const k of s) t += w[k] + 2; let x = Math.random() * t; for (const k of s) { x -= w[k] + 2; if (x < 0) return k; } return "J"; } });
   });
+  const colQ = [];                                   // white (spec): chips queued to slide in next (colPlan)
   const colBlur = new PIXI.BlurFilter(0, MOBILE ? 2 : 4); colBlur.blurX = 0; colBlur.blurY = 0;
   const colReel = new Reel({ rows: 7, pitch: COL_P, y0: COL_Y0, vmax: 40, vNormal: 40, vTurbo: 52, accel: 400, stopDur: 0.62, stopFast: 0.22,
     masks: [[colBack, maskRect(TRAY[0], TRAY[1], TRAY[2], TRAY[3])], [colFront, maskRect(TRAY[0] - 30, TRAY[1], TRAY[2] + 30, TRAY[3])]],
     make: () => new ChipView(), rand: () => Math.floor(Math.random() * Engine.STRIP.length),
-    above: (i) => (i + 1) % Engine.STRIP.length,
+    above: (i) => (colQ.length ? colQ.shift() : (i + 1) % Engine.STRIP.length),
     onSpeed: (s) => { const b = Math.max(0, (s - 6) * 0.6); colBlur.blurY = b; colBack.filters = colFront.filters = b > 0.5 ? [colBlur] : null; } });
   const stripAt = (c, k) => (c + k + Engine.STRIP.length * 4) % Engine.STRIP.length;
   const colIds = (c) => [4, 3, 2, 1, 0, -1, -2, -3, -4].map((k) => stripAt(c, k));
@@ -926,8 +927,9 @@
   spinBody.on("pointertap", () => onSpinPress());
   let arrowSpeed = 0.35;
 
-  const S = { balance: 10000000, betIdx: 2, ex: false, turbo: false, auto: 0, state: "boot", lastWin: 0 };
-  const stake = () => BETS[S.betIdx] * (S.ex ? Engine.EX_COST : 1);
+  const S = { balance: 10000000, betIdx: 2, ex: false, exMode: 1, turbo: false, auto: 0, state: "boot", lastWin: 0 };
+  const stake = () => BETS[S.betIdx] * (S.ex ? Engine.MODES[S.exMode || 1].cost : 1);   // white (spec): the mode's debit
+  const exArg = () => (S.ex ? S.exMode || 1 : 0);
 
   ui.autoplay = button("autoplay", ...centre("autoplay"), () => toggleAuto(), "autoplay_shadow");
   ui.turbo = button("turbo", ...centre("turbo"), () => toggleTurbo(), "turbo_shadow");
@@ -993,7 +995,7 @@
   }
   function drawBet() {
     betTxt.text = FX.money(stake(), 0);
-    exBetTag.visible = S.ex; exBetTag.x = 540 + betTxt.width / 2 + 18;
+    exBetTag.visible = S.ex; exBetTag.text = "EX" + (S.exMode || 1); exBetTag.x = 540 + betTxt.width / 2 + 18;
   }
   function tickClock() { const d = new Date(); clockTxt.text = d.toTimeString().slice(0, 8); }
   setInterval(tickClock, 1000); tickClock(); drawBalance(); drawBet();
@@ -1082,7 +1084,7 @@
   }
   function toggleEx() {
     if (S.state !== "idle") return;
-    S.ex = !S.ex; drawBet(); exSwitchDraw();
+    S.ex = !S.ex; drawBet(); exSwitchDraw(); exModeSync();
     gsap.to(ui.ex.aura, { alpha: S.ex ? 0.55 : 0, duration: 0.3 });
     gsap.to(exRing, { alpha: S.ex ? 0.5 : 0, duration: 0.3 });
     gsap.to(exTag, { alpha: S.ex ? 1 : 0, duration: 0.3 });
@@ -1094,14 +1096,16 @@
   // make the columns narrow, remove the leafs, add the symbols in the text parts", "ex text but in a frame that is
   // connected to the switcher"). Art = Codex parts with no text (art_src/ex_popup_jobs.py -> tools/ex_popup_assets.py
   // -> assets/UI/exp_*, ex_switch_*); every word and number here is live text. Spliced in by tools/port_from_stone.py.
-  // The three modes follow the product spec "Fortune Guardian 1000 - Buy Bonus and Extra Bet" v1.0 (1.5x / 8x / 15x
-  // Base Bet). Only mode 1 exists in the engine today, and with the engine's own rule, so 2 and 3 are shown LOCKED.
-  // A rule row = [icon, text]; icons: "super", "wild", "charge", a multiplier value (its chip) or null (a gold bullet).
+  // The three modes are the product spec "Fortune Guardian 1000 - Buy Bonus and Extra Bet" v1.0, all live since the
+  // white engine follows it (tools/white_engine.js; user 2026-11-11: "make the popup Soon feature in EX active again",
+  // "adapt the game to it"): debit 1.5x / 8x / 15x Base Bet, each mode restricts the column's multipliers and CHARGE
+  // counts; wins are paid on the base bet. A rule row = [icon, text]; icons: "super", "wild", "charge", a multiplier
+  // value (its chip) or null (a gold bullet).
+  const MC = (m) => Engine.MODES[m].cost;
   const EX_MODES = [
-    { cost: Engine.EX_COST, art: "red", live: true,
-      rows: [["super", `SUPER WILD lands ${Engine.EX_BOOST}x more often`], ["charge", `CHARGE chips land ${Engine.NUDGE_EX}x more often`], [null, "Wins are paid on the base bet"]] },
-    { cost: 8, art: "amber", live: false, rows: [[15, "Multipliers are 15x or higher"], ["charge", "CHARGE counts are 5 or higher"]] },
-    { cost: 15, art: "purple", live: false, rows: [[50, "Multipliers are 50x or higher"], ["charge", "CHARGE counts are 10 or higher"]] },
+    { cost: MC(1), art: "red", live: true, rows: [[3, "Multipliers are 3x or higher"], ["charge", "CHARGE counts are 2 or higher"], [null, "Wins are paid on the base bet"]] },
+    { cost: MC(2), art: "amber", live: true, rows: [[15, "Multipliers are 15x or higher"], ["charge", "CHARGE counts are 5 or higher"], [null, "Wins are paid on the base bet"]] },
+    { cost: MC(3), art: "purple", live: true, rows: [[50, "Multipliers are 50x or higher"], ["charge", "CHARGE counts are 10 or higher"], [null, "Wins are paid on the base bet"]] },
   ];
   // ---- the switch (replaces the round EX button's art): a pill with a name plate fused on top, "EX" written in the plate ----
   const EX_SW = 196 / 176;                                             // art is 176 x 95: plate centre y 15, pill centre y 59
@@ -1118,6 +1122,7 @@
   const exState = new PIXI.Text("OFF", FX.plain(22, "#ffe9c0", { stroke: "#2a0606", strokeThickness: 4, dropShadowDistance: 1 })); exState.anchor.set(0.5); ui.ex.body.addChild(exState);
   function exSwitchDraw() {
     ui.ex.spr.texture = T(S.ex ? "UI/ex_switch_on" : "UI/ex_switch_off");
+    exTag.text = "x" + MC(S.exMode || 1) + " BET";                  // the chosen mode's debit
     exState.text = S.ex ? "ON" : "OFF"; exState.position.set(S.ex ? -34 : 36, 1); exState.style.fill = S.ex ? "#ffffff" : "#ffe9c0";
     gsap.fromTo(ui.ex.spr.scale, { x: EX_SW * 1.1, y: EX_SW * 0.92 }, { x: EX_SW, y: EX_SW, duration: 0.3, ease: "back.out(3)" });
   }
@@ -1125,6 +1130,15 @@
   function exPress() {                                                 // ON -> switch off at once; OFF -> choose a mode first
     if (S.state !== "idle") return;
     if (S.ex) toggleEx(); else exBet.open();
+  }
+  // the engine's mode (and the column's chips) follow the switch: 0 off, else the chosen Extra Bet mode
+  function exModeSync(flash) {
+    const m = S.ex ? (S.exMode || 1) : 0;
+    if (Engine.mode() === m && !flash) return;
+    Engine.setMode(m);
+    colC = Math.floor(Math.random() * Engine.STRIP.length); colReel.setSyms(colIds(colC));
+    colReel.views.forEach((v) => { if (v.flash) gsap.fromTo(v.flash, { alpha: 0.8 }, { alpha: 0, duration: 0.45 }); });
+    ringAt(COL_CX, COL_CY, 0xffd060, 1.6, 0.35);
   }
   // ---- the popup ----
   const exBet = (() => {
@@ -1197,7 +1211,7 @@
     }
     function open() {
       if (root || S.state !== "idle") return;
-      sel = 0; tws = [];
+      sel = Math.max(0, (S.exMode || 1) - 1); tws = [];
       root = new PIXI.Container(); menuL.addChild(root);
       const dim = new PIXI.Graphics().beginFill(0x000000, 0.78).drawRect(-W, -H, W * 3, H * 3).endFill(); dim.eventMode = "static";
       const pnl = new PIXI.Container(); pnl.position.set(W / 2, 915); pnl.pivot.set(PW / 2, PH / 2);
@@ -1235,9 +1249,10 @@
     function confirm() {
       if (!root || !EX_MODES[sel].live) return;
       close();
-      if (!S.ex) toggleEx();
+      S.exMode = sel + 1;                                              // the mode holds for every paid round until changed
+      if (!S.ex) toggleEx(); else { drawBet(); exSwitchDraw(); exModeSync(); }
     }
-    return { open, close, confirm, isOpen: () => !!root, modes: EX_MODES };
+    return { open, close, confirm, isOpen: () => !!root, modes: EX_MODES, select: (i) => { sel = i; if (root) refresh(); } };   // select: QA
   })();
   function toggleTurbo() {
     S.turbo = !S.turbo;
@@ -1910,82 +1925,189 @@
     SFX.nudgeActivate();
   }
   // Garuda nudge step: counter flip -> 0.12 s -> nudge (0.18 s) -> streak up -> badge pop; steps ~1.75 s apart
-  async function nudgePhase(r) {
-    const chipPos = { x: COL_CX, y: COL_CY };
-    const chipStart = r.startMult < 0;
-    if (featureOn) feature(true); else if (!chipStart) await bullCharge();
-    let acc = chipStart ? 0 : r.startMult, maxSteps = r.superSteps + r.chipSteps;
-    const pad = (n) => String(n).padStart(2, "0");
-    const cnt = (k, popIt) => {
-      { const tot = Math.min(maxSteps, r.nudges.length); cntTxt.text = Math.min(k, tot) + "/" + tot; }   // white: nudges done / total      // nudges LEFT
-      if (popIt) gsap.fromTo(cntBox.scale, { x: 1.2, y: 1.2 }, { x: 1, y: 1, duration: 0.1 });
-    };
-    const badgeIn = () => {
-      if (accum.visible) return;
-      accum.visible = true; accum.scale.set(0);
-      gsap.to(accum.scale, { x: 1, y: 1, duration: 0.25, ease: "back.out(2)" }); ringAt(accum.x, accum.y, 0xffd060, 2.2, 0.3);
-    };
-    screenUp(true); cntBox.visible = true; cntBox.scale.set(0); cnt(0); centreMark.visible = true; centreMark.alpha = 0;
-    gsap.to(centreMark, { alpha: 1, duration: 0.25 });
-    lineGfx.forEach((g) => gsap.to(g, { alpha: 0.12, duration: 0.2 }));      // paylines step back while the column works
-    r.bullActed = true;                                                       // the feature start (roar or throw) is his action
-    await FX.tween(cntBox.scale, { x: 1, y: 1, duration: 0.25, ease: "back.out(1.7)" });
-    const sw = r.superCells.map((c) => superCounter(c, r.superCharges && r.superCharges[c]));
-    const swOwner = []; sw.forEach((s) => { for (let i = 0; i < s.n; i++) swOwner.push(s); });
-    let haloOn = false;   // white: step k belongs to this SUPER WILD
-    if (chipStart) { await bullOrb({ x: COL_CX, y: COL_CY }, 0x5ff0ff, r.startMult, 1.25); feature(true); await nudgeChipFire(r.chipSteps); }
-    else {
-      pulseChip(false);
-      await streakToBadge(r.startMult);
-      badgeIn(); accTxt.text = "x" + acc; SFX.impact(false);
+  // ===== WHITE VERSION: CHARGE runs and FORTUNE CHOICE (product spec "Fortune Guardian 1000 - Buy Bonus and Extra Bet"
+  // v1.0; engine tools/white_engine.js). Spliced over nudgePhase() by tools/white_spec_game.py.
+  //  - main CHARGE: a CHARGE chip in the centre of a win runs N actions on the column; each action nudges one chip in
+  //    (a multiplier adds to the total, a nested CHARGE fires and adds its actions);
+  //  - natural Fortune Choice: a SUPER WILD in the win opens the halo wheel over the bull's head with 9 positions (the
+  //    engine's board); every Choice picks one position (never again): a multiplier flies into the total, a CHARGE
+  //    runs its actions on the column into the total, a Choice +2 adds two picks;
+  //  - Buy Bonus (buyShow): the same wheel at once, after the column lands on the starting multiplier; pays bet x total.
+  // The column's own strip is decor: the chips that will slide into the centre are set to the engine's draws first.
+  const colIdxOf = (v) => { const i = Engine.STRIP.indexOf(v); return i < 0 ? 0 : i; };
+  function colPlan(vals, flash) {                       // next values into views[3], [2], [1], [0]; the rest queue up
+    for (let j = 0; j < 4 && j < vals.length; j++) {
+      const vi = 3 - j, id = colIdxOf(vals[j]);
+      if (colReel.syms[vi] === id) continue;
+      colReel.syms[vi] = id; colReel.views[vi].set(id, false);
+      const v = colReel.views[vi];
+      if (flash && vi > 0 && v.flash) gsap.fromTo(v.flash, { alpha: 0.9 }, { alpha: 0, duration: 0.45 });
     }
-    for (let k = 0; k < r.nudges.length; k++) {
-      const STEP = (S.turbo ? 0.5 : k === 0 ? 1.0 : 0.68) + (r.nudges[k] < 0 ? 0.35 : 0);
-      const t0 = gsap.globalTimeline.time();
-      if (k < r.superSteps && sw.length) {
-        // white (Garuda): a super wild's charge is a halo pick - the wheel over the head lands on the value, no column nudge
-        const s = swOwner[k] || sw[sw.length - 1];
-        if (!haloOn) { haloOn = true; bullReact("tease"); await GX.run("superHaloOpen", { vals: haloVals(r) }, 4500); }
-        s.dec(); ringAt(s.x, s.y, 0xff7a3a, 1.2, 0.4);
-        const hv = r.nudges[k], at = fxTop.toLocal(accum.getGlobalPosition());
-        badgeIn();
-        await GX.run("superHaloPick", { v: hv, from: { x: s.x, y: s.y }, to: { x: at.x, y: at.y } }, 6000);
-        cnt(k + 1, true);
-        if (hv < 0) { maxSteps += -hv; cnt(k + 1, false); chargeFly(-hv); await FX.wait(0.5); }
-        else { acc += hv; accTxt.text = "x" + acc; gsap.fromTo(accum.scale, { x: 1.4, y: 1.4 }, { x: 1, y: 1, duration: 0.3, ease: "back.out(2)" });
-          SFX.impact(hv >= 50); SFX.rise(k / Math.max(1, r.superSteps - 1)); if (hv >= 50) flashScreen(multTint(hv), 0.14, 0.3); }
-        if (k === r.superSteps - 1) { await GX.run("superHaloClose", {}, 2000); haloOn = false; colJump(r.multIndex + r.superSteps); await FX.wait(0.35); }
-        continue;
+    colQ.length = 0; vals.slice(4).forEach((v) => colQ.push(colIdxOf(v)));
+  }
+  const cntShow = (o, pop) => {                         // the counter screen: done / total
+    cntTxt.text = Math.min(o.done, o.tot) + "/" + o.tot;
+    if (pop) gsap.fromTo(cntBox.scale, { x: 1.2, y: 1.2 }, { x: 1, y: 1, duration: 0.1 });
+  };
+  const counter = (tot) => { const o = { done: 0, tot }; o.draw = (pop) => cntShow(o, pop); return o; };
+  function badgeIn() {
+    if (accum.visible) return;
+    accum.visible = true; accum.scale.set(0);
+    gsap.to(accum.scale, { x: 1, y: 1, duration: 0.25, ease: "back.out(2)" }); ringAt(accum.x, accum.y, 0xffd060, 2.2, 0.3);
+  }
+  const accDraw = throttled(() => { accTxt.text = "x" + Math.round(accShown.v); }, TXT_DT), accShown = { v: 0 };
+  function accSet(v, pk, esc) {
+    accShown.v = v; accTxt.text = "x" + v;
+    gsap.fromTo(accum.scale, { x: pk || 1.4, y: pk || 1.4 }, { x: 1, y: 1, duration: 0.2 + 0.15 * (esc || 0), ease: "back.out(2)" });
+  }
+  // "+2 CHOICES" from the wheel to the counter screen
+  function choiceFly(n) {
+    const t = new PIXI.Text(`+${n} CHOICES`, FX.gold(40, { fill: ["#F0FFE0", "#B8F070", "#3E8A12"] }));
+    t.anchor.set(0.5); t.position.set(540, 330); fxTop.addChild(t);
+    const to = fxTop.toLocal(cntBox.getGlobalPosition());
+    gsap.timeline({ onComplete: () => t.destroy() }).fromTo(t.scale, { x: 0.4, y: 0.4 }, { x: 1.1, y: 1.1, duration: 0.3, ease: "back.out(3)" })
+      .to(t, { x: to.x, y: to.y, alpha: 0.2, duration: 0.45, ease: "power2.in", delay: 0.35 })
+      .to(t.scale, { x: 0.5, y: 0.5, duration: 0.45 }, "<");
+    ringAt(to.x, to.y, 0x9be060, 1.6, 0.4); SFX.nudgeActivate();
+  }
+  // "CHARGE n" over the column as a Fortune Choice CHARGE starts its run
+  function chargeTag(n) {
+    const p = fxTop.toLocal(frameL.toGlobal(new PIXI.Point(COL_CX, COL_CY)));
+    const t = new PIXI.Text(`CHARGE ${n}`, FX.gold(44, { fill: ["#F8E8FF", "#D9A0FF", "#7A2FB0"] })); t.anchor.set(0.5); t.position.set(p.x - 150, p.y); fxTop.addChild(t);
+    gsap.timeline({ onComplete: () => t.destroy() }).fromTo(t.scale, { x: 0.3, y: 0.3 }, { x: 1, y: 1, duration: 0.3, ease: "back.out(3)" })
+      .to(t, { alpha: 0, y: p.y - 60, duration: 0.4, delay: 0.5 });
+    flashAt(p.x, p.y, 0xd9a0ff, 1.4, 0.3); ringAt(p.x, p.y, 0xc070ff, 2.0, 0.4); SFX.nudgeActivate();
+  }
+  // one CHARGE run: every action nudges the column one chip in. Runs speed up after 6 actions; past 24 the rest rolls
+  // in at once (the column jumps to its last chips, the total counts up).
+  async function runActions(vals, acc, ctr) {
+    const n = vals.length, FAST = 24;
+    for (let k = 0; k < n; k++) {
+      if (k === FAST && n - k > 6) {
+        const rest = vals.slice(k), add = rest.reduce((a, v) => a + (v > 0 ? v : 0), 0), more = rest.reduce((a, v) => a + (v < 0 ? -v : 0), 0);
+        const last = colIdxOf(rest[rest.length - 1]), ids = [];
+        for (let i = 0; i < 9; i++) { const b = i - 4; ids.push(b >= 0 && b < rest.length ? colIdxOf(rest[rest.length - 1 - b]) : stripAt(last, -b)); }
+        colReel.setSyms(ids); colReel.views.forEach((v) => { if (v.flash) gsap.fromTo(v.flash, { alpha: 0.8 }, { alpha: 0, duration: 0.5 }); });
+        SFX.tease(0.6); shake(8, 0.5); flashAt(COL_CX, COL_CY, 0xfff0c0, 1.6, 0.3);
+        ctr.tot += more; ctr.done = ctr.tot; ctr.draw(true);
+        accShown.v = acc;
+        await FX.tween(accShown, { v: acc + add, duration: S.turbo ? 0.6 : 1.4, ease: "power1.in", onUpdate: () => { accDraw(); if (Math.random() < 0.3) SFX.tick(); } });
+        acc += add; accSet(acc, 1.6, 1); SFX.impact(true); flashScreen(multTint(Math.min(1000, add)), 0.16, 0.35);
+        return acc;
       }
-      await FX.wait(0.06);
-      // escalation: every nudge hits harder and higher than the one before; the last one lands in slow motion
-      const esc = r.nudges.length > 1 ? k / (r.nudges.length - 1) : 1, lastN = k === r.nudges.length - 1 && r.nudges.length > 1 && !S.turbo;
+      const v = vals[k], f = k < 6 ? 1 : Math.max(0.32, Math.pow(0.86, k - 5));
+      const STEP = ((S.turbo ? 0.5 : k === 0 ? 1.0 : 0.68) + (v < 0 ? 0.35 : 0)) * f;
+      const t0 = gsap.globalTimeline.time();
+      await FX.wait(0.06 * f);
+      const esc = n > 1 ? k / (n - 1) : 1, lastN = k === n - 1 && n > 1 && !S.turbo && n <= FAST;
       if (lastN) { SFX.tease(0.5); gsap.to(vignette, { alpha: 0.5, duration: 0.25, onStart: () => (vignette.visible = true) }); await FX.wait(0.3); }
       SFX.nudge(esc); shake(4 + 6 * esc, 0.12 + 0.08 * esc); boardDrop(0.4 + 0.6 * esc); cfKnock(10);
       if (fireFrame.visible) gsap.to(fireFrame, { alpha: 0.62 + 0.38 * esc, duration: 0.2 });
-      await colReel.nudge(lastN ? 0.42 : 0.18);
+      await colReel.nudge(lastN ? 0.42 : 0.18 * Math.max(0.6, f));
       if (lastN) gsap.to(vignette, { alpha: 0, duration: 0.3, onComplete: () => (vignette.visible = false) });
-      cnt(k + 1, true);                                                       // the count changes when the nudge lands
-      const v = r.nudges[k];
-      if (v < 0) {
-        maxSteps += -v; cnt(k + 1, false);
-        await nudgeChipFire(-v);
-      } else {
+      ctr.done++; ctr.draw(true);
+      if (v < 0) { ctr.tot += -v; ctr.draw(false); await nudgeChipFire(-v); }
+      else {
         pulseChip(v >= 50);
-        await FX.wait(0.08);
-        await streakToBadge(v);
-        badgeIn(); acc += v; accTxt.text = "x" + acc;
-        const pk = 1.25 + 0.5 * esc;
-        gsap.fromTo(accum.scale, { x: pk, y: pk }, { x: 1, y: 1, duration: 0.2 + 0.15 * esc, ease: "back.out(2)" });
+        await FX.wait(0.08 * f);
+        if (f > 0.55) await streakToBadge(v);
+        badgeIn(); acc += v; accSet(acc, 1.25 + 0.5 * esc, esc);
         ringAt(accum.x, accum.y, 0xffd060, 1.4 + esc, 0.3); SFX.impact(lastN || v >= 50); SFX.rise(esc);
         if (lastN || v >= 50) flashScreen(multTint(v), 0.14, 0.3);
       }
       const el = gsap.globalTimeline.time() - t0;
       if (el < STEP) await FX.wait(STEP - el);
     }
-    if (haloOn) { await GX.run("superHaloClose", {}, 2000); haloOn = false; }
+    return acc;
+  }
+  // Fortune Choice on the halo wheel. ctr = the counter (picks done / Choices); sw = the SUPER WILDs' counters (natural)
+  async function fortuneChoiceShow(r, acc, ctr, sw, from) {
+    const fc = r.fc, vals = fc.board.map((b) => (b.t === "mult" ? b.v : b.t === "charge" ? -b.n : "c2"));
+    const owner = []; (sw || []).forEach((s) => { for (let i = 0; i < s.n; i++) owner.push(s); });
+    ctr.done = 0; ctr.tot = fc.choices0; ctr.draw(true);
+    bullReact("tease");
+    await GX.run("superHaloOpen", { vals }, 5000);
+    const accAt = () => fxTop.toLocal(accum.getGlobalPosition());
+    const colAt = () => fxTop.toLocal(frameL.toGlobal(new PIXI.Point(COL_CX, COL_CY)));
+    const cntAt = () => fxTop.toLocal(cntBox.getGlobalPosition());
+    for (let j = 0; j < fc.picks.length; j++) {
+      const p = fc.picks[j], s = owner[j];
+      if (s) { s.dec(); ringAt(s.x, s.y, 0xff7a3a, 1.2, 0.4); }
+      badgeIn();
+      const to = p.t === "mult" ? accAt() : p.t === "charge" ? colAt() : cntAt();
+      await GX.run("superHaloPick", { pos: p.pos, v: vals[p.pos], from: s ? { x: s.x, y: s.y } : from, to }, 6000);
+      ctr.done++; ctr.draw(true);
+      if (p.t === "mult") {
+        acc += p.v; accSet(acc, 1.4, 0.5); SFX.impact(p.v >= 50); SFX.rise(j / Math.max(1, fc.picks.length - 1));
+        if (p.v >= 50) flashScreen(multTint(p.v), 0.14, 0.3);
+      } else if (p.t === "choice2") {
+        ctr.tot += 2; choiceFly(2); await FX.wait(0.5); ctr.draw(true);
+      } else {                                          // the column runs this CHARGE's actions into the total
+        chargeTag(p.n); colPlan(p.vals, true); await FX.wait(0.45);
+        const run = counter(p.n); run.draw(true);
+        acc = await runActions(p.vals, acc, run);
+        ctr.draw(true);
+      }
+    }
+    await GX.run("superHaloClose", {}, 2000);
+    return acc;
+  }
+  async function nudgePhase(r) {
+    const chipStart = r.startMult < 0;
+    if (featureOn) feature(true); else if (!chipStart) await bullCharge();
+    let acc = chipStart ? 0 : r.startMult;
+    const ctr = counter(r.chipSteps || (r.fc ? r.fc.choices0 : 0));
+    screenUp(true); cntBox.visible = true; cntBox.scale.set(0); ctr.draw(false); centreMark.visible = true; centreMark.alpha = 0;
+    gsap.to(centreMark, { alpha: 1, duration: 0.25 });
+    lineGfx.forEach((g) => gsap.to(g, { alpha: 0.12, duration: 0.2 }));      // paylines step back while the column works
+    r.bullActed = true;
+    await FX.tween(cntBox.scale, { x: 1, y: 1, duration: 0.25, ease: "back.out(1.7)" });
+    const sw = r.superCells.map((c) => superCounter(c, r.superCharges && r.superCharges[c]));
+    if (chipStart) { await bullOrb({ x: COL_CX, y: COL_CY }, 0x5ff0ff, r.startMult, 1.25); feature(true); await nudgeChipFire(r.chipSteps); }
+    else { pulseChip(false); await streakToBadge(r.startMult); badgeIn(); accSet(acc, 1, 0); SFX.impact(false); }
+    if (r.nudges.length) { colPlan(r.nudges, false); acc = await runActions(r.nudges, acc, ctr); }
+    if (r.fc) acc = await fortuneChoiceShow(r, acc, ctr, sw, { x: COL_CX, y: COL_CY });
     lineGfx.forEach((g) => gsap.to(g, { alpha: 1, duration: 0.2 }));
     return acc;
+  }
+  // the Buy Bonus round: no spin; the reels step back, the column lands on the starting multiplier, Fortune Choice plays
+  async function buyShow(r) {
+    S.state = "present"; presentAt = performance.now(); S.canSkip = false; S.respin = false;
+    const bet = BETS[S.betIdx];
+    Engine.setMode("buy");
+    feature(true); bullReact("tease");
+    const veil = new PIXI.Graphics().beginFill(0x000000).drawRect(REEL_X[0][0], rowY(0) - CELL_H / 2, REEL_X[2][1] - REEL_X[0][0], CELL_H * 3).endFill();
+    veil.alpha = 0; cellFxBack.addChild(veil); winObjs.push(veil); gsap.to(veil, { alpha: 0.6, duration: 0.3 });
+    reels.forEach((rl) => [0, 1, 2].forEach((row) => rl.view(row).dim(0.6)));
+    msgTxt.visible = false;                                                  // the plaque takes the footer
+    plaqueBg.alpha = 1; plaqueGlow.alpha = 0.5; plaqueTxt.visible = true; plaqueBig.visible = false; plaque.visible = true; wbTotal.visible = false;
+    plaqueShown.v = bet; drawPlaque(); plaque.alpha = 0; plaque.scale.set(0.6 * PLAQUE_S);
+    gsap.to(plaque, { alpha: 1, duration: 0.1 }); gsap.to(plaque.scale, { x: PLAQUE_S, y: PLAQUE_S, duration: 0.25, ease: "back.out(2)" });
+    const ctr = counter(r.fc.choices0);                                     // the counter screen first (it resets its total)
+    screenUp(true); cntBox.visible = true; cntBox.scale.set(0); ctr.draw(false);
+    await FX.tween(cntBox.scale, { x: 1, y: 1, duration: 0.25, ease: "back.out(1.7)" });
+    colJump(r.multIndex); await FX.wait(0.4);                               // the column lands on the starting multiplier
+    pulseChip(r.startMult >= 50); await streakToBadge(r.startMult); badgeIn();
+    let acc = r.startMult; accSet(acc, 1.4, 0); SFX.impact(r.startMult >= 50);
+    r.bullActed = true;
+    acc = await fortuneChoiceShow(r, acc, ctr, [], { x: 540, y: 470 });
+    await laserApply(Math.max(1, acc));
+    const tier = Engine.tier(r.totalX), popWin = TIER_ORDER.includes(tier);
+    gsap.to(plaqueBg, { alpha: 0, duration: 0.15 }); gsap.to(plaqueGlow, { alpha: 0.95, duration: 0.15 });
+    plaqueTxt.visible = false; plaqueBig.visible = true; plaqueShown.v = bet; drawBig();
+    await FX.tween(plaqueShown, { v: r.win, duration: S.turbo ? 0.4 : 0.9, ease: "power1.in", onUpdate: () => drawBig() });
+    if (popWin) {
+      gsap.to(plaque, { alpha: 0, duration: 0.15 });
+      await bigWin(r.win, r.totalX);
+      plaque.visible = false; plaque.alpha = 1; plaqueBig.visible = false; totShown.v = r.win; showTotal(r.win);
+    } else {
+      await FX.wait(0.6);
+      gsap.to(plaque, { alpha: 0, duration: 0.2, onComplete: () => { plaque.visible = false; plaque.alpha = 1; plaqueBig.visible = false; totShown.v = r.win; showTotal(r.win); } });
+    }
+    balanceStreak();
+    setBalance(S.balance + r.win, true);
+    S.lastWin = r.win;
+    exModeSync(true);                                    // back to the player's own column
   }
   // Garuda "power-up clash": the bull's lightning pulls the next-higher medallion out; it swaps with the real one, then loses
   function clashWanted(r) {
@@ -2437,7 +2559,7 @@
 
   async function present(r) {
     S.state = "present"; presentAt = performance.now();
-    S.canSkip = !r.nudges.length && !TIER_ORDER.includes(Engine.tier(r.totalX)); S.respin = false;
+    S.canSkip = !r.nudges.length && !r.fc && !TIER_ORDER.includes(Engine.tier(r.totalX)); S.respin = false;
     const cells = new Set();
     r.lines.forEach((l) => l.rows.forEach((row, reel) => cells.add(reel * 3 + row)));
     // dim the losing cells. White (user 2026-11-11: "during the win, remove the frames of symbols, simply make the lighter
@@ -2486,7 +2608,7 @@
     plaqueBg.alpha = 1; plaqueGlow.alpha = 0.5; plaqueTxt.visible = true; plaqueBig.visible = false;
     plaque.visible = true; wbTotal.visible = false;
     // a win below the stake (no feature) is a net loss: it goes straight to its total, with no multiplier flight
-    const quiet = rung === 0 && !r.nudges.length, firstCount = quiet ? r.win : r.baseWin;
+    const quiet = rung === 0 && !r.nudges.length && !r.fc, firstCount = quiet ? r.win : r.baseWin;
     plaqueShown.v = MOBILE ? firstCount : firstCount * 0.15; drawPlaque();   // white: phones show the final number at once (each redraw of this big text costs 10-30 ms there)
     plaque.alpha = 0; plaque.scale.set(0.6 * PLAQUE_S);
     gsap.to(plaque, { alpha: 1, duration: 0.1 });
@@ -2496,7 +2618,7 @@
     SFX.line();
     await FX.wait(rung === 0 ? 0.08 : S.turbo ? 0.1 : 0.25);
     // multiplier phase
-    if (r.nudges.length) {
+    if (r.nudges.length || r.fc) {
       const acc = await nudgePhase(r);
       await laserApply(Math.max(1, acc));
     } else if (r.mult > 1 && quiet) {
@@ -2909,11 +3031,17 @@
       // real, possible outcome: two full lines of WILDs with the 1000x chip (capped at the max win), settled by the engine as usual
       r = Engine.settle([["wild", "wild", "K"], ["wild", "wild", "J"], ["wild", "wild", "A"]], Engine.STRIP.indexOf(1000), bet, stake());
     }
-    else if (force) { const f = Engine.findRound(force, bet, S.ex, 1 + Math.floor(Math.random() * 1e6)); r = f ? f.round : Engine.spin(bet, S.ex); }
-    else r = Engine.spin(bet, S.ex);
+    else if (force) { const f = Engine.findRound(force, bet, exArg(), 1 + Math.floor(Math.random() * 1e6)); r = f ? f.round : Engine.spin(bet, exArg()); }
+    else r = Engine.spin(bet, exArg());
     window.G.last = r;
     setBalance(S.balance - r.stake, false);
     if (buyKind) { showMsg(Engine.BUY[buyKind].name + "!"); await bullCharge(); }
+    if (r.bought === "bonus") {                       // white (spec): the Buy enters Fortune Choice at once, no spin
+      await buyShow(r);
+      gsap.globalTimeline.timeScale(BASE_TS);
+      S.state = "idle"; setUiLocked(false); S.canSkip = false;
+      return;
+    }
     if (S.auto > 0) { S.auto--; autoTxt.text = String(S.auto); if (!S.auto) stopAuto(); }
     showMsg("GOOD LUCK!");
     SFX.spin(); bullReact("spin");
@@ -2954,10 +3082,10 @@
     await waitSkippable(quick ? 0.03 : tStop[3] - tStop[2]);
     colC = r.multIndex;
     colReel.onLand = () => onColumnLand(r);
-    const colFinal = [3, 2, 1, 0, -1, -2, -3].map((k) => stripAt(colC, k));
+    const colFinal = [3, 2, 1, 0, -1, -2, -3].map((k) => (k > 0 && k <= r.nudges.length ? colIdxOf(r.nudges[k - 1]) : stripAt(colC, k)));   // white (spec)
     if (r.win > 0 && !tb && !quick) {                // a win to multiply: the column rolls on, ticking chip by chip
       colTeaseOn();
-      const small = r.win < r.stake && !r.nudges.length;            // a short roll for a win below the stake
+      const small = r.win < r.stake && !r.nudges.length && !r.fc;            // a short roll for a win below the stake
       landed.push(colReel.teaseStop(colFinal, { vSlow: small ? 5.5 : 4.2, tau: 0.2, t1: small ? 0.42 : 0.85, t2: small ? 0.45 : 0.75, over: 0.09,
         extra: (n) => Array.from({ length: n }, (_, k) => stripAt(colC, k - n - 2)),
         onTick: (left, v) => {
@@ -3099,12 +3227,12 @@
     });
     const rules = [
       "5 fixed lines. WILD and SUPER WILD replace every symbol.",
-      "The centre multiplier of the column multiplies the total win.",
-      `Each SUPER WILD in a win charges the column as many times as its number (2 to 8);`,
-      "every charge adds the new centre multiplier.",
-      "A CHARGE 3 / CHARGE 5 chip in the centre of a win charges 3 / 5 times.",
-      `EX: ${Engine.EX_COST}x bet; SUPER WILD ${Engine.EX_BOOST}x and CHARGE ${Engine.NUDGE_EX}x as often.`,
-      `Max win ${FX.money(Engine.MAX_WIN, 0)}x bet. Demo maths, RTP about 96%.`,
+      "The centre multiplier of the column multiplies the line win.",
+      "A CHARGE chip in the centre of a win runs its actions: each adds a multiplier.",
+      "A SUPER WILD in a win opens FORTUNE CHOICE: its number = Choices,",
+      "9 positions: multipliers, CHARGE and +2 Choices; line win x Bonus Total.",
+      `EXTRA BET ${Engine.MODES[1].cost}x / ${Engine.MODES[2].cost}x / ${Engine.MODES[3].cost}x: multipliers 3x / 15x / 50x and up.`,
+      `BUY ${Engine.BUYM.cost}x: Fortune Choice at once. Max win ${FX.money(Engine.MAX_WIN, 0)}x bet. RTP 97.01% (demo maths).`,
     ];
     const rt = new PIXI.Text(rules.join("\n"), FX.plain(30, "#f4dcc0", { align: "center", lineHeight: 46 })); rt.anchor.set(0.5, 0); rt.position.set(540, 1290);
     m.addChild(rt);

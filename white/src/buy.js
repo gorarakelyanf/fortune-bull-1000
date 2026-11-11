@@ -7,7 +7,7 @@
 (function () {
   "use strict";
   const RES = 2;                                        // canvas art is drawn at 2x the 1080x1920 design size
-  const PW = 900, PH = 1120, CW = 820, CH = 380;        // panel and card size
+  const PW = 900, PH = 730, CW = 820, CH = 380;         // panel and card size (white, spec: one Buy -> one card)
   const TX = 160, TW = 440;                             // card text column: centre x and max width
   const ART = window.ART || "assets";
   const SRC = window.ART_SRC || ((p) => `${ART}/${p}.webp`);     // game.js: per-version source (V1 symbols)
@@ -108,9 +108,9 @@
     return best;
   }
   function sprite(tex, s) { const sp = new PIXI.Sprite(tex); sp.anchor.set(0.5); if (s) sp.scale.set(s); return sp; }
-  function chip(label) {                    // the column's CHARGE chip: magic background + gold rim + label
+  function chip(label, bg) {                // the column's CHARGE chip (or a multiplier chip): background + gold rim + label
     const c = new PIXI.Container();
-    ["Multipliers/chip_bg_nudge", "Multipliers/chip_rim", label].forEach((p) => c.addChild(sprite(T(p))));
+    [bg || "Multipliers/chip_bg_nudge", "Multipliers/chip_rim", label].forEach((p) => c.addChild(sprite(T(p))));
     c.label = c.children[2];
     return c;
   }
@@ -207,11 +207,12 @@
       card.addChild(sprite(cardTex()), mask, shine);
       // mini art: NUDGE chip (flipping NUDGE 5 / NUDGE 3) or SUPER WILD + a small NUDGE 5 chip
       const art = new PIXI.Container(); art.position.set(-CW / 2 + 168, 0); card.addChild(art);
-      const halo = sprite(FX.tex.glow, 1.35); halo.blendMode = ADD; halo.alpha = 0.4; halo.tint = kind === "super" ? 0xffa030 : 0x3ad8ff;
+      const halo = sprite(FX.tex.glow, 1.35); halo.blendMode = ADD; halo.alpha = 0.4; halo.tint = kind !== "nudge" ? 0xffa030 : 0x3ad8ff;
       art.addChild(halo);
       A(gsap.to(halo, { alpha: 0.7, duration: 1.3, yoyo: true, repeat: -1, ease: "sine.inOut", delay: idx * 0.4 }));
-      if (kind === "super") {
-        const mini = chip("Multipliers/label_nudge5"); mini.scale.set(0.56); mini.position.set(84, 100);
+      if (kind !== "nudge") {                // white (spec): FORTUNE CHOICE = the SUPER WILD with a 1000x chip
+        const mini = kind === "bonus" ? chip("Multipliers/label_1000x", "Multipliers/chip_bg_1000") : chip("Multipliers/label_nudge5");
+        mini.scale.set(0.56); mini.position.set(84, 100);
         art.addChild(sprite(T("Symbols/super_wild"), 0.8), mini);
         art.children[1].y = -16;
         A(gsap.to(mini.scale, { x: 0.61, y: 0.61, duration: 0.7, yoyo: true, repeat: -1, ease: "sine.inOut" }));
@@ -224,7 +225,7 @@
           .to(ch.scale, { x: 1.18, duration: 0.22, ease: "back.out(2)" }));
       }
       for (let k = 0; k < 3; k++) {          // twinkles around the art
-        const s = sprite(FX.tex.spark, 0.001); s.blendMode = ADD; s.tint = kind === "super" ? 0xffe0a0 : 0xbff4ff;
+        const s = sprite(FX.tex.spark, 0.001); s.blendMode = ADD; s.tint = kind !== "nudge" ? 0xffe0a0 : 0xbff4ff;
         s.position.set(-120 + k * 110 + Math.random() * 30, -120 + Math.random() * 230); art.addChild(s);
         A(gsap.timeline({ repeat: -1, repeatDelay: 0.8 + Math.random() * 1.6, delay: Math.random() * 2 })
           .to(s.scale, { x: 0.5, y: 0.5, duration: 0.25, ease: "power2.out" }).to(s.scale, { x: 0, y: 0, duration: 0.45, ease: "power2.in" }));
