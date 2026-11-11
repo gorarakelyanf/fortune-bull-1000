@@ -258,20 +258,22 @@
       else sq = h.y + rc * 1.5708 + (h.x - min(q.x, h.x));
       float s = p.x >= 0.0 ? (p.y >= 0.0 ? sq : uP - sq) : (p.y >= 0.0 ? 2.0 * Lq - sq : 2.0 * Lq + sq);
       float ph1 = mod(uC.x - s, uP), ph2 = mod(s - uC.y, uP);                           // distance behind each spark's head
-      float com = exp(-ph1 / 17.0) * smoothstep(0.0, 5.0, ph1) * smoothstep(uP, uP - 5.0, ph1)
-                + exp(-ph2 / 17.0) * smoothstep(0.0, 5.0, ph2) * smoothstep(uP, uP - 5.0, ph2);    // the two running sparks, soft heads
+      // user 2026-11-11: "frame color line animation should be removed, simply make the lava glow and subtle animation":
+      // no running sparks and no travelling glint; the molten channel boils slowly and the whole frame breathes
+      float com = 0.0 * (ph1 + ph2);
+      float br = 0.5 + 0.5 * sin(t * 1.25) * 0.8 + 0.1 * sin(t * 2.9 + 1.3);
 
       // outside: heat halo + small flames licking upward; inside the hole: a warm spill on the chip's edge
       float o = max(dO, 0.0), outside = step(0.0, dO);
       float top = smoothstep(-0.2, 1.0, -p.y / uB.y);
-      float fl = fbm(vec2(p.x * 0.05, p.y * 0.06 + t * 1.5)), fl2 = fbm(vec2(p.x * 0.11 + 5.0, p.y * 0.1 + t * 2.3));
-      float reach = (2.0 + 26.0 * fl * fl2 * (0.2 + 0.8 * top)) * (0.75 + 0.3 * uPower);
+      float fl = fbm(vec2(p.x * 0.05, p.y * 0.06 + t * 0.55)), fl2 = fbm(vec2(p.x * 0.11 + 5.0, p.y * 0.1 + t * 0.8));
+      float reach = (3.0 + 9.0 * fl * fl2 * (0.4 + 0.6 * top)) * (0.8 + 0.25 * uPower);
       float cor = exp(-o / reach) * outside;
-      float ca = clamp(cor * (0.5 + 0.7 * fl2), 0.0, 1.0);
-      float halo = (exp(-o / 8.0) * (0.24 + 0.12 * uPower + 0.5 * uFlash) + exp(-o / 5.0) * com * 0.5) * outside;
+      float ca = clamp(cor * (0.35 + 0.4 * fl2), 0.0, 1.0);
+      float halo = (exp(-o / 11.0) * (0.3 + 0.14 * br + 0.1 * uPower + 0.5 * uFlash) + exp(-o / 5.0) * com * 0.5) * outside;
       vec4 acc = vec4(mix(red, org, 0.55) * halo, halo * 0.5);
       acc = over(vec4(mix(red, gold, cor) * ca, ca * 0.8), acc);
-      float ig = exp(-max(-dI, 0.0) / 6.0) * step(dI, 0.0) * (0.24 + 0.1 * uPower + 0.5 * uFlash) + exp(-max(-dI, 0.0) / 4.0) * step(dI, 0.0) * com * 0.4;
+      float ig = exp(-max(-dI, 0.0) / 7.0) * step(dI, 0.0) * (0.26 + 0.1 * br + 0.1 * uPower + 0.5 * uFlash) + exp(-max(-dI, 0.0) / 4.0) * step(dI, 0.0) * com * 0.4;
       acc += vec4(mix(org, gold, 0.45) * ig, ig * 0.35);
 
       float a = smoothstep(0.8, -0.8, dO) * smoothstep(-0.8, 0.8, dI);
@@ -282,15 +284,15 @@
         // molten channel between the rims
         float cu = clamp((u - rw) / (1.0 - 2.0 * rw), 0.0, 1.0), cnz = sin(cu * 3.14159);
         float sx = s / uP;
-        float m1 = pfbm(vec2(sx * 20.0 - uScroll.x, cu * 1.6 + t * 0.07), 20.0);
+        float m1 = pfbm(vec2(sx * 20.0 - uScroll.x, cu * 1.6 + t * 0.11), 20.0);
         float m2 = pfbm(vec2(sx * 40.0 + uScroll.y, cu * 2.2 + 3.7), 40.0);
-        float heat = clamp(1.7 * m1 - 0.3 + 0.12 * cnz + 0.9 * com + 0.18 * (uPower - 1.0) + 0.7 * uFlash, 0.0, 1.4);
+        float heat = clamp(1.5 * m1 - 0.1 + 0.18 * cnz + 0.12 * br + 0.18 * (uPower - 1.0) + 0.7 * uFlash, 0.0, 1.3);
         float vein = pow(1.0 - abs(sin((m1 * 2.5 + m2 * 1.5) * 3.14159)), 9.0);
         vec3 lava = mix(crim, red, smoothstep(0.1, 0.42, heat));
         lava = mix(lava, org, smoothstep(0.38, 0.66, heat));
         lava = mix(lava, gold, smoothstep(0.62, 0.92, heat));
         lava = mix(lava, wht, smoothstep(0.95, 1.4, heat));
-        lava += gold * vein * 0.4;
+        lava += gold * vein * 0.1;
         lava *= 0.55 + 0.45 * cnz;                                          // sunk between the rims
         // gold rims: each a small rounded bead lit from the top left
         float rim = max(1.0 - smoothstep(rw - 0.05, rw + 0.03, u), smoothstep(1.0 - rw - 0.03, 1.0 - rw + 0.05, u));
@@ -299,7 +301,6 @@
         vec3 L = normalize(vec3(-0.45, -0.7, 0.55));
         float diff = max(dot(n, L), 0.0), spec = pow(max(dot(n, normalize(L + vec3(0.0, 0.0, 1.0))), 0.0), 26.0);
         vec3 metal = mix(gD, gM, clamp(diff * 1.15 + 0.22, 0.0, 1.0)) + gL * spec * 0.85;
-        metal += gL * pow(0.5 + 0.5 * sin(sx * 12.566 - t * 0.9), 24.0) * 0.55;       // a glint travelling along the gold
         metal += org * (0.1 + 0.55 * com + 0.6 * uFlash);                               // the gold takes the heat's colour
         vec3 col = mix(lava, metal, rim);
         col += wht * com * 0.95 * pow(cnz, 1.5) * (1.0 - rim) + gL * com * 0.4 * rim;       // white-hot in the channel, a warm gleam on the gold
@@ -403,7 +404,7 @@
       f.s1 = (f.s1 + dt * v) % f.P; f.s2 = (f.s2 - dt * v * 0.8 + f.P) % f.P;
       f.flash = Math.max(0, f.flash - dt * 3.5);
       u.uTime = time % 600; u.uPower = f.power; u.uFlash = f.flash; u.uAlpha = f.mesh.worldVisible ? f.mesh.worldAlpha : 0;
-      u.uScroll[0] = (time * 0.45) % 20; u.uScroll[1] = (time * 0.7) % 40; u.uC[0] = f.s1; u.uC[1] = f.s2;
+      u.uScroll[0] = (time * 0.05) % 20; u.uScroll[1] = (time * 0.08) % 40; u.uC[0] = f.s1; u.uC[1] = f.s2;
     }
     for (let i = VFX.flames.length - 1; i >= 0; i--) {
       const c = VFX.flames[i];

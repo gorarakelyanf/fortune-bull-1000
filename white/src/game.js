@@ -389,6 +389,8 @@
   boardL.addChild(board);
   const frame = new PIXI.Sprite(T(GPASS ? "Board/frame_stone" : "Board/frame")); frame.position.set(0, 585);   // stone: no rails between the reels
   frameL.addChild(frame);
+  const frameTop = new PIXI.Sprite(new PIXI.Texture(frame.texture.baseTexture, new PIXI.Rectangle(frame.texture.frame.x, frame.texture.frame.y, frame.texture.frame.width, 28)));
+  frameTop.position.set(0, 585); board.addChildAt(frameTop, board.getChildIndex(reelsL) + 1);   // white: the top edge stays over the symbols
   // (the FORTUNE BULL 1000 title lintel over the reels was removed on 2026-11-11 at the user's request; ctx.TITLE = false)
   // soft gold rim around the centre (paying) multiplier slot: over the chip backs, under the chip labels
   let centreFrame = new PIXI.Sprite(T("Multipliers/centre_frame")); centreFrame.anchor.set(0.5); centreFrame.position.set(COL_CX, COL_CY);
@@ -403,7 +405,7 @@
   frameL.addChild(centreFrame);
   const cfArrows = [-1, 1].map((side) => {
     const a = new PIXI.Sprite(T("UI/cf_arrow")); a.anchor.set(0.82, 0.5); a.scale.set(-side * 0.9, 0.9);   // the left one points right
-    a.position.set(COL_CX + side * 58, COL_CY); a.x0 = a.x; a.dir = -side; return a;
+    a.position.set(COL_CX + side * 66, COL_CY); a.x0 = a.x; a.dir = -side; return a;
   });
   function cfKnock(px) { cfArrows.forEach((g) => gsap.fromTo(g, { x: g.x0 }, { x: g.x0 + g.dir * (px || 7), duration: 0.07, yoyo: true, repeat: 1, ease: "power1.out" })); }
   // molten frame (user 2026-11-11: "design this frame as well"): drawn by a shader (vfx.js VFX.moltenFrame) in the
@@ -491,7 +493,30 @@
     }`;
   const magicFilters = [];
   // white: the CHARGE badge in the chip box (badge art 262 x 256 px; its window centre and size in badge px)
-  const CB = { k: 0.5, wx: 0.6, wy: -34.9, ww: 137.6, wh: 82.8, dk: 0.42 };
+  const CB = { k: 0.57, wx: 0.6, wy: -34.9, ww: 137.6, wh: 82.8, dk: 0.42 };
+  // WHITE VERSION (user 2026-11-11: "multiplier chips equal or upper 25 should have a glowing or burning frame so they will
+  // be visible during the scroll"): a soft fire glow behind the chip and a hot rim line over it, tinted per value
+  const HOT_COL = { 25: 0xff7a14, 50: 0xff5a10, 100: 0xff3a10, 500: 0xff6a08, 1000: 0xffa020 };
+  const hotChips = [];
+  const hotTex = (() => { let tx = null; return () => {
+    if (tx) return tx;
+    const mk = (fn) => { const cv = document.createElement("canvas"); cv.width = 300; cv.height = 240; fn(cv.getContext("2d")); return PIXI.Texture.from(cv); };
+    const rr = (g, w, h, r) => { const x = 150 - w / 2, y = 120 - h / 2; g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r);
+      g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); };
+    const glow = mk((g) => { g.shadowColor = "#ffffff";
+      for (const [b, lw, a] of [[40, 14, 1], [40, 14, 1], [24, 10, 1], [24, 10, 1], [10, 6, 1]]) { g.shadowBlur = b; g.lineWidth = lw; g.strokeStyle = `rgba(255,255,255,${a})`; rr(g, 184, 127, 22); g.stroke(); } });
+    const rim = mk((g) => { g.shadowColor = "#ffffff"; g.shadowBlur = 8; g.lineWidth = 5; g.strokeStyle = "rgba(255,255,255,1)"; rr(g, 178, 121, 19); g.stroke(); g.stroke(); });
+    tx = { glow, rim }; return tx; }; })();
+  app.ticker.add(() => {
+    const t = performance.now() / 1000;
+    hotChips.forEach((c, i) => {
+      if (!c.hot.visible) return;
+      const big = c.v >= 100 ? 1 : c.v >= 50 ? 0.95 : 0.9, k = c.hotK === undefined ? 1 : Math.max(0.55, c.hotK);
+      const f = 0.84 + 0.1 * Math.sin(t * 7.3 + i * 1.7) + 0.06 * Math.sin(t * 19.7 + i * 0.9);
+      c.hot.alpha = big * f * k; c.hot.scale.set(1 + 0.025 * Math.sin(t * 3.1 + i));
+      c.hotRim.alpha = (0.75 + 0.25 * Math.sin(t * 4.7 + i * 2.1)) * k;
+    });
+  });
   class ChipView {
     constructor() {
       this.b = new PIXI.Container(); this.f = new PIXI.Container();
@@ -501,6 +526,9 @@
       this.rim = sp(T("Multipliers/chip_rim")); this.gl = sp(T("Multipliers/chip_glints"));
       this.flash = sp(T("Multipliers/chip_glints")); this.flash.blendMode = PIXI.BLEND_MODES.ADD; this.flash.alpha = 0;
       this.b.addChild(this.shadow, this.bg, this.rim, this.gl, this.flash);
+      this.hot = new PIXI.Sprite(hotTex().glow); this.hotRim = new PIXI.Sprite(hotTex().rim);
+      [this.hot, this.hotRim].forEach((s) => { s.anchor.set(0.5); s.blendMode = PIXI.BLEND_MODES.ADD; s.visible = false; });
+      this.b.addChildAt(this.hot, 1); this.b.addChild(this.hotRim); hotChips.push(this);
       this.magic = new PIXI.Filter(undefined, MAGIC_FRAG, { uTime: 0, uSeed: Math.random() * 10, uAmp: 1 });
       this.bg.filters = [this.magic]; magicFilters.push(this.magic);
       this.inner = new PIXI.Container();
@@ -511,12 +539,14 @@
       this.chargeBuild();
     }
     set(idx) { this.idx = idx; this.v = Engine.STRIP[idx]; this.bg.texture = chipBgTex(this.v);
-      this.label.texture = chipLabelTex(this.v); this.inner.scale.set(1); this.dim(0); this.chargeSet();
+      this.label.texture = chipLabelTex(this.v); this.inner.scale.set(1); this.dim(0); this.chargeSet(); this.hotSet();
       if (COINS) { const coin = this.v > 0;                  // round coin (white version's chip art + a thin gold rim) or the square NUDGE plate
         this.rim.texture = T(coin ? "Multipliers/coin_rim" : "Multipliers/chip_rim"); this.rim.visible = true;
         this.shadow.texture = T(coin ? "Multipliers/coin_shadow" : "Multipliers/chip_shadow");
         const k = coin ? 1 : NUDGE_K; [this.bg, this.rim, this.shadow, this.gl, this.flash].forEach((sp) => sp.scale.set(k));
         this.label.scale.set(coin ? LABEL_K : k); this.bg.filters = [this.magic]; } }
+    hotSet() { const on = this.v >= 25; this.hot.visible = this.hotRim.visible = on;
+      if (on) { this.hot.tint = HOT_COL[this.v] || 0xff8a20; this.hotRim.tint = this.v >= 500 ? 0xfff0b0 : 0xffd27a; } }
     // WHITE VERSION: a CHARGE chip is the user's CHARGE badge (user 2026-11-11: "this is the charge symbol we have, when
     // it gets a win we should have a number animation"; tools/charge_badge.py). At rest its window shows chevrons; when
     // it fires (nudgeChipFire: in the centre on a win, or reached by a nudge) the chevrons fly up out of the window and
@@ -530,7 +560,9 @@
       const m = new PIXI.Graphics().beginFill(0xffffff).drawRect(-CB.ww / 2, -CB.wh / 2, CB.ww, CB.wh).endFill();
       this.cbWin.addChild(cs("UI/charge_window"), this.cbChev, this.cbNum, m); this.cbWin.mask = m;
       this.cbGlow = cs("UI/charge_window"); this.cbGlow.position.set(CB.wx, CB.wy); this.cbGlow.blendMode = PIXI.BLEND_MODES.ADD; this.cbGlow.alpha = 0;
-      this.cb.addChild(this.cbBadge, this.cbWin, this.cbGlow);
+      this.cbHalo = new PIXI.Sprite(FX.tex.glow); this.cbHalo.anchor.set(0.5); this.cbHalo.tint = 0xb050ff; this.cbHalo.blendMode = PIXI.BLEND_MODES.ADD;
+      this.cbHalo.scale.set(300 / this.cbHalo.texture.width); this.cbHalo.alpha = 0.55;                            // a soft purple glow: it pops on the dark tray
+      this.cb.addChild(this.cbHalo, this.cbBadge, this.cbWin, this.cbGlow);
     }
     chargeSet() {
       const ch = this.v < 0;
@@ -565,7 +597,7 @@
     setY(y) { this.b.y = this.f.y = y;
       const s = chipFit(Math.abs(y - COL_CY) / COL_P); this.b.scale.set(s.bx, s.by); this.f.scale.set(s.l); }
     dim(k) { const g = Math.round(255 * (1 - 0.55 * k)); const t = (g << 16) | (g << 8) | g;
-      [this.bg, this.rim, this.label, this.gl].forEach((s) => (s.tint = t)); if (this.cbBadge) this.cbBadge.tint = t; }
+      [this.bg, this.rim, this.label, this.gl].forEach((s) => (s.tint = t)); if (this.cbBadge) this.cbBadge.tint = t; this.hotK = 1 - 0.75 * k; }
     set visible(v) { this.b.visible = this.f.visible = v; }
   }
 
@@ -710,8 +742,9 @@
       this.showAll();
       this.queue = null; this.state = "lift"; this.turbo = !!turbo;
       this.vmax = turbo ? this.vTurbo : this.vNormal;
-      gsap.to(this, { offset: turbo ? -0.42 : -0.25, duration: turbo ? 0.05 : 0.2, delay: delay || 0, ease: "none", onUpdate: () => this.layout(),
-        onComplete: () => { if (this.state === "lift") { this.state = "spin"; this.speed = this.vmax; } } });
+      const go = () => { if (this.state === "lift") { this.state = "spin"; this.speed = this.vmax; } };   // white (Garuda): no lift, full speed at once
+      if (this.spinDim) this.views.forEach((v) => v.dim(this.spinDim));
+      if (delay) gsap.delayedCall(delay, go); else go();
     }
     update(dt) {
       if (this.state !== "spin" && this.state !== "stopping") return;
@@ -728,6 +761,7 @@
       let id, blur;
       if (this.queue && this.queue.length) { id = this.queue.shift(); blur = false; } else { id = this.rand(); blur = this.speed > 8; }
       this.syms.unshift(id); this.views.unshift(v); v.set(id, blur);
+      if (this.spinDim) v.dim(this.spinDim);                // white (Garuda): a spinning reel is darker
       if (this.queue && this.queue.length === 0) this.queue = null;
     }
     // decelerating stop: the final symbols are queued and scroll in over exactly queue.length - offset cells
@@ -740,7 +774,10 @@
         const dur = fast ? this.stopFast : this.stopDur, D = this.queue.length - this.offset;
         const base = this.offset, tr = { p: 0 };
         let shifts = 0, landed = false, lastP = 0, lastT = gsap.globalTimeline.time();
-        gsap.to(tr, { p: D, duration: dur, ease: fast ? "fbStopTurbo" : "fbStop", onUpdate: () => {
+        // white (Garuda): at full speed onto the target, on 1/8 cell (0.086 s), back (0.19 s); turbo a little tighter
+        const v0 = Math.max(6, this.speed || this.vmax), OV = fast ? 0.09 : 0.125, TL = D / v0, T1 = fast ? 0.06 : 0.086, T2 = fast ? 0.13 : 0.19, TT = TL + T1 + T2;
+        const gEase = (x) => { const t = x * TT; return (t < TL ? v0 * t : t < TL + T1 ? D + OV * (t - TL) / T1 : D + OV * Math.max(0, 1 - (t - TL - T1) / T2)) / D; };
+        gsap.to(tr, { p: D, duration: TT, ease: gEase, onUpdate: () => {
           const pos = base + tr.p;
           while (pos - shifts >= 1 && this.queue && this.queue.length) { this.offset -= 1; this.shift(); shifts++; }
           this.offset = Math.max(-0.5, Math.min(0.999, pos - shifts));
@@ -748,8 +785,7 @@
           const now = gsap.globalTimeline.time(), dtt = Math.max(1e-3, now - lastT);
           if (this.onSpeed) this.onSpeed(Math.abs(tr.p - lastP) / dtt);
           lastP = tr.p; lastT = now;
-          if (!this._dropped && !fast && tr.p >= D * 0.4) { this._dropped = true; this.dropSquash(); }   // Toro playDrop
-          if (!landed && !this.queue && tr.p >= D * 0.97) { landed = true; this.views.forEach((v, i) => { if (v.blur) v.set(this.syms[i], false); }); if (this.onLand) this.onLand(); }
+          if (!landed && !this.queue && tr.p >= D * 0.97) { landed = true; if (this.spinDim) this.views.forEach((v) => v.dim(0)); this.views.forEach((v, i) => { if (v.blur) v.set(this.syms[i], false); }); if (this.onLand) this.onLand(); }
         }, onComplete: () => {
           this.offset = 0; this.layout(); this.state = "idle"; this.speed = 0;
           if (this.onSpeed) this.onSpeed(0);
@@ -825,13 +861,13 @@
   const reels = [0, 1, 2].map((r) => {
     const c = new PIXI.Container(); reelsL.addChild(c);
     const m = maskRect(REEL_X[r][0] - 2, CELL_Y0, REEL_X[r][1] + 2, WIN_Y1);
-    return new Reel({ rows: 3, pitch: CELL_H, y0: rowY(0), vmax: 15, vNormal: 15, vTurbo: 36, accel: 400, stopDur: 0.6, stopFast: 0.2,
+    return new Reel({ rows: 3, pitch: CELL_H, y0: rowY(0), vmax: 28, vNormal: 28, vTurbo: 40, accel: 400, stopDur: 0.6, spinDim: 0.55, stopFast: 0.2,
       container: c, masks: [[c, m]], onExit: () => fireCurtain(r),
       make: () => new SymView(c, REEL_CX[r]),
       rand: () => { const s = Engine.SYMBOLS; const w = Engine.WEIGHTS; let t = 0; for (const k of s) t += w[k] + 2; let x = Math.random() * t; for (const k of s) { x -= w[k] + 2; if (x < 0) return k; } return "J"; } });
   });
   const colBlur = new PIXI.BlurFilter(0, MOBILE ? 2 : 4); colBlur.blurX = 0; colBlur.blurY = 0;
-  const colReel = new Reel({ rows: 7, pitch: COL_P, y0: COL_Y0, vmax: 26, vNormal: 26, vTurbo: 44, accel: 400, stopDur: 0.62, stopFast: 0.22,
+  const colReel = new Reel({ rows: 7, pitch: COL_P, y0: COL_Y0, vmax: 40, vNormal: 40, vTurbo: 52, accel: 400, stopDur: 0.62, stopFast: 0.22,
     masks: [[colBack, maskRect(TRAY[0], TRAY[1], TRAY[2], TRAY[3])], [colFront, maskRect(TRAY[0] - 30, TRAY[1], TRAY[2] + 30, TRAY[3])]],
     make: () => new ChipView(), rand: () => Math.floor(Math.random() * Engine.STRIP.length),
     above: (i) => (i + 1) % Engine.STRIP.length,
@@ -928,6 +964,19 @@
   const balUnit = new PIXI.Text("AMD", FX.gold(24, UI_WHITE)); balUnit.anchor.set(0, 0.5);
   const demoTxt = new PIXI.Text("DEMO MODE", FX.gold(20)); demoTxt.anchor.set(0, 0.5); demoTxt.position.set(18, 1815);
   uiL.addChild(clockTxt, balLab, balVal, balUnit, demoTxt);
+  // WHITE VERSION (user 2026-11-11: "we have a drop issue after reels stop, make it smoother"; qa/stop_profile.mjs: on a
+  // phone-speed CPU the 0.7 s after a win spent ~110 ms re-uploading text textures - the plaque, TOTAL and balance numbers
+  // redrew their gradient text every frame while rolling). A rolling number redraws at most every TXT_DT ms; the last
+  // call always lands (trailing), and every draw reads the current value, so the final number is exact.
+  const TXT_DT = MOBILE ? 66 : 33;
+  function throttled(fn, ms) {
+    let last = 0, pend = null;
+    return () => {
+      const n = performance.now();
+      if (n - last >= ms) { last = n; if (pend) { pend.kill(); pend = null; } fn(); }
+      else if (!pend) pend = gsap.delayedCall((ms - (n - last)) / 1000, () => { pend = null; last = performance.now(); fn(); });
+    };
+  }
   const balShown = { v: S.balance };
   function drawBalance() {
     balVal.text = FX.money(balShown.v, 0);
@@ -935,10 +984,11 @@
     const x = 540 - (wl + 12 + wv + 8 + wu) / 2;
     balLab.position.set(x, 1864); balVal.position.set(x + wl + 12, 1864); balUnit.position.set(x + wl + 12 + wv + 8, 1867);
   }
+  const drawBalanceT = throttled(() => drawBalance(), TXT_DT);
   function setBalance(v, animate) {
     S.balance = v;
     gsap.killTweensOf(balShown);
-    if (animate) gsap.to(balShown, { v, duration: 0.8, ease: "power2.out", onUpdate: drawBalance });
+    if (animate) gsap.to(balShown, { v, duration: 0.8, ease: "power2.out", onUpdate: drawBalanceT });
     else { balShown.v = v; drawBalance(); }
   }
   function drawBet() {
@@ -1008,11 +1058,12 @@
     lineLab.position.set(x0, 1318); lineIcons.position.set(x0 + lineLab.width + 16, 1318); lineVal.position.set(x0 + lineLab.width + 16 + x + 10, 1318);
     const k = GPASS ? Math.min(1, WB_FIT / w) : 1; wbLine.pivot.set(540, 1318); wbLine.position.set(540, 1318); wbLine.scale.set(k);
   }
+  const drawTotalT = throttled(() => drawTotal(), TXT_DT);
   function showTotal(v, dur) {
     msgTxt.visible = false; wbTotal.visible = !plaque.visible; sep.visible = true;
     gsap.killTweensOf(totShown);
     if (dur && Math.abs(totShown.v - v) < 1e-6) { drawTotal(); return Promise.resolve(); }   // already there (the plaque drove it)
-    if (dur) return FX.tween(totShown, { v, duration: dur, ease: "power1.out", onUpdate: () => { drawTotal(); if (Math.random() < 0.4) SFX.tick(); } });
+    if (dur) return FX.tween(totShown, { v, duration: dur, ease: "power1.out", onUpdate: () => { drawTotalT(); if (Math.random() < 0.4) SFX.tick(); } });
     totShown.v = v; drawTotal();
   }
   showMsg("SPIN TO WIN");
@@ -1403,7 +1454,7 @@
       const c = +key, reel = Math.floor(c / 3), row = c % 3, on = i < 0 || r.lines[i].rows[reel] === row, w = winCells[key];
       if (w && w.fr && !w.fr.destroyed) gsap.to(w.fr, { alpha: on ? 1 : 0.16, duration: 0.14, overwrite: true });
       if (w && !w.veil) {                                  // the cells of the other lines step back like the losing cells do, only lighter
-        w.veil = new PIXI.Graphics().beginFill(0x000000).drawRect(REEL_X[reel][0], rowY(row) - CELL_H / 2, REEL_X[reel][1] - REEL_X[reel][0], CELL_H).endFill();
+        w.veil = new PIXI.Graphics().beginFill(0x000000).drawRoundedRect(...winHole(reel, row)).endFill();
         w.veil.alpha = 0; cellFxBack.addChild(w.veil); winObjs.push(w.veil);
       }
       if (w && w.veil && !w.veil.destroyed) gsap.to(w.veil, { alpha: on ? 0 : 0.42, duration: 0.14, overwrite: true });
@@ -1412,7 +1463,12 @@
   }
   function linePlay(r, i) { lineFocus(r, i); lineGfx.forEach((g, j) => { if (j === i) g.play(); else g.stop(); }); }
   function lineIntro(r) {                                 // right after the win lands: one line -> it repeats; several -> one pass each, in turn
-    if (r.lines.length === 1) { lineGfx[0].play(true); return; }
+    if (r.lines.length === 1) {                         // white: a lone line loops: bolt + its symbols every 2.4 s
+      lineGfx[0].play(); if (lineCycle) lineCycle.kill();
+      lineCycle = gsap.timeline({ repeat: -1, delay: 2.4 });
+      lineCycle.call(() => { lineGfx[0].play(); r.lines[0].rows.forEach((row, reel) => cellReplay(reel * 3 + row)); }).to({}, { duration: 2.4 });
+      return;
+    }
     if (lineCycle) lineCycle.kill();
     lineCycle = gsap.timeline();
     r.lines.forEach((l, i) => lineCycle.call(() => linePlay(r, i), null, i * 1.05));
@@ -1472,6 +1528,16 @@
     boardFx.addChild(g); winObjs.push(g);
     return g;
   }
+  // white: the light part of a winning cell = a rounded box inset in the cell (x, y, w, h, radius)
+  const WIN_IN = 7, WIN_R = 44;
+  function winHole(reel, row) { const x0 = REEL_X[reel][0], x1 = REEL_X[reel][1];
+    return [x0 + WIN_IN, rowY(row) - CELL_H / 2 + WIN_IN, x1 - x0 - 2 * WIN_IN, CELL_H - 2 * WIN_IN, WIN_R]; }
+  // white (user 2026-11-11: "during the win animation, the animation should loop"): a cell's symbol win move again
+  function cellReplay(c) {
+    const reel = Math.floor(c / 3), row = c % 3, v = reels[reel].view(row);
+    if (!v || S.state === "spinning") return;
+    GX.emit("cellWin", { reel, row, cx: REEL_CX[reel], cy: rowY(row), w: REEL_X[reel][1] - REEL_X[reel][0] - 10, h: CELL_H - 10, view: v, id: v.id, winObjs });
+  }
   function cellHighlight(reel, row) {
     const cx = REEL_CX[reel], cy = rowY(row);
     const glow = new PIXI.Sprite(FX.tex.glow); glow.anchor.set(0.5); glow.position.set(cx, cy); glow.scale.set(1.25, 1.05);
@@ -1482,20 +1548,12 @@
     // glowing cell frame with a light running round it
     const fr = new PIXI.Container(); fr.position.set(cx, cy);
     const w = REEL_X[reel][1] - REEL_X[reel][0] - 10, h = CELL_H - 10;
-    const outer = new PIXI.Graphics().lineStyle(12, 0xff9a1a, 0.35).drawRoundedRect(-w / 2, -h / 2, w, h, 18);
-    outer.lineStyle(22, 0xff9a1a, 0.12).drawRoundedRect(-w / 2, -h / 2, w, h, 18).lineStyle(34, 0xff9a1a, 0.07).drawRoundedRect(-w / 2, -h / 2, w, h, 18);   // soft glow without a blur filter
-    const inner = new PIXI.Graphics().lineStyle(8, 0x7a3c06, 0.45).drawRoundedRect(-w / 2, -h / 2, w, h, 18)
-      .lineStyle(4, 0xffc93c, 1).drawRoundedRect(-w / 2, -h / 2, w, h, 18).lineStyle(1.4, 0xfff2b4, 0.9).drawRoundedRect(-w / 2, -h / 2, w, h, 18);
-    outer.blendMode = PIXI.BLEND_MODES.ADD; outer.alpha = 0.6;
-    const runner = new PIXI.Sprite(FX.tex.spark); runner.anchor.set(0.5); runner.scale.set(0.5); runner.blendMode = PIXI.BLEND_MODES.ADD;
-    const runner2 = new PIXI.Sprite(FX.tex.spark); runner2.anchor.set(0.5); runner2.scale.set(0.5); runner2.blendMode = PIXI.BLEND_MODES.ADD;
-    fr.addChild(outer, inner, runner, runner2);
-    const per = 2 * (w + h), path = { t: 0 };
-    const at = (t) => { let d = ((t % 1) + 1) % 1 * per; if (d < w) return [-w / 2 + d, -h / 2]; d -= w; if (d < h) return [w / 2, -h / 2 + d]; d -= h; if (d < w) return [w / 2 - d, h / 2]; d -= w; return [-w / 2, h / 2 - d]; };
-    fr._tw = [gsap.to(path, { t: 0.5, duration: 0.35, ease: "power1.inOut", onUpdate: () => { const [x, y] = at(path.t); runner.position.set(x, y); const [x2, y2] = at(path.t + 0.5); runner2.position.set(x2, y2); },
-      onComplete: () => gsap.to([runner, runner2], { alpha: 0, duration: 0.2 }) })];
+    // white: no gold frame and no running lights; a soft warm light fills the cell's rounded hole and breathes
+    const hb = winHole(reel, row), light = new PIXI.Graphics().beginFill(0xfff4dc).drawRoundedRect(hb[0] - cx, hb[1] - cy, hb[2], hb[3], hb[4]).endFill();
+    light.alpha = 0.1; fr.addChild(light);
+    fr._tw = [gsap.to(light, { alpha: 0.22, duration: 1.2, ease: "sine.inOut", yoyo: true, repeat: -1 })];
     fr.alpha = 0; gsap.to(fr, { alpha: 1, duration: 0.2 });
-    boardFx.addChild(fr); winObjs.push(fr);
+    cellFxBack.addChild(fr); winObjs.push(fr);      // white: the light sits under the symbol
     // symbol: pulse + light sweep masked by the symbol itself
     const v = reels[reel].view(row);
     const hero = v.hero;
@@ -1525,8 +1583,11 @@
   const plaqueBig = new PIXI.BitmapText("0", { fontName: "gold_digits", fontSize: 193 }); plaqueBig.anchor.set(0.5); plaqueBig.visible = false;
   plaque.addChild(plaqueGlow, plaqueBg, plaqueTxt, plaqueBig);
   const plaqueShown = { v: 0 };
-  const syncTotal = () => { totShown.v = plaqueShown.v; drawTotal(); };   // every copy shows one value
-  const drawPlaque = () => { plaqueTxt.text = FX.money(plaqueShown.v); const k = Math.min(1, 300 / plaqueTxt.width); plaqueTxt.scale.set(k); syncTotal(); };
+  const syncTotal = () => { totShown.v = plaqueShown.v; drawTotalT(); };   // every copy shows one value (white: throttled redraw)
+  const drawPlaqueTxt = () => { plaqueTxt.text = FX.money(plaqueShown.v); const k = Math.min(1, 300 / plaqueTxt.width); plaqueTxt.scale.set(k); };
+  const drawPlaqueTxtT = throttled(drawPlaqueTxt, TXT_DT);
+  const drawPlaque = () => { drawPlaqueTxt(); syncTotal(); };
+  const drawPlaqueRoll = () => { if (!MOBILE) drawPlaqueTxtT(); syncTotal(); };   // white: while it rolls (phones: no roll, see below)
   const drawBig = () => {
     plaqueBig.text = FX.money(plaqueShown.v); plaqueBig.scale.set(Math.min(0.62, 700 / Math.max(1, plaqueBig.textWidth))); syncTotal();
     if (multTag && !multTag.destroyed && plaqueBig.visible) multTag.position.set(plaque.x + (plaqueBig.width * plaque.scale.x) / 2 + multTag.width / 2 + 18, plaque.y + 8);
@@ -1695,10 +1756,10 @@
       .to(boardL, { x: -dx * kick * 0.15, y: -kick * 0.3, duration: 0.09, ease: "power2.out" })
       .to(boardL, { x: 0, y: 0, duration: 0.28, ease: "elastic.out(1, 0.4)" });
   }
-  function boardDrop(k) {             // white: the whole board drops and bounces back
-    gsap.killTweensOf(boardL, "x,y"); boardL.position.set(0, 0);
-    const d = 10 + 12 * k;
-    gsap.timeline().to(boardL, { y: d, duration: 0.06, ease: "power3.in" }).to(boardL, { y: 0, duration: 0.55, ease: "bounce.out" });
+  function boardDrop(k) {             // white: the whole board drops and springs back (smooth: no snap when drops overlap)
+    gsap.killTweensOf(boardL, "y");
+    const d = Math.max(boardL.y, 6 + 9 * k);
+    gsap.timeline().to(boardL, { y: d, duration: 0.09, ease: "sine.out" }).to(boardL, { y: 0, duration: 0.5, ease: "back.out(1.5)" });
   }
   function flashScreen(tint, a, dur) {
     gsap.killTweensOf(screenFlash); screenFlash.tint = tint; screenFlash.visible = true;
@@ -1824,6 +1885,30 @@
       flashAt(x, y, 0xff8800, 1.4, 0.25);
     } };
   }
+  // WHITE VERSION (Garuda logic): the coins of the super wild halo - every value its charges will pick, then decoys from the
+  // top of the strip, shuffled (gx_halo.js superHaloOpen / superHaloPick). Spliced in by tools/port_from_stone.py.
+  function haloVals(r) {
+    const picks = [...new Set(r.nudges.slice(0, r.superSteps))].slice(0, 7);
+    const decoys = [1000, 500, 100, 50, 25, 20, 15, 10].filter((v) => !picks.includes(v));
+    const vals = picks.concat(decoys).slice(0, 7);
+    for (let i = vals.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [vals[i], vals[j]] = [vals[j], vals[i]]; }
+    return vals;
+  }
+  // the column jumps to where the engine's strip walk stands (the super wild charges were picked in the halo, not nudged)
+  function colJump(c) {
+    colReel.setSyms(colIds(c));
+    colReel.views.forEach((v) => { if (v.flash) gsap.fromTo(v.flash, { alpha: 0.7 }, { alpha: 0, duration: 0.4 }); });
+    ringAt(COL_CX, COL_CY, 0xffd060, 1.6, 0.35); flashAt(COL_CX, COL_CY, 0xfff0c0, 1.0, 0.2);
+  }
+  // "+N CHARGES" from the total badge to the counter (a CHARGE coin picked in the halo)
+  function chargeFly(n) {
+    const t = new PIXI.Text(`+${n} CHARGES`, FX.gold(40, { fill: ["#F8E8FF", "#D9A0FF", "#7A2FB0"] }));
+    t.anchor.set(0.5); const at = fxTop.toLocal(accum.getGlobalPosition()); t.position.set(at.x - 60, at.y + 40); fxTop.addChild(t);
+    const to = fxTop.toLocal(cntBox.getGlobalPosition());
+    gsap.timeline({ onComplete: () => t.destroy() }).fromTo(t.scale, { x: 0.4, y: 0.4 }, { x: 1, y: 1, duration: 0.3, ease: "back.out(3)" })
+      .to(t, { x: to.x, y: to.y, alpha: 0.2, duration: 0.45, ease: "power2.in", delay: 0.3 });
+    SFX.nudgeActivate();
+  }
   // Garuda nudge step: counter flip -> 0.12 s -> nudge (0.18 s) -> streak up -> badge pop; steps ~1.75 s apart
   async function nudgePhase(r) {
     const chipPos = { x: COL_CX, y: COL_CY };
@@ -1846,7 +1931,8 @@
     r.bullActed = true;                                                       // the feature start (roar or throw) is his action
     await FX.tween(cntBox.scale, { x: 1, y: 1, duration: 0.25, ease: "back.out(1.7)" });
     const sw = r.superCells.map((c) => superCounter(c, r.superCharges && r.superCharges[c]));
-    const swOwner = []; sw.forEach((s) => { for (let i = 0; i < s.n; i++) swOwner.push(s); });   // white: step k belongs to this SUPER WILD
+    const swOwner = []; sw.forEach((s) => { for (let i = 0; i < s.n; i++) swOwner.push(s); });
+    let haloOn = false;   // white: step k belongs to this SUPER WILD
     if (chipStart) { await bullOrb({ x: COL_CX, y: COL_CY }, 0x5ff0ff, r.startMult, 1.25); feature(true); await nudgeChipFire(r.chipSteps); }
     else {
       pulseChip(false);
@@ -1857,9 +1943,19 @@
       const STEP = (S.turbo ? 0.5 : k === 0 ? 1.0 : 0.68) + (r.nudges[k] < 0 ? 0.35 : 0);
       const t0 = gsap.globalTimeline.time();
       if (k < r.superSteps && sw.length) {
+        // white (Garuda): a super wild's charge is a halo pick - the wheel over the head lands on the value, no column nudge
         const s = swOwner[k] || sw[sw.length - 1];
+        if (!haloOn) { haloOn = true; bullReact("tease"); await GX.run("superHaloOpen", { vals: haloVals(r) }, 4500); }
         s.dec(); ringAt(s.x, s.y, 0xff7a3a, 1.2, 0.4);
-        beam(s, chipPos, 0xff8a3a); await FX.wait(S.turbo ? 0.1 : 0.18);      // the nudge starts while the beam flies
+        const hv = r.nudges[k], at = fxTop.toLocal(accum.getGlobalPosition());
+        badgeIn();
+        await GX.run("superHaloPick", { v: hv, from: { x: s.x, y: s.y }, to: { x: at.x, y: at.y } }, 6000);
+        cnt(k + 1, true);
+        if (hv < 0) { maxSteps += -hv; cnt(k + 1, false); chargeFly(-hv); await FX.wait(0.5); }
+        else { acc += hv; accTxt.text = "x" + acc; gsap.fromTo(accum.scale, { x: 1.4, y: 1.4 }, { x: 1, y: 1, duration: 0.3, ease: "back.out(2)" });
+          SFX.impact(hv >= 50); SFX.rise(k / Math.max(1, r.superSteps - 1)); if (hv >= 50) flashScreen(multTint(hv), 0.14, 0.3); }
+        if (k === r.superSteps - 1) { await GX.run("superHaloClose", {}, 2000); haloOn = false; colJump(r.multIndex + r.superSteps); await FX.wait(0.35); }
+        continue;
       }
       await FX.wait(0.06);
       // escalation: every nudge hits harder and higher than the one before; the last one lands in slow motion
@@ -1887,6 +1983,7 @@
       const el = gsap.globalTimeline.time() - t0;
       if (el < STEP) await FX.wait(STEP - el);
     }
+    if (haloOn) { await GX.run("superHaloClose", {}, 2000); haloOn = false; }
     lineGfx.forEach((g) => gsap.to(g, { alpha: 1, duration: 0.2 }));
     return acc;
   }
@@ -2343,12 +2440,15 @@
     S.canSkip = !r.nudges.length && !TIER_ORDER.includes(Engine.tier(r.totalX)); S.respin = false;
     const cells = new Set();
     r.lines.forEach((l) => l.rows.forEach((row, reel) => cells.add(reel * 3 + row)));
-    // dim the losing cells: black over their parchment (Garuda 0.65) + darker symbols
-    reels.forEach((rl, reel) => [0, 1, 2].forEach((row) => {
-      if (cells.has(reel * 3 + row)) return;
-      const g = new PIXI.Graphics().beginFill(0x000000).drawRect(REEL_X[reel][0], rowY(row) - CELL_H / 2, REEL_X[reel][1] - REEL_X[reel][0], CELL_H).endFill();
-      g.alpha = 0; gsap.to(g, { alpha: 0.65, duration: 0.1 }); cellFxBack.addChild(g); winObjs.push(g);
-    }));
+    // dim the losing cells. White (user 2026-11-11: "during the win, remove the frames of symbols, simply make the lighter
+    // parts with bigger radius"): one dark veil per reel with a rounded hole for every winning cell
+    reels.forEach((rl, reel) => {
+      const x0 = REEL_X[reel][0], x1 = REEL_X[reel][1];
+      const g = new PIXI.Graphics().beginFill(0x000000).drawRect(x0, rowY(0) - CELL_H / 2, x1 - x0, CELL_H * 3);
+      const holes = [0, 1, 2].filter((row) => cells.has(reel * 3 + row));
+      if (holes.length) { g.beginHole(); holes.forEach((row) => g.drawRoundedRect(...winHole(reel, row))); g.endHole(); }
+      g.endFill(); g.alpha = 0; gsap.to(g, { alpha: 0.65, duration: 0.1 }); cellFxBack.addChild(g); winObjs.push(g);
+    });
     const d = { k: 0 };
     gsap.to(d, { k: 1, duration: 0.1, onUpdate: () => {
       reels.forEach((rl, reel) => [0, 1, 2].forEach((row) => { if (!cells.has(reel * 3 + row)) rl.view(row).dim(d.k); }));
@@ -2387,12 +2487,12 @@
     plaque.visible = true; wbTotal.visible = false;
     // a win below the stake (no feature) is a net loss: it goes straight to its total, with no multiplier flight
     const quiet = rung === 0 && !r.nudges.length, firstCount = quiet ? r.win : r.baseWin;
-    plaqueShown.v = firstCount * 0.15; drawPlaque();
+    plaqueShown.v = MOBILE ? firstCount : firstCount * 0.15; drawPlaque();   // white: phones show the final number at once (each redraw of this big text costs 10-30 ms there)
     plaque.alpha = 0; plaque.scale.set(0.6 * PLAQUE_S);
     gsap.to(plaque, { alpha: 1, duration: 0.1 });
     gsap.timeline().to(plaque.scale, { x: 1.05 * PLAQUE_S, y: 1.05 * PLAQUE_S, duration: 0.1, ease: "back.out(2)" })
       .to(plaque.scale, { x: PLAQUE_S, y: PLAQUE_S, duration: 0.1 });
-    await FX.tween(plaqueShown, { v: firstCount, duration: S.turbo ? 0.2 : quiet ? 0.28 : 0.35, ease: "power1.out", onUpdate: () => { drawPlaque(); SFX.tick(); } });
+    await FX.tween(plaqueShown, { v: firstCount, duration: S.turbo ? 0.2 : quiet ? 0.28 : 0.35, ease: "power1.out", onUpdate: () => { drawPlaqueRoll(); SFX.tick(); } });
     SFX.line();
     await FX.wait(rung === 0 ? 0.08 : S.turbo ? 0.1 : 0.25);
     // multiplier phase
@@ -2463,11 +2563,12 @@
       const i = k % r.lines.length, l = r.lines[i];
       showLine(l, l.pay * BETS[S.betIdx]);
       linePlay(r, i);                                 // white: this line's bolt runs once and only its cells are lit
+      l.rows.forEach((row, reel) => cellReplay(reel * 3 + row));   // and its symbols play their win move again
       k++;
     };
     if (lineCycle) lineCycle.kill();
     lineCycle = gsap.timeline({ repeat: -1, delay: 0.3 });
-    lineCycle.call(step).to({}, { duration: 1.3 });
+    lineCycle.call(step).to({}, { duration: 1.6 });
   }
   // Kling symbol clips: every winning wild shares ONE video texture (all play in sync, one decode);
   // the win one-shot runs once, then every cell switches to the idle loop.
@@ -2827,9 +2928,9 @@
     const tb = S.turbo;
     // Garuda timing: no lift; stops at 0.50 / 0.70 / 0.90 s, the column at 1.10 s (turbo 0.15 / 0.20 / 0.25 / 0.30 s).
     // A stop request lands ~0.15 s later (the final symbols scroll in), so requests go out that much earlier.
-    reels.forEach((rl, n) => rl.start(tb ? 0 : n * 0.2, tb)); colReel.start(tb ? 0 : 0.6, tb);   // Toro: 0.2 s apart
+    reels.forEach((rl) => rl.start(0, tb)); colReel.start(0, tb);   // Garuda: every reel starts at once, no lift
     // Porco: each reel may start its stop when the previous one has; stops come one loop apart (~0.4 s)
-    const tStop = tb ? [0.2, 0.3, 0.4, 0.5] : [0.6, 0.8, 1.0, 1.2], LEAD = 0;   // Fortune Toro stop starts     // timing pass 2026-11-10 (was 0.6/1.0/1.4/1.7)
+    const tStop = tb ? [0.1, 0.15, 0.2, 0.25] : [0.58, 0.76, 0.94, 1.06], LEAD = 0;   // Garuda (measured): hard stops 0.72 / 0.90 / 1.08 / 1.25 s     // timing pass 2026-11-10 (was 0.6/1.0/1.4/1.7)
     const wildsEarly = [0, 1].reduce((a, reel) => a + r.grid[reel].filter((s) => Engine.WILDS.has(s)).length, 0);
     const doTease = wildsEarly >= 2 && !tb;
     await waitSkippable(Math.max(0.02, tStop[0] - LEAD));
@@ -3108,7 +3209,7 @@
     winEmitters.forEach((e) => {
       e.t -= dt;
       if (e.t < 0 && e.n > 0) {
-        e.t = 0.18; e.n--;
+        e.t = 0.18; e.n = 0; return;   // white: no sparkles on the winners (user: "remove the white blotches")
         boardP.emit({ tex: FX.tex.spark, x: e.x + (Math.random() - 0.5) * e.w, y: e.y + (Math.random() - 0.5) * e.h, vy: -40, s0: 0.05, s1: 0.4, life: 0.5, a0: 1, a1: 0, tint: 0xffe2a0, vr: 3 });
       }
     });

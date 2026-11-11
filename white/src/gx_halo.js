@@ -210,4 +210,141 @@ GX.plugin(function (ctx) {
         .to({}, { duration: 0.01 }, t + 0.51);
     } catch (e) { console.warn("gx halo", e); finish(); }
   }));
+
+  // ---------- WHITE VERSION: the SUPER WILD halo (Garuda logic; user 2026-11-11: "the ring rotating above the head should
+  // always be available when super wild is active, check the logic with garuda") ----------
+  // In Fortune Garuda a super wild's charges are halo picks: the wheel opens round the character's head with coins from the
+  // multiplier reel, each charge (2/2 -> 1/2 -> 0/2) fires a beam into it, the wheel whips round and lands on a value that
+  // goes into the total. Here: superHaloOpen {vals} opens the ring and keeps it turning; superHaloPick {v, from, to} beams
+  // from the super wild, lands the wheel on a coin of value v (the engine's own value for that charge) and flies it to
+  // `to` (the total badge); superHaloClose closes it. Spliced into gx_halo.js by tools/port_from_stone.py.
+  let SH = null;
+  const TAU2 = Math.PI * 2;
+  function chargeCoin(v, parent) {
+    const c = new PIXI.Container(); parent.addChild(c);
+    const glow = sp(FX.tex.glow, c); glow.blendMode = ADD; glow.tint = 0xc070ff; glow.alpha = 0; glow.scale.set(1.25);
+    const face = sp(ctx.T("UI/charge_badge"), c); face.scale.set(0.52);
+    const dim = sp(ctx.T("UI/charge_badge"), c); dim.scale.set(0.52); dim.tint = 0x000000; dim.alpha = 0;
+    c.glow = glow; c.face = face; c.dimL = dim; c.v = v;
+    return c;
+  }
+  const coinOf = (v, parent) => (v < 0 ? chargeCoin(v, parent) : makeCoin(v, parent));
+  function shLight(idx) {
+    if (!SH) return;
+    SH.coins.forEach((c, i) => {
+      const on = i === idx, rest = idx < 0;
+      gsap.to(c.dimL, { alpha: rest || on ? 0 : 0.42, duration: 0.06 });
+      gsap.to(c.glow, { alpha: on ? 0.95 : 0, duration: 0.06 });
+      gsap.to(c.scale, { x: on ? 0.9 : rest ? 0.72 : 0.68, y: on ? 0.9 : rest ? 0.72 : 0.68, duration: 0.08, ease: "power2.out" });
+    });
+    if (idx >= 0) sfx("tick");
+  }
+  GX.on("superHaloOpen", (d) => new Promise((resolve) => {
+    if (SH) { resolve(); return; }
+    try {
+      const turbo = !!ctx.S.turbo, H = headPos(), RX = 232, RY = 188, CX = H.x, CY = Math.max(H.y + 62, 46 + RY);
+      const vals = (d.vals || [1]).slice(0, 7), N = vals.length;
+      const back = new PIXI.Container(); back.position.set(CX, CY); back.scale.set(0.2); back.alpha = 0;
+      layers.bullL.addChildAt(back, 0);
+      const rays = sp(FX.tex.burst, back); rays.blendMode = ADD; rays.tint = 0xffb040; rays.alpha = 0.3; rays.scale.set(2.2);
+      let rel = null; if (window.GXRays) { rays.visible = false; rel = window.GXRays.hold(0.85); }
+      const haze = sp(FX.tex.glow, back); haze.blendMode = ADD; haze.tint = 0xff9a30; haze.alpha = 0.18; haze.scale.set(3.6);
+      const ring = sp(ringTex, back); ring.scale.set(RX / 262, RY / 262);
+      const front = new PIXI.Container(); layers.fxTop.addChild(front);
+      const coins = vals.map((v, i) => { const c = coinOf(v, front); c.ang = -Math.PI / 2 + (i / N) * TAU2; c.scale.set(0); c.position.set(ctx.COL_CX, ctx.COL_CY); return c; });
+      const pointer = new PIXI.Graphics().beginFill(0x2a0e02).drawPolygon([-20, -6, 20, -6, 0, 26]).endFill()
+        .beginFill(0xffd36b).lineStyle(2, 0x7a4a10).drawPolygon([-14, -2, 14, -2, 0, 19]).endFill();
+      pointer.position.set(CX, CY - RY - 58); pointer.alpha = 0; front.addChild(pointer);
+      const P = new FX.Particles(front);
+      const st = { rot: 0, whip: false, selecting: false, lit: -1 };
+      let me = null;                                                    // this wheel (SH goes null when it closes)
+      const slot = (c) => ({ x: CX + Math.cos(c.ang + st.rot) * RX, y: CY + Math.sin(c.ang + st.rot) * RY });
+      const tick = () => {
+        const dr = gsap.ticker.deltaRatio();
+        rays.rotation += 0.004 * dr;
+        if (!st.whip) st.rot += 0.45 * dr / 60;                         // the wheel keeps turning slowly while it is up
+        if (!me) return;
+        me.coins.forEach((c) => { if (c.seated && !c.destroyed) { const p = slot(c); c.position.set(p.x, p.y); } });
+        if (st.selecting) {
+          let best = -1, bd = 9;
+          me.coins.forEach((c, i) => { const a = Math.atan2(Math.sin(c.ang + st.rot + Math.PI / 2), Math.cos(c.ang + st.rot + Math.PI / 2)); if (Math.abs(a) < bd) { bd = Math.abs(a); best = i; } });
+          if (best !== st.lit) { st.lit = best; shLight(best); }
+        }
+        P.update(Math.min(0.05, dr / 60));
+      };
+      me = SH = { back, front, coins, P, st, slot, CX, CY, RX, RY, pointer, tick, rel, N };
+      gsap.ticker.add(tick);
+      const tl = gsap.timeline({ onComplete: resolve }); tl.timeScale(turbo ? 2 : 1);
+      tl.to(back, { alpha: 1, duration: 0.2 }, 0).to(back.scale, { x: 1, y: 1, duration: 0.45, ease: "back.out(1.5)" }, 0)
+        .call(() => { sfx("rise", 0.6); ctx.flashAt(CX, CY, 0xffd27a, 1.2, 0.25); ctx.ringAt(CX, CY, 0xffe08a, 3.2, 0.45); }, null, 0.05);
+      coins.forEach((c, i) => {
+        tl.call(() => {
+          const from = { x: ctx.COL_CX, y: ctx.COL_CY }, mid = { x: (from.x + slot(c).x) / 2 + rnd(-80, 80), y: Math.min(from.y, slot(c).y) - 160 };
+          const pr = { t: 0 };
+          gsap.to(c.scale, { x: 0.72, y: 0.72, duration: 0.3, ease: "back.out(2)" });
+          gsap.to(pr, { t: 1, duration: 0.45, ease: "power2.inOut", onUpdate: () => {
+            const q = FX.bezier(from, mid, slot(c), pr.t); c.position.set(q.x, q.y);
+            if (Math.random() < 0.6 * M + 0.2) P.emit({ tex: FX.tex.dot, x: q.x, y: q.y, s0: 0.35, s1: 0, life: 0.3, tint: 0xffd060, blend: ADD });
+          }, onComplete: () => { c.seated = true; ctx.ringAt(c.x, c.y, 0xffe08a, 0.7, 0.2); sfx("tick"); } });
+        }, null, 0.1 + i * 0.07);
+      });
+      tl.to(pointer, { alpha: 1, duration: 0.2 }, 0.55).to({}, { duration: 0.01 }, 0.1 + N * 0.07 + 0.5);
+    } catch (e) { console.warn("gx superHaloOpen", e); SH = null; resolve(); }
+  }));
+  GX.on("superHaloPick", (d) => new Promise((resolve) => {
+    if (!SH) { resolve(); return; }
+    try {
+      const S2 = SH, turbo = !!ctx.S.turbo, v = d.v, st = S2.st;
+      // a coin of this value; none -> the coin furthest from the pointer quietly becomes one
+      let idx = S2.coins.findIndex((c) => c.v === v);
+      if (idx < 0) {
+        let far = 0, fd = -1;
+        S2.coins.forEach((c, i) => { const a = Math.abs(Math.atan2(Math.sin(c.ang + st.rot + Math.PI / 2), Math.cos(c.ang + st.rot + Math.PI / 2))); if (a > fd) { fd = a; far = i; } });
+        const old = S2.coins[far], nc = coinOf(v, S2.front); nc.ang = old.ang; nc.seated = true; nc.scale.set(0.72); nc.position.copyFrom(old.position);
+        S2.coins[far] = nc; kill(old); idx = far;
+      }
+      const c = S2.coins[idx];
+      let target = -Math.PI / 2 - c.ang; while (target < st.rot + 1.3 * TAU2) target += TAU2;
+      const tl = gsap.timeline({ onComplete: resolve }); tl.timeScale(turbo ? 2.2 : 1);
+      // the beam from the super wild into the halo
+      tl.call(() => {
+        const s = d.from || { x: ctx.COL_CX, y: ctx.COL_CY }, dx = S2.CX - s.x, dy = S2.CY - s.y, L = Math.hypot(dx, dy);
+        const beam = new PIXI.Container(); beam.position.set(s.x, s.y); beam.rotation = Math.atan2(dy, dx) - Math.PI / 2; S2.front.addChildAt(beam, 0);
+        const outer = sp(FX.tex.glow, beam); outer.anchor.set(0.5, 0); outer.blendMode = ADD; outer.tint = 0xff7a20; outer.scale.set(0.9, L / 256); outer.alpha = 0;
+        const core = sp(FX.tex.glow, beam); core.anchor.set(0.5, 0); core.blendMode = ADD; core.tint = 0xfff2c0; core.scale.set(0.32, L / 256); core.alpha = 0;
+        gsap.timeline({ onComplete: () => kill(beam) }).to([outer, core], { alpha: 1, duration: 0.08 }).to([outer, core], { alpha: 0, duration: 0.4, delay: 0.12, ease: "power2.in" });
+        gsap.fromTo(beam.scale, { x: 0.3 }, { x: 1.2, duration: 0.12, ease: "power3.out" });
+        ctx.flashAt(s.x, s.y, 0xff8a30, 1.6, 0.28); ctx.burstAt(s.x, s.y, 0xffa040, Math.round(14 * M));
+        ctx.flashAt(S2.CX, S2.CY, 0xfff0c0, 1.0, 0.18); ctx.shake(6, 0.18); sfx("impact", false);
+      }, null, 0);
+      // the whip onto the coin, the pointer lighting what passes under it
+      tl.call(() => { st.whip = true; st.selecting = true; st.lit = -1; }, null, 0.12)
+        .to(st, { rot: target, duration: 1.2, ease: "power3.out" }, 0.12)
+        .call(() => {
+          st.selecting = false; st.lit = idx; shLight(idx);
+          gsap.fromTo(c.scale, { x: 1.4, y: 1.4 }, { x: 1.05, y: 1.05, duration: 0.3, ease: "back.out(2.4)" });
+          ctx.starFlash(c.x, c.y, 1.3, 0xfff2c0); ctx.ringAt(c.x, c.y, v < 0 ? 0xc070ff : 0xffd060, 2.0, 0.35); ctx.burstAt(c.x, c.y, 0xffd060, Math.round(16 * M));
+          sfx("impact", true); ctx.hitStop && ctx.hitStop(40);
+        }, null, 1.34)
+      // a copy of the coin flies into the total; the wheel's coin stays for later picks
+        .call(() => {
+          const g = ctx.layers.fxTop.toLocal(c.getGlobalPosition()), f = coinOf(v, ctx.layers.fxTop); f.position.set(g.x, g.y); f.scale.set(1.05);
+          const to = d.to || { x: ctx.COL_CX, y: ctx.COL_CY }, mid = { x: (g.x + to.x) / 2, y: Math.min(g.y, to.y) - 90 }, pr = { t: 0 };
+          gsap.to(pr, { t: 1, duration: 0.36, ease: "power2.in", onUpdate: () => { const q = FX.bezier(g, mid, to, pr.t); f.position.set(q.x, q.y); f.scale.set(1.05 - 0.55 * pr.t); },
+            onComplete: () => { ctx.ringAt(to.x, to.y, 0xffd060, 1.4, 0.3); ctx.flashAt(to.x, to.y, 0xfff0c0, 0.9, 0.18); kill(f); } });
+        }, null, 1.6)
+        .call(() => { st.whip = false; shLight(-1); }, null, 1.95)
+        .to({}, { duration: 0.01 }, 1.97);
+    } catch (e) { console.warn("gx superHaloPick", e); resolve(); }
+  }));
+  GX.on("superHaloClose", () => new Promise((resolve) => {
+    if (!SH) { resolve(); return; }
+    const S2 = SH; SH = null;
+    try {
+      gsap.to(S2.back, { alpha: 0, duration: 0.3 }); gsap.to(S2.back.scale, { x: 1.15, y: 1.15, duration: 0.3 });
+      S2.coins.forEach((c) => { gsap.to(c, { alpha: 0, duration: 0.25 }); gsap.to(c.scale, { x: 0.3, y: 0.3, duration: 0.25 }); });
+      gsap.to(S2.pointer, { alpha: 0, duration: 0.2 });
+    } catch (e) {}
+    gsap.delayedCall(0.35, () => { gsap.ticker.remove(S2.tick); try { if (S2.rel) S2.rel(); } catch (e) {} kill(S2.back); kill(S2.front); resolve(); });
+  }));
 });

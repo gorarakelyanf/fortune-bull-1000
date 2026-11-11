@@ -218,7 +218,7 @@ GX.plugin(function (ctx) {
 
   // ---------- the board ring ----------
   const [bx0, by0, bx1, by1] = ff.box || [10, 594, 1070, 1288];
-  const LT = 155, YT = by0 + 6, XL = bx0 + 16, XR = bx1 - 15, YB = by1 - 16;
+  const LT = 112, YT = by0 + 6, XL = bx0 + 16, XR = bx1 - 15, YB = by1 - 16;
   const frameLight = lightSprite([0, YT - 260, 1080, YB + 30], (lin) => {
     lin(0, YT + 4, 0, YT - 230, 0.5, 0, YT - 240, 1080, 246);           // warm light up over the bull and the columns
     lin(0, YT + 2, 0, YT + 54, 0.42, XL, YT, XR - XL, 60);             // inner edges: a thin warm rim on the reels
@@ -229,8 +229,8 @@ GX.plugin(function (ctx) {
     lin(XR, 0, XR + 40, 0, 0.28, XR, YT - 10, 1080 - XR, YB - YT + 20);
   });
   const board = makeRing(ff, {
-    line: [XL, YT, XR, YB], shape: [LT, 30, 9, 38], inTop: 10, smoke: 1, sway: 38, light: frameLight, lightA: 0.85,
-    quads: [[0, YT - LT * 2.15, 1080, YT + 16], [0, YT + 16, 66, YB + 20], [1014, YT + 16, 1080, YB + 20], [66, YB - 68, 1014, YB + 20]],
+    line: [XL, YT, XR, YB], shape: [LT, 30, 9, 38], inTop: 10, smoke: 1, sway: 38, light: frameLight, lightA: 0.45,
+    quads: [[0, YT - LT * 2.15, 1080, YT + 16], [0, YT + 16, 66, YB - 30], [1014, YT + 16, 1080, YB - 30]],   // white: no bottom bar
   });
   const rings = [board];
 
@@ -243,8 +243,8 @@ GX.plugin(function (ctx) {
       lin(tr, 0, tr + 64, 0, 0.42, tr, tt - 10, 70, tb - tt + 20);
     });
     rings.push(makeRing(tz, {
-      line: [tl, tt, tr, tb], shape: [L2, 34, 16, 26], inTop: 14, smoke: 0.6, sway: 30, light: tLight, lightA: 0.9,
-      quads: [[tl - 56, tt - L2 * 2.15, tr + 56, tt + 18], [tl - 56, tt + 18, tl + 30, tb + 16], [tr - 30, tt + 18, tr + 56, tb + 16], [tl + 30, tb - 46, tr - 30, tb + 16]],
+      line: [tl, tt, tr, tb], shape: [L2, 34, 16, 26], inTop: 14, smoke: 0.6, sway: 30, light: tLight, lightA: 0.5,
+      quads: [[tl - 56, tt - L2 * 2.15, tr + 56, tt + 18], [tl - 56, tt + 18, tl + 30, tb - 30], [tr - 30, tt + 18, tr + 56, tb - 30]],
     }));
   }
 
@@ -255,7 +255,7 @@ GX.plugin(function (ctx) {
 
   // ---------- sparks: tiny streaks rising off the top edge and the posts, wandering in the updraft, cooling ----------
   const sparks = new FX.Particles(ff);
-  const SPARK_RATE = MOBILE ? 20 : 42;
+  const SPARK_RATE = MOBILE ? 8 : 16;
   let sparkAcc = 0;
   function emitSpark() {
     let x, y;
@@ -296,7 +296,7 @@ GX.plugin(function (ctx) {
   app.ticker.add(() => {
     try {
       const dt = Math.min(0.05, app.ticker.deltaMS / 1000) * gsap.globalTimeline.timeScale();
-      t += dt;
+      t += dt * 0.7;                     // white: calmer
       const flick = 1 + 0.07 * Math.sin(t * 7.3) + 0.05 * Math.sin(t * 13.7 + 1.3) + 0.04 * Math.sin(t * 23.1 + 2.1) + 0.03 * Math.sin(t * 3.1);
       const a = CY * 32;
       for (const r of rings) {
@@ -307,7 +307,7 @@ GX.plugin(function (ctx) {
         u.uS1[0] = fr(t * 60 / (240 * 32)); u.uS1[1] = fr(t * 0.004); u.uS1[2] = fr(t * 0.045); u.uS1[3] = fr(t * 42 * 0.3 / a);
         // the game's alpha: 0.62 = sustained burn, 1 = flare. Opacity saturates early; the rest drives heat and height.
         const heat = Math.min(1.7, wa / 0.62) * flick;
-        u.uMisc[0] = heat; u.uMisc[1] = Math.min(1, wa / 0.4);
+        u.uMisc[0] = heat * 0.8; u.uMisc[1] = Math.min(1, wa / 0.4) * 0.62;
         if (r.light) r.light.alpha = r.lightA * (0.7 + 0.3 * Math.min(1.4, heat)) * (0.86 + 0.14 * Math.sin(t * 9.1 + Math.sin(t * 2.3) * 2)) / Math.max(0.35, wa);
       }
       // sparks

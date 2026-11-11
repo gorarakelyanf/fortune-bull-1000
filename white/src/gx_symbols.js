@@ -146,9 +146,7 @@ GX.plugin(function (ctx) {
         .to([s1.scale, s2.scale, halo.scale], { x: 0.01, y: 0.01, duration: 0.3, ease: "power2.in" }, "-=0.3")
         .call(() => { [halo, s1, s2].forEach((s) => s.destroy()); }));
     };
-    A.later(0.62, () => glint(0, true));
-    let gk = 1;
-    A.every(1.5, 1.6, () => glint(gk++, false));
+    // white: no corner glints (user 2026-11-11: "remove the white blotches")
     // calm loop: a slow breath and a stray spark now and then
     A.later(1.0, () => {
       A.tw(gsap.to(h.scale, { x: 1.035, y: 1.035, duration: 0.85, ease: "sine.inOut", yoyo: true, repeat: -1, onUpdate: upd }));
@@ -229,8 +227,8 @@ GX.plugin(function (ctx) {
       const f = spr(FX.tex.glow, fx, { tint: 0xffe6a8, s: 0.5, alpha: 1 });
       A.tw(gsap.to(f.scale, { x: 1.7, y: 1.5, duration: 0.45, ease: "power2.out" }));
       A.tw(gsap.to(f, { alpha: 0, duration: 0.45, ease: "power1.in" }));
-      const st = spr(FX.tex.star8, fx, { tint: 0xfff4d0, s: 0.1, alpha: 1 });
-      A.tw(gsap.to(st.scale, { x: 0.9, y: 0.9, duration: 0.3, ease: "power2.out" }));
+      const st = spr(FX.tex.star8, fx, { tint: 0xffb040, s: 0.1, alpha: 0.55 });
+      A.tw(gsap.to(st.scale, { x: 0.55, y: 0.55, duration: 0.3, ease: "power2.out" }));
       A.tw(gsap.to(st, { alpha: 0, rotation: 0.6, duration: 0.4 }));
       for (let i = 0; i < N(12); i++) {
         const a = rnd(0, TAU), sp = rnd(200, 360);
@@ -322,7 +320,7 @@ GX.plugin(function (ctx) {
     const back = A.behind(true);
     const BF = A.parts(back);
     const bg = spr(FX.tex.glow, back, { tint: c1, s: 1.1, sy: 1.0, alpha: 0 });
-    A.tw(gsap.to(bg, { alpha: sup ? 0.85 : 0.7, duration: 0.25, delay: 0.1 }));
+    A.tw(gsap.to(bg, { alpha: sup ? 0.5 : 0.4, duration: 0.25, delay: 0.1 }));
     // the seal fills the cell, so the licks start on its rim (sides + top arc) and rise past it, behind the cell above
     const RIM = sup ? 112 : 106;
     const lick = (burst) => {
@@ -330,13 +328,13 @@ GX.plugin(function (ctx) {
       const x = Math.cos(a) * r, y = Math.sin(a) * r * 0.95 + 10;
       const fl = Math.random() < 0.5 ? BF : P;
       fl.emit({ frames: FX.tex.fireFrames, fps: 30, tex: FX.tex.flame, x, y, vx: Math.cos(a) * 30, vy: rnd(-230, -150) * (burst ? 1.35 : 1),
-        s0: rnd(1.0, 1.45) * (sup ? 1.25 : 1), s1: 0.3, life: rnd(0.5, 0.75), a0: fl === P ? 0.75 : 0.95, a1: 0, fadeIn: 0.08,
+        s0: rnd(1.0, 1.45) * (sup ? 1.25 : 1), s1: 0.3, life: rnd(0.5, 0.75), a0: fl === P ? 0.4 : 0.55, a1: 0, fadeIn: 0.08,
         tint: sup ? (Math.random() < 0.5 ? 0xff7a1a : 0xffb030) : (Math.random() < 0.5 ? 0xb060ff : 0xff8ad8), blend: ADD });
     };
     let acc = 0, t = 0;
     A.onStep((dt) => {
       t += dt;
-      const rate = (t < 0.8 ? 40 : 14) * (sup ? 1.5 : 1) * (MOBILE ? 0.5 : 1);
+      const rate = (t < 0.8 ? 16 : 5) * (sup ? 1.3 : 1) * (MOBILE ? 0.5 : 1);
       acc += dt * rate;
       while (acc >= 1) { acc -= 1; lick(t < 0.8); }
     });
@@ -373,10 +371,7 @@ GX.plugin(function (ctx) {
         .to([s1.scale, s2.scale, hl.scale], { x: 0.01, y: 0.01, duration: 0.3, ease: "power2.in" }, "-=0.3")
         .call(() => [s1, s2, hl].forEach((s) => s.destroy())));
     };
-    A.later(0.5, () => glint(0, sup ? 1.2 : 1));
-    A.later(0.62, () => glint(1, sup ? 1.2 : 1));
-    let gk = 0;
-    A.every(1.6, 1.3, () => glint(gk++, 0.8));
+    // white: no horn glints
     A.later(1.0, () => A.tw(gsap.to(h.scale, { x: 1.03, y: 1.03, duration: 0.8, ease: "sine.inOut", yoyo: true, repeat: -1 })));
   }
 

@@ -175,25 +175,25 @@ GX.plugin(function (ctx) {
       c.tint = i % 3 === 0 ? 0xffe0a0 : i % 3 === 1 ? 0xffa030 : 0xff7a20; c.alpha = rnd(0.22, 0.45); cones.addChild(c);
     }
     // the hot core of the column: a tall flame light that rides up with the head
-    const core = new PIXI.Container(); core.position.set(540, BOARD[3] + 120); core.alpha = 0; fx.addChild(core); objs.push(core);
+    const core = new PIXI.Container(); core.position.set(540, BOARD[3] - 30); core.alpha = 0; fx.addChild(core); objs.push(core);
     const coreGlow = new PIXI.Sprite(FX.tex.glow); coreGlow.anchor.set(0.5); coreGlow.blendMode = ADD; coreGlow.tint = 0xff8a20; coreGlow.scale.set(3.0, 1.2); coreGlow.alpha = 0.45;
     const coreHot = new PIXI.Sprite(FX.tex.glow); coreHot.anchor.set(0.5); coreHot.blendMode = ADD; coreHot.tint = 0xfff2c0; coreHot.scale.set(1.2, 0.45); coreHot.alpha = 0.5;
     const trail = new PIXI.Sprite(FX.tex.ray); trail.anchor.set(0.5, 0); trail.blendMode = ADD; trail.tint = 0xffa030; trail.scale.set(2.6, 0.8); trail.alpha = 0.3;
     core.addChild(trail, coreGlow, coreHot);
-    const head = { y: BOARD[3] + 120, w: 360 };
+    const head = { y: BOARD[3] - 30, w: 360 };
 
     const emitColumn = (n) => {
       for (let i = 0; i < n; i++) {
-        const x = 540 + rnd(-0.5, 0.5) * head.w, y = head.y + rnd(-40, 60);
+        const x = 540 + rnd(-0.5, 0.5) * head.w, y = Math.min(BOARD[3] - 24, head.y + rnd(-40, 60));
         leafP.emit({ tex: leafTex, x, y, vx: rnd(-160, 160) + (x - 540) * 0.6, vy: rnd(-1100, -650), ay: 380, drag: 1.6,
           s0: rnd(0.55, 0.9), s1: rnd(0.3, 0.5), life: rnd(0.55, 0.85), a0: 0.7, a1: 0, rot: rnd(0, 6.28), vr: rnd(-7, 7), flip: rnd(5, 11),
           tint: Math.random() < 0.4 ? 0xffc850 : 0xffe090 });
       }
       for (let i = 0; i < n * 0.8; i++) {
         const x = 540 + rnd(-0.45, 0.45) * head.w;
-        if (FX.tex.fireFrames && Math.random() < 0.45) hotP.emit({ frames: FX.tex.fireFrames, fps: 30, x, y: head.y + rnd(0, 80), vx: rnd(-60, 60), vy: rnd(-700, -420), drag: 1.5,
-          s0: rnd(1.2, 2), s1: 0.4, life: rnd(0.4, 0.6), a0: 0.75, a1: 0, tint: 0xffb050 });
-        else hotP.emit({ tex: FX.tex.dot, x, y: head.y + rnd(-20, 60), vx: rnd(-140, 140), vy: rnd(-1200, -600), drag: 1.8, s0: rnd(0.2, 0.42), s1: 0, life: rnd(0.5, 0.9),
+        if (FX.tex.fireFrames && Math.random() < 0.3) hotP.emit({ frames: FX.tex.fireFrames, fps: 30, x, y: Math.min(BOARD[3] - 24, head.y + rnd(0, 80)), vx: rnd(-60, 60), vy: rnd(-700, -420), drag: 1.5,
+          s0: rnd(1.0, 1.6), s1: 0.4, life: rnd(0.4, 0.6), a0: 0.45, a1: 0, tint: 0xffb050 });
+        else hotP.emit({ tex: FX.tex.dot, x, y: Math.min(BOARD[3] - 24, head.y + rnd(-20, 60)), vx: rnd(-140, 140), vy: rnd(-1200, -600), drag: 1.8, s0: rnd(0.2, 0.42), s1: 0, life: rnd(0.5, 0.9),
           a0: 1, a1: 0, stretch: 700, tint: Math.random() < 0.5 ? 0xffd27a : 0xff7a20 });
       }
     };
