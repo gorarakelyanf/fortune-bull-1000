@@ -174,7 +174,8 @@
   const files = [];
   const add = (p) => files.push(artSrc(p));
   add("BG/bg_main"); add("Character/bull");
-  ["frame", "mult_tray", "panel_reels"].forEach((n) => add("Board/" + n));
+  const VFRAME = params.has("vframe");   // white trial: the vector-drawn gold frame
+  [VFRAME ? "frame_vec" : "frame", "mult_tray", "panel_reels"].forEach((n) => add("Board/" + n));
   for (const s of Engine.SYMBOLS) {
     add(`Symbols/${s}`); add(`Symbols/${s}_blur`); add(`Symbols/${s}_off`);
     if (HIGH.has(s)) ["_tile", "_tile_blur", "_tilebg"].forEach((k) => add(`Symbols/${s}${k}`));
@@ -415,7 +416,7 @@
   const board = new PIXI.Container();
   board.addChild(winBar, panel, tray, colBack, cellFxBack, frameL, reelsL, colFront, boardFx, plaqueL);
   boardL.addChild(board);
-  const frame = new PIXI.Sprite(T(GPASS ? "Board/frame_stone" : "Board/frame")); frame.position.set(0, 585);   // stone: no rails between the reels
+  const frame = new PIXI.Sprite(T(GPASS ? "Board/frame_stone" : VFRAME ? "Board/frame_vec" : "Board/frame")); frame.position.set(0, 585);   // stone: no rails between the reels
   frameL.addChild(frame);
   const frameTop = new PIXI.Sprite(new PIXI.Texture(frame.texture.baseTexture, new PIXI.Rectangle(frame.texture.frame.x, frame.texture.frame.y, frame.texture.frame.width, 28)));
   frameTop.position.set(0, 585); board.addChildAt(frameTop, board.getChildIndex(reelsL) + 1);   // white: the top edge stays over the symbols
