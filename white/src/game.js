@@ -172,7 +172,7 @@
   for (const v of Engine.MULT_VALUES) { add(`Multipliers/chip_bg_${v}`); add(`Multipliers/label_${v}x`); }
   add("Multipliers/chip_bg_nudge"); Engine.NUDGE_CHIPS.forEach((v) => add(`Multipliers/label_nudge${-v}`));
   if (V2ART) { add("Multipliers/chip_bg_nudge5"); add("UI/buy_button"); }
-  ["title_big", "title_mega", "title_super", "title_epic", "title_max"].forEach((n) => files.push(`assets/Popup/${n}.webp`));
+  ["title_big", "title_mega", "title_super", "title_epic", "title_max", "wp_medallion_gold", "wp_medallion_tint", "wp_banner_gold", "wp_banner_tint", "wp_tablet_gold", "wp_tablet_tint"].forEach((n) => files.push(`assets/Popup/${n}.webp`));
   ["chip_coat", "chip_glints", "chip_rim", "chip_shadow"].forEach((n) => add("Multipliers/" + n));
   ["Multipliers/centre_frame", "UI/nudge_box", "UI/total_box", "UI/counter_screen", "UI/total_plate", "UI/cf_arrow", "vfx/winline", "vfx/winline_rest", "UI/exp_panel", "UI/exp_card_red", "UI/exp_card_amber", "UI/exp_card_purple", "UI/exp_confirm", "UI/buy_label", "UI/ex_plate", "UI/charge_badge", "UI/charge_window", "UI/charge_chev", "UI/charge_digit_0", "UI/charge_digit_1", "UI/charge_digit_2", "UI/charge_digit_3", "UI/charge_digit_4", "UI/charge_digit_5", "UI/charge_digit_6", "UI/charge_digit_7", "UI/charge_digit_8", "UI/charge_digit_9", "UI/ex_switch_off", "UI/ex_switch_on"].forEach((p) => files.push(`assets/${p}.webp`));   // every art set uses these
   if (GPASS) ["Board/panel_dark", "Board/tile_low", "Board/tile_low_blur", "Board/tray_dark", "Board/plinth_slim", "Board/plinth_fade", "Board/frame_stone"].forEach((p) => files.push(`assets/${p}.webp`));
@@ -403,16 +403,26 @@
     centreFrame.scale.set(CF_S); centreFrame.position.set(COL_CX, COL_CY);
   }
   frameL.addChild(centreFrame);
+  function cfArrowTex() {                                 // white: gold arrowhead, straight back, lit top / shaded bottom (2x)
+    if (cfArrowTex.t) return cfArrowTex.t;
+    const c = document.createElement("canvas"); c.width = 68; c.height = 48; const g = c.getContext("2d");
+    const top = g.createLinearGradient(0, 0, 0, 24); top.addColorStop(0, "#fff6c8"); top.addColorStop(1, "#f6c64c");
+    const bot = g.createLinearGradient(0, 24, 0, 48); bot.addColorStop(0, "#d8901e"); bot.addColorStop(1, "#8c4c0a");
+    g.beginPath(); g.moveTo(0, 2); g.lineTo(66, 24); g.lineTo(0, 24); g.closePath(); g.fillStyle = top; g.fill();
+    g.beginPath(); g.moveTo(0, 24); g.lineTo(66, 24); g.lineTo(0, 46); g.closePath(); g.fillStyle = bot; g.fill();
+    g.lineWidth = 2; g.lineJoin = "round"; g.strokeStyle = "rgba(92,40,4,0.9)"; g.beginPath(); g.moveTo(0, 2); g.lineTo(66, 24); g.lineTo(0, 46); g.stroke();
+    return (cfArrowTex.t = PIXI.Texture.from(c));
+  }
   const cfArrows = [-1, 1].map((side) => {
-    const a = new PIXI.Sprite(T("UI/cf_arrow")); a.anchor.set(0.82, 0.5); a.scale.set(-side * 0.9, 0.9);   // the left one points right
-    a.position.set(COL_CX + side * 66, COL_CY); a.x0 = a.x; a.dir = -side; return a;
+    const a = new PIXI.Sprite(cfArrowTex()); a.anchor.set(0, 0.5); a.scale.set(-side * 0.5, 0.5);   // the left one points right; base = x 0
+    a.position.set(COL_CX + side * 92, COL_CY); a.x0 = a.x; a.dir = -side; return a;
   });
   function cfKnock(px) { cfArrows.forEach((g) => gsap.fromTo(g, { x: g.x0 }, { x: g.x0 + g.dir * (px || 7), duration: 0.07, yoyo: true, repeat: 1, ease: "power1.out" })); }
   // molten frame (user 2026-11-11: "design this frame as well"): drawn by a shader (vfx.js VFX.moltenFrame) in the
   // gold frame art's exact shape: lit gold rims, flowing molten channel, two running sparks, heat halo, small flames
   centreFrame.visible = false;
   const cfFx = VFX.moltenFrame(frameL, { x: COL_CX, y: COL_CY, w: 195, h: 117, r: 15, band: 13, ri: 7 });
-  frameL.addChild(...cfArrows);
+  cfArrows.forEach((a) => frameL.addChildAt(a, frameL.getChildIndex(cfFx.mesh)));   // white: under the frame, only the point shows
   app.ticker.add(() => {                                  // hotter while the column teases; flashes when the arrows knock
     cfFx.power = 1 + (colTease.visible ? 1.2 * colTease.heat : 0);
     if (Math.abs(cfArrows[0].x - cfArrows[0].x0) > 2) cfFx.flash = Math.max(cfFx.flash, 0.8); });
@@ -1563,7 +1573,7 @@
     return g;
   }
   // white: the light part of a winning cell = a rounded box inset in the cell (x, y, w, h, radius)
-  const WIN_IN = 7, WIN_R = 44;
+  const WIN_IN = 0, WIN_R = 12;                        // user 2026-11-12: "remove the corner fillet a lot"
   function winHole(reel, row) { const x0 = REEL_X[reel][0], x1 = REEL_X[reel][1];
     return [x0 + WIN_IN, rowY(row) - CELL_H / 2 + WIN_IN, x1 - x0 - 2 * WIN_IN, CELL_H - 2 * WIN_IN, WIN_R]; }
   // white (user 2026-11-11: "during the win animation, the animation should loop"): a cell's symbol win move again
@@ -1787,14 +1797,20 @@
     ringAt(P.x, P.y, 0xffffff, 1.6 + 1.6 * k, 0.22); ringAt(P.x, P.y, tint, 2.6 + 2.4 * k, 0.4);
     const dx = P.x < 540 ? -1 : 1, kick = 8 + 14 * k;               // the board recoils away from the blow, then springs back
     gsap.killTweensOf(boardL, "x,y"); boardL.position.set(0, 0);
-    gsap.timeline().to(boardL, { x: dx * kick * 0.4, y: kick, duration: 0.035, ease: "power2.in" })
+    if (dropWorthy()) gsap.timeline().to(boardL, { x: dx * kick * 0.4, y: kick, duration: 0.035, ease: "power2.in" })
       .to(boardL, { x: -dx * kick * 0.15, y: -kick * 0.3, duration: 0.09, ease: "power2.out" })
       .to(boardL, { x: 0, y: 0, duration: 0.28, ease: "elastic.out(1, 0.4)" });
   }
+  // white (user 2026-11-12: "during the letters don't drop the board, but during the charge, wild and super wild, do a
+  // strong drop of the board"): does this round have a WILD / SUPER WILD in a win, or a CHARGE that fires?
+  function dropWorthy() {
+    const r = window.G && G.last; if (!r || !r.grid) return true;
+    return r.lines.some((l) => l.rows.some((row, reel) => Engine.WILDS.has(r.grid[reel][row]))) || !!(r.boardRuns && r.boardRuns.length) || r.chipSteps > 0 || !!r.fc;
+  }
   function boardDrop(k) {             // white: the whole board drops and springs back (smooth: no snap when drops overlap)
     gsap.killTweensOf(boardL, "y");
-    const d = Math.max(boardL.y, 6 + 9 * k);
-    gsap.timeline().to(boardL, { y: d, duration: 0.09, ease: "sine.out" }).to(boardL, { y: 0, duration: 0.5, ease: "back.out(1.5)" });
+    const d = Math.max(boardL.y, 10 + 14 * k);                    // strong (user 2026-11-12)
+    gsap.timeline().to(boardL, { y: d, duration: 0.08, ease: "power2.in" }).to(boardL, { y: 0, duration: 0.55, ease: "back.out(1.7)" });
   }
   function flashScreen(tint, a, dur) {
     gsap.killTweensOf(screenFlash); screenFlash.tint = tint; screenFlash.visible = true;
@@ -1998,7 +2014,7 @@
     const t = new PIXI.Text(`CHARGE ${n}`, FX.gold(44, { fill: ["#F8E8FF", "#D9A0FF", "#7A2FB0"] })); t.anchor.set(0.5); t.position.set(p.x - 150, p.y); fxTop.addChild(t);
     gsap.timeline({ onComplete: () => t.destroy() }).fromTo(t.scale, { x: 0.3, y: 0.3 }, { x: 1, y: 1, duration: 0.3, ease: "back.out(3)" })
       .to(t, { alpha: 0, y: p.y - 60, duration: 0.4, delay: 0.5 });
-    flashAt(p.x, p.y, 0xd9a0ff, 1.4, 0.3); ringAt(p.x, p.y, 0xc070ff, 2.0, 0.4); SFX.nudgeActivate();
+    flashAt(p.x, p.y, 0xd9a0ff, 1.4, 0.3); ringAt(p.x, p.y, 0xc070ff, 2.0, 0.4); SFX.nudgeActivate(); boardDrop(1.2);   // strong drop
   }
   // one CHARGE run: every action nudges the column one chip in. Runs speed up after 6 actions; past 24 the rest rolls
   // in at once (the column jumps to its last chips, the total counts up).
@@ -2095,7 +2111,7 @@
       const reel = Math.floor(b.cell / 3), row = b.cell % 3, from = { x: REEL_CX[reel], y: rowY(row) }, v = reels[reel].view(row);
       if (v && v.chg) gsap.fromTo(v.chg.scale, { x: 1.5, y: 1.5 }, { x: 1, y: 1, duration: 0.3, ease: "back.out(3)" });
       ringAt(from.x, from.y, 0xc070ff, 1.6, 0.4); SFX.nudgeActivate();
-      await beam(from, { x: COL_CX, y: COL_CY }, 0xc070ff);
+      await beam(from, { x: COL_CX, y: COL_CY }, 0xc070ff); boardDrop(1.2);
       chargeTag(b.n); colPlan(b.vals, true); await FX.wait(0.3);
       const run = counter(b.n); run.draw(true);
       acc = await runActions(b.vals, acc, run);
@@ -2324,9 +2340,7 @@
       for (let s2 = 0; s2 < 10; s2++) { x += dir * (30 + Math.random() * 30); y = 592 + Math.random() * 16; crack.lineTo(x, y); }
     }
     gsap.to(crack, { alpha: 0, duration: 0.4, onComplete: () => crack.destroy() });
-    boardL.y = 0;
-    gsap.timeline().to(boardL, { y: 18, duration: 0.05 }).to(boardL, { y: 0, duration: 0.6, ease: "elastic.out(1,0.35)" });
-    hopCells(P);
+    if (dropWorthy()) { boardDrop(1.1); hopCells(P); }               // white: a letters-only win keeps the board still
     gsap.to(bull, { y: by, duration: 0.5, ease: "power2.out", delay: 0.1 });
     gsap.to(bull.scale, { x: 1, y: 1, duration: 0.5, delay: 0.1 });
     await FX.wait(0.35);
@@ -2606,7 +2620,15 @@
       const x0 = REEL_X[reel][0], x1 = REEL_X[reel][1];
       const g = new PIXI.Graphics().beginFill(0x000000).drawRect(x0, rowY(0) - CELL_H / 2, x1 - x0, CELL_H * 3);
       const holes = [0, 1, 2].filter((row) => cells.has(reel * 3 + row));
-      if (holes.length) { g.beginHole(); holes.forEach((row) => g.drawRoundedRect(...winHole(reel, row))); g.endHole(); }
+      if (holes.length) {                                // consecutive winning rows make ONE light area (user 2026-11-12:
+        g.beginHole();                                   // "the highlighted white parts during the win to be connected")
+        for (let i = 0; i < holes.length;) {
+          let j = i; while (j + 1 < holes.length && holes[j + 1] === holes[j] + 1) j++;
+          const a = winHole(reel, holes[i]), b = winHole(reel, holes[j]);
+          g.drawRoundedRect(a[0], a[1], a[2], b[1] + b[3] - a[1], WIN_R); i = j + 1;
+        }
+        g.endHole();
+      }
       g.endFill(); g.alpha = 0; gsap.to(g, { alpha: 0.65, duration: 0.1 }); cellFxBack.addChild(g); winObjs.push(g);
     });
     const d = { k: 0 };
@@ -2846,16 +2868,24 @@
     return PIXI.Texture.from(c);
   };
   const popPlate = new PIXI.Container(); popPlate.position.set(540, 938);
-  const plateLac = new PIXI.NineSlicePlane(plateTex(true), 110, 100, 110, 100), plateRim = new PIXI.NineSlicePlane(plateTex(false), 110, 100, 110, 100);
+  // white (redesign 2026-11-12): the amount sits on the Greek-key gold TABLET; its lacquer layer takes the tier colour
+  const plateLac = new PIXI.NineSlicePlane(T("Popup/wp_tablet_tint"), 150, 0, 150, 0), plateRim = new PIXI.NineSlicePlane(T("Popup/wp_tablet_gold"), 150, 0, 150, 0);
   popPlate.addChild(plateLac, plateRim);
-  const setPlate = (w) => { [plateLac, plateRim].forEach((n) => { n.width = w; n.height = 210; n.position.set(-w / 2, -105); }); };
+  const setPlate = () => { [plateLac, plateRim].forEach((n) => { n.width = 940; n.height = 238; n.position.set(-470, -119); }); };   // white: fixed tablet
   setPlate(700);
-  const PLATE_TINT = { big: 0x1c7a3e, mega: 0x2046b4, super: 0xa41824, epic: 0x7024ac, max: 0x3a2a14 };
-  const popTitleArt = new PIXI.Sprite(PIXI.Texture.EMPTY); popTitleArt.anchor.set(0.5, 0.5); popTitleArt.position.set(540, 748);
+  const PLATE_TINT = { big: 0x17643a, mega: 0x1d3c9e, super: 0x8e1622, epic: 0x5c1e96, max: 0x2c2216 };   // white: deep lacquer, gold digits read
+  const popTitleArt = new PIXI.Sprite(PIXI.Texture.EMPTY); popTitleArt.anchor.set(0.5, 0.5); popTitleArt.position.set(540, 724);
   const popArtMask = new PIXI.Sprite(PIXI.Texture.EMPTY); popArtMask.anchor.copyFrom(popTitleArt.anchor); popArtMask.position.copyFrom(popTitleArt.position);
   let titleBase = 1, artBase = 1;
   popBody.addChild(popCoins.c, popFlare, popAmtGlow, popPlate, popTitle, popTitleMask, popTitleArt, popArtMask, popShine, popAmt, popHint);
-  const popFaders = [popDark, popGlow, popBurst, popBurst2, popCoins.c, popFlare, popTitle, popHint, popAmtGlow, popShine, popPlate, popTitleArt].concat(popHero ? [popHero] : [], popRays ? [popRays] : [], popFlame ? [popFlame] : [], popHandFront ? [popHandFront] : []);
+  // white (redesign 2026-11-12): the triumph emblem - a gold laurel MEDALLION behind the bull, the title on a RIBBON
+  const wpSpr = (n) => { const sp = new PIXI.Sprite(T("Popup/" + n)); sp.anchor.set(0.5); return sp; };
+  const popMed = new PIXI.Container(); popMed.position.set(540, 410); const medTint = wpSpr("wp_medallion_tint"); popMed.addChild(medTint, wpSpr("wp_medallion_gold"));
+  popBody.addChildAt(popMed, popHero ? popBody.getChildIndex(popHero) : popBody.getChildIndex(popBurst2) + 1);
+  const popBan = new PIXI.Container(); popBan.position.set(540, 728); const banTint = wpSpr("wp_banner_tint"); popBan.addChild(banTint, wpSpr("wp_banner_gold"));
+  popBody.addChildAt(popBan, popBody.getChildIndex(popTitle));
+  const WP_COL = { big: 0x2fbf5f, mega: 0x3a6cff, super: 0xe0303a, epic: 0xa050ff, max: 0xfff1d6 };
+  const popFaders = [popMed, popBan, popDark, popGlow, popBurst, popBurst2, popCoins.c, popFlare, popTitle, popHint, popAmtGlow, popShine, popPlate, popTitleArt].concat(popHero ? [popHero] : [], popRays ? [popRays] : [], popFlame ? [popFlame] : [], popHandFront ? [popHandFront] : []);
   pop.eventMode = "static"; pop.hitArea = new PIXI.Rectangle(0, 0, W, H);
   let popTap = null, titlePulse = null;
   pop.on("pointertap", () => popTap && popTap());
@@ -2868,7 +2898,7 @@
     const art = POP_ART("title_" + t);                 // custom title lettering + crest per tier; text only as fallback
     popTitleArt.visible = !!art;
     if (art) {
-      popTitleArt.texture = popArtMask.texture = art; artBase = Math.min(1, 980 / art.width);
+      popTitleArt.texture = popArtMask.texture = art; artBase = Math.min(0.5, 740 / art.width);   // white: 2x art, fits the ribbon
       popShine.mask = popArtMask;
     } else popShine.mask = popTitleMask;
     popTitle.renderable = popTitleMask.renderable = !art;   // after the mask swap: un-masking makes the old mask renderable again
@@ -2884,7 +2914,9 @@
     titlePulse = gsap.to(popTitle.scale, { x: base * 1.03, y: base * 1.03, duration: 0.7, yoyo: true, repeat: -1, ease: "sine.inOut", delay: 0.26 });
     ringAt(540, 760, look.burst, 6, 0.6, popCoins);
 
-    plateLac.tint = PLATE_TINT[t] || 0x5a0d1c;
+    plateLac.tint = PLATE_TINT[t] || 0x5a0d1c; medTint.tint = banTint.tint = WP_COL[t] || 0xe0303a;
+    gsap.fromTo(popBan.scale, { x: first ? 0.6 : 1.14, y: first ? 0.6 : 1.14 }, { x: 1, y: 1, duration: first ? 0.32 : 0.3, ease: "back.out(2.2)" });
+    gsap.fromTo(popMed.scale, { x: first ? 0.7 : 1.07, y: first ? 0.7 : 1.07 }, { x: 1, y: 1, duration: first ? 0.45 : 0.35, ease: "back.out(1.8)" });
     popGlow.tint = look.glow; popBurst.tint = popBurst2.tint = look.burst; flare1.tint = look.flare; flare2.tint = 0xffffff;
     popTitleMask.text = popTitle.text; popAmtGlow.tint = look.glow;
     if (popRays) popRays.setTint(look.burst);
@@ -3158,13 +3190,13 @@
     SFX.reelStop(i);
     for (let k = 0; k < 8; k++) boardP.emit({ tex: FX.tex.dot, x: REEL_X[i][0] + Math.random() * (REEL_X[i][1] - REEL_X[i][0]), y: WIN_Y1 - 8,
       vx: (Math.random() - 0.5) * 90, vy: -25 - Math.random() * 45, drag: 2, s0: 0.35, s1: 0.8, life: 0.55, a0: 0.3, a1: 0, tint: 0xe6caa0, blend: PIXI.BLEND_MODES.NORMAL });
-    gsap.fromTo(boardL, { y: 3 }, { y: 0, duration: 0.14, ease: "power2.out" });
+    // white: no board bump on a plain reel stop (letters); WILD / SUPER WILD / CHARGE landings drop it hard
     for (let row = 0; row < 3; row++) {
       const id = r.grid[i][row];
       if (id === "charge" && r.boardCharges && r.boardCharges[i * 3 + row]) {   // white: a CHARGE symbol lands with its count
         const cv = reels[i].view(row), cx = REEL_CX[i], cy = rowY(row);
         cv.showCharge(r.boardCharges[i * 3 + row]); gsap.fromTo(cv.chg.scale, { x: 1.6, y: 1.6 }, { x: 1, y: 1, duration: 0.3, ease: "back.out(3)" });
-        ringAt(cx, cy, 0xc070ff, 1.5, 0.4); flashAt(cx, cy, 0xe0b0ff, 1.0, 0.25); SFX.nudgeActivate(); buzz(15);
+        ringAt(cx, cy, 0xc070ff, 1.5, 0.4); flashAt(cx, cy, 0xe0b0ff, 1.0, 0.25); SFX.nudgeActivate(); buzz(15); boardDrop(1);
       }
       if (Engine.WILDS.has(id)) {
         const x = REEL_CX[i], y = rowY(row);
@@ -3175,12 +3207,13 @@
         VFX.shockwave(x, y, { amp: 12, radius: 300, wave: 90, dur: 0.45 }); starFlash(x, y, 1.6, id === "wild" ? 0xe0b0ff : 0xffc080);
         if (id === "super_wild") { SFX.superLand(); hitStop(50); buzz(30); } else { SFX.wildLand(); buzz(15); }
         if (id === "super_wild" && v.cnt && r.superCharges) { v.cnt.text = String(r.superCharges[i * 3 + row] || Engine.NUDGES); gsap.fromTo(v.cnt.scale, { x: 1.5, y: 1.5 }, { x: 1, y: 1, duration: 0.3, ease: "back.out(2.5)" }); }
-        GX.emit("wildLand", { reel: i, row, id, x, y, view: v }); boardDrop(id === "super_wild" ? 1 : 0.6);
+        GX.emit("wildLand", { reel: i, row, id, x, y, view: v }); boardDrop(id === "super_wild" ? 1.4 : 1);
       }
     }
   }
   // a NUDGE chip in the centre fires: cyan shock, lightning, "+N NUDGES" flies to the counter
   async function nudgeChipFire(n) {
+    boardDrop(1.2);                                      // white: a CHARGE fires: strong drop
     const v = colReel.views[4];
     if (v.reveal) await v.reveal(n);                    // white: the badge's chevrons fly up and its count rolls in
     gsap.fromTo(v.inner.scale, { x: 1.5, y: 1.5 }, { x: 1, y: 1, duration: 0.6, ease: "elastic.out(1,0.45)" });
