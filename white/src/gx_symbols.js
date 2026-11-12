@@ -376,8 +376,9 @@ GX.plugin(function (ctx) {
   }
 
   // ---------- A K Q J, white (user 2026-11-12: "we don't like the simple symbol animation that jumps, make it like the
-  // wild animation"): the letter punches out like the WILD's roar - squash, peak, elastic settle, NO jump - with a glow
-  // in its colour behind it, coloured licks rising behind it, two shock rings, a flash and a spark burst, then a breath ----------
+  // wild animation"): the letter punches out like the WILD's roar - squash, peak, elastic settle, NO jump - with two shock
+  // rings and a spark burst, then a breath. NO light behind or over it (user 2026-11-12: "we don't need bright lights during
+  // the win behind the letter symbols"): the aura, the flame licks and the white flash are gone ----------
   function letterRoar(d, A) {
     const col = LOW_COL[d.id], hi = LOW_HI[d.id], h = A.hero;
     A.tw(gsap.timeline()
@@ -385,17 +386,6 @@ GX.plugin(function (ctx) {
       .to(h.scale, { x: 1.18, y: 1.18, duration: 0.12, ease: "back.out(2.5)" })
       .to(h.scale, { x: 1, y: 1, duration: 0.55, ease: "elastic.out(1,0.38)" }));
     const fx = A.fx(), P = A.parts(fx);
-    const back = A.behind(true), BF = A.parts(back);
-    const bg = spr(FX.tex.glow, back, { tint: col, s: 1.25, sy: 1.1, alpha: 0 });      // a faint aura, not a blob on the parchment
-    A.tw(gsap.to(bg, { alpha: 0.28, duration: 0.25, delay: 0.1 }));
-    const lick = (burst) => {
-      const a = Math.PI + rnd(-0.3, Math.PI + 0.3), r = 78 + rnd(-8, 6);
-      BF.emit({ frames: FX.tex.fireFrames, fps: 30, tex: FX.tex.flame, x: Math.cos(a) * r, y: Math.sin(a) * r * 0.95 + 6, vx: Math.cos(a) * 26,
-        vy: rnd(-200, -130) * (burst ? 1.3 : 1), s0: rnd(0.8, 1.15), s1: 0.25, life: rnd(0.45, 0.7), a0: 0.5, a1: 0, fadeIn: 0.08,
-        tint: Math.random() < 0.5 ? col : hi, blend: ADD });
-    };
-    let acc = 0, t = 0;
-    A.onStep((dt) => { t += dt; acc += dt * (t < 0.8 ? 14 : 4) * (MOBILE ? 0.5 : 1); while (acc >= 1) { acc -= 1; lick(t < 0.8); } });
     const ring = (delay, s1, tint, life) => A.later(delay, () => {
       const r = spr(FX.tex.ring, fx, { tint, s: 0.3, alpha: 1 });
       A.tw(gsap.to(r.scale, { x: s1, y: s1 * 0.92, duration: life, ease: "power2.out" }));
@@ -403,9 +393,6 @@ GX.plugin(function (ctx) {
     });
     ring(0.22, 1.5, col, 0.5); ring(0.34, 1.9, hi, 0.55);
     A.later(0.22, () => {
-      const f = spr(FX.tex.glow, fx, { tint: hi, s: 0.5, alpha: 0.8 });
-      A.tw(gsap.to(f.scale, { x: 1.3, y: 1.2, duration: 0.35, ease: "power2.out" }));
-      A.tw(gsap.to(f, { alpha: 0, duration: 0.35 }));
       for (let i = 0; i < N(12); i++) {
         const a = rnd(0, TAU), sp = rnd(240, 420);
         P.emit({ tex: FX.tex.spark, x: Math.cos(a) * 36, y: Math.sin(a) * 36, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, drag: 3,
