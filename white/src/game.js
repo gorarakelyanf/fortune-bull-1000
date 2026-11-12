@@ -441,7 +441,11 @@
       this.fire.tint = 0xff6a10; this.fire.blendMode = PIXI.BLEND_MODES.ADD; this.fire.visible = false;
       this.inner.addChild(this.fire, this.a, this.b); this.c.addChild(this.inner);
       this.cnt = new PIXI.Text(`${Engine.NUDGES}/${Engine.NUDGES}`, FX.gold(40, { stroke: "#4a0505", strokeThickness: 5, dropShadowDistance: 1.5, dropShadowBlur: 2, padding: 6 }));
-      this.cnt.anchor.set(0.5); this.cnt.position.set(SW_PLATE.x, SW_PLATE.y); this.cnt.visible = false; this.inner.addChild(this.cnt);   // white: live count on the plate
+      this.cnt.anchor.set(0.5); this.cnt.position.set(SW_PLATE.x, SW_PLATE.y); this.cnt.visible = false; this.inner.addChild(this.cnt);
+      // white: the CHARGE symbol's window shows its landed count (the badge x0.9 on the symbol; window centre 0.5, -31.4)
+      this.chg = new PIXI.Container(); this.chg.position.set(0.5, -31.4); this.chg.visible = false; this.inner.addChild(this.chg);
+      this.chgWin = new PIXI.Sprite(T("UI/charge_window")); this.chgWin.anchor.set(0.5); this.chgWin.scale.set(0.9);
+      this.chgNum = new PIXI.Container(); this.chg.addChild(this.chgWin, this.chgNum);   // white: live count on the plate
       if (V2ART) {                                       // V2 wild seals carry live text on their lower band
         this.lab = new PIXI.Text("WILD", FX.gold(40, { strokeThickness: 7, lineHeight: 34, align: "center" }));
         this.lab.anchor.set(0.5); this.lab.visible = false; this.inner.addChild(this.lab);
@@ -464,11 +468,18 @@
         if (w) { const sup = id === "super_wild"; this.lab.text = sup ? "SUPER\nWILD" : "WILD";
           this.lab.style.fontSize = sup ? 30 : 40; this.lab.y = sup ? V2_LAB.super : V2_LAB.wild; }
       }
-      this.cnt.visible = SW_LIVE_COUNT && id === "super_wild" && !blur;
+      this.cnt.visible = SW_LIVE_COUNT && id === "super_wild" && !blur; this.chg.visible = false; this.chg.scale.set(1);
       if (this.cnt.visible) { this.cnt.text = String(swPick()); this.cnt.scale.set(1); }   // white: a passing SUPER WILD shows a random count
       this.dim(0);
     }
-    dim(k) { const g = Math.round(255 * (1 - (GPASS ? 0.8 : 0.65) * k)); const t = (g << 16) | (g << 8) | g; this.a.tint = t; this.b.tint = t; if (this.lab) this.lab.tint = t; if (this.cnt) this.cnt.tint = t; }
+    showCharge(n) {                                     // white: the landed CHARGE symbol's count in its window
+      this.chgNum.removeChildren().forEach((c) => c.destroy());
+      const sps = String(n).split("").map((d) => { const sp = new PIXI.Sprite(T("UI/charge_digit_" + d)); sp.anchor.set(0.5); sp.scale.set(0.38); return sp; });
+      const step = (sp) => sp.width * 0.84; let x = -sps.reduce((acc, sp) => acc + step(sp), 0) / 2;
+      sps.forEach((sp) => { sp.x = x + step(sp) / 2; x += step(sp); this.chgNum.addChild(sp); });
+      this.chg.visible = true;
+    }
+    dim(k) { const g = Math.round(255 * (1 - (GPASS ? 0.8 : 0.65) * k)); const t = (g << 16) | (g << 8) | g; this.a.tint = t; this.b.tint = t; if (this.lab) this.lab.tint = t; if (this.cnt) this.cnt.tint = t; if (this.chg) { this.chgWin.tint = t; this.chgNum.children.forEach((sp) => (sp.tint = t)); } }
     setY(y) { this.c.y = y; }
     set visible(v) { this.c.visible = v; }
     get hero() { return this.b.visible ? this.b : this.inner; }
@@ -864,7 +875,7 @@
     return new Reel({ rows: 3, pitch: CELL_H, y0: rowY(0), vmax: 28, vNormal: 28, vTurbo: 40, accel: 400, stopDur: 0.6, spinDim: 0.55, stopFast: 0.2,
       container: c, masks: [[c, m]], onExit: () => fireCurtain(r),
       make: () => new SymView(c, REEL_CX[r]),
-      rand: () => { const s = Engine.SYMBOLS; const w = Engine.WEIGHTS; let t = 0; for (const k of s) t += w[k] + 2; let x = Math.random() * t; for (const k of s) { x -= w[k] + 2; if (x < 0) return k; } return "J"; } });
+      rand: () => { const s = Engine.SYMBOLS; const w = Engine.WEIGHTS; let t = 0; const fw = (k) => w[k] + (k === "charge" || k === "super_wild" ? 0 : 2); for (const k of s) t += fw(k); let x = Math.random() * t; for (const k of s) { x -= fw(k); if (x < 0) return k; } return "J"; } });
   });
   const colQ = [];                                   // white (spec): chips queued to slide in next (colPlan)
   const colBlur = new PIXI.BlurFilter(0, MOBILE ? 2 : 4); colBlur.blurX = 0; colBlur.blurY = 0;
@@ -1074,6 +1085,7 @@
   let curGrid = START.map((c) => c.slice());
   function setUiLocked(locked) {
     [ui.minus, ui.plus, ui.ex].forEach((b) => { b.alpha = locked ? 0.55 : 1; b.body.eventMode = locked ? "none" : "static"; });
+    exDim(locked);
     if (buyUI) buyUI.setEnabled(!locked && !(S.auto > 0));
   }
   function changeBet(d) {
@@ -1130,6 +1142,13 @@
   function exPress() {                                                 // ON -> switch off at once; OFF -> choose a mode first
     if (S.state !== "idle") return;
     if (S.ex) toggleEx(); else exBet.open();
+  }
+  // while a round runs the switch is darkened (every sprite / text tinted), never see-through
+  function exDim(locked) {
+    ui.ex.alpha = 1;
+    const mul = (c, k) => ((Math.round(((c >> 16) & 255) * k) << 16) | (Math.round(((c >> 8) & 255) * k) << 8) | Math.round((c & 255) * k));
+    const walk = (o) => { if (typeof o.tint === "number") { if (o._t0 === undefined) o._t0 = o.tint; o.tint = locked ? mul(o._t0, 0.62) : o._t0; } (o.children || []).forEach(walk); };
+    walk(ui.ex);
   }
   // the engine's mode (and the column's chips) follow the switch: 0 off, else the chosen Extra Bet mode
   function exModeSync(flash) {
@@ -1666,6 +1685,7 @@
   cntTxt.style = FX.gold(44, PLATE_NUM);
   accTxt.style = new PIXI.TextStyle({ fontFamily: "Georgia, serif", fontWeight: "900", fontStyle: "italic", fontSize: 50, fill: ["#FFF3B8", "#F5C24A", "#C47A16"], fillGradientStops: [0, 0.55, 1], stroke: "#4a2206", strokeThickness: 6, dropShadow: true, dropShadowColor: "#1a0800", dropShadowAlpha: 0.6, dropShadowBlur: 2, dropShadowDistance: 2, dropShadowAngle: Math.PI / 2, padding: 10 });   // = the chip labels
   const accPlate = new PIXI.Sprite(T("UI/total_plate")); accPlate.anchor.set(0.5); accPlate.position.set(CS_X, 556); cscreen.addChildAt(accPlate, 1);   // fixed: only the number pops
+  accPlate.visible = false; accTxt.style = FX.gold(50, PLATE_NUM);   // white: parchment, like the count above it
   function screenUp(on) {
     gsap.killTweensOf(cscreen);
     if (on) { cscreen.visible = true; cscreen.y = CS_HIDE; accum.visible = true; accum.alpha = 1; accum.scale.set(1); accTxt.text = "x0";
@@ -1934,6 +1954,8 @@
   //    runs its actions on the column into the total, a Choice +2 adds two picks;
   //  - Buy Bonus (buyShow): the same wheel at once, after the column lands on the starting multiplier; pays bet x total.
   // The column's own strip is decor: the chips that will slide into the centre are set to the engine's draws first.
+  let accCap = Infinity;                                 // at the max-win cap the shown total stops at the paid one
+  const capAdd = (acc, v) => Math.min(accCap, acc + v);
   const colIdxOf = (v) => { const i = Engine.STRIP.indexOf(v); return i < 0 ? 0 : i; };
   function colPlan(vals, flash) {                       // next values into views[3], [2], [1], [0]; the rest queue up
     for (let j = 0; j < 4 && j < vals.length; j++) {
@@ -1992,7 +2014,7 @@
         ctr.tot += more; ctr.done = ctr.tot; ctr.draw(true);
         accShown.v = acc;
         await FX.tween(accShown, { v: acc + add, duration: S.turbo ? 0.6 : 1.4, ease: "power1.in", onUpdate: () => { accDraw(); if (Math.random() < 0.3) SFX.tick(); } });
-        acc += add; accSet(acc, 1.6, 1); SFX.impact(true); flashScreen(multTint(Math.min(1000, add)), 0.16, 0.35);
+        acc = capAdd(acc, add); accSet(acc, 1.6, 1); SFX.impact(true); flashScreen(multTint(Math.min(1000, add)), 0.16, 0.35);
         return acc;
       }
       const v = vals[k], f = k < 6 ? 1 : Math.max(0.32, Math.pow(0.86, k - 5));
@@ -2011,7 +2033,7 @@
         pulseChip(v >= 50);
         await FX.wait(0.08 * f);
         if (f > 0.55) await streakToBadge(v);
-        badgeIn(); acc += v; accSet(acc, 1.25 + 0.5 * esc, esc);
+        badgeIn(); acc = capAdd(acc, v); accSet(acc, 1.25 + 0.5 * esc, esc);
         ringAt(accum.x, accum.y, 0xffd060, 1.4 + esc, 0.3); SFX.impact(lastN || v >= 50); SFX.rise(esc);
         if (lastN || v >= 50) flashScreen(multTint(v), 0.14, 0.3);
       }
@@ -2038,7 +2060,7 @@
       await GX.run("superHaloPick", { pos: p.pos, v: vals[p.pos], from: s ? { x: s.x, y: s.y } : from, to }, 6000);
       ctr.done++; ctr.draw(true);
       if (p.t === "mult") {
-        acc += p.v; accSet(acc, 1.4, 0.5); SFX.impact(p.v >= 50); SFX.rise(j / Math.max(1, fc.picks.length - 1));
+        acc = capAdd(acc, p.v); accSet(acc, 1.4, 0.5); SFX.impact(p.v >= 50); SFX.rise(j / Math.max(1, fc.picks.length - 1));
         if (p.v >= 50) flashScreen(multTint(p.v), 0.14, 0.3);
       } else if (p.t === "choice2") {
         ctr.tot += 2; choiceFly(2); await FX.wait(0.5); ctr.draw(true);
@@ -2049,14 +2071,17 @@
         ctr.draw(true);
       }
     }
+    owner.slice(fc.picks.length).forEach((s) => s.dec());   // Choices capped at 9: the rest of the counts are spent too
     await GX.run("superHaloClose", {}, 2000);
     return acc;
   }
   async function nudgePhase(r) {
+    accCap = r.capped ? r.mult : Infinity;
     const chipStart = r.startMult < 0;
     if (featureOn) feature(true); else if (!chipStart) await bullCharge();
     let acc = chipStart ? 0 : r.startMult;
-    const ctr = counter(r.chipSteps || (r.fc ? r.fc.choices0 : 0));
+    const bruns = r.boardRuns || [];
+    const ctr = counter(r.chipSteps || (bruns.length ? bruns[0].n : 0) || (r.fc ? r.fc.choices0 : 0));
     screenUp(true); cntBox.visible = true; cntBox.scale.set(0); ctr.draw(false); centreMark.visible = true; centreMark.alpha = 0;
     gsap.to(centreMark, { alpha: 1, duration: 0.25 });
     lineGfx.forEach((g) => gsap.to(g, { alpha: 0.12, duration: 0.2 }));      // paylines step back while the column works
@@ -2066,12 +2091,25 @@
     if (chipStart) { await bullOrb({ x: COL_CX, y: COL_CY }, 0x5ff0ff, r.startMult, 1.25); feature(true); await nudgeChipFire(r.chipSteps); }
     else { pulseChip(false); await streakToBadge(r.startMult); badgeIn(); accSet(acc, 1, 0); SFX.impact(false); }
     if (r.nudges.length) { colPlan(r.nudges, false); acc = await runActions(r.nudges, acc, ctr); }
+    for (const b of bruns) {                            // every CHARGE symbol on the board fires its count on the column
+      const reel = Math.floor(b.cell / 3), row = b.cell % 3, from = { x: REEL_CX[reel], y: rowY(row) }, v = reels[reel].view(row);
+      if (v && v.chg) gsap.fromTo(v.chg.scale, { x: 1.5, y: 1.5 }, { x: 1, y: 1, duration: 0.3, ease: "back.out(3)" });
+      ringAt(from.x, from.y, 0xc070ff, 1.6, 0.4); SFX.nudgeActivate();
+      await beam(from, { x: COL_CX, y: COL_CY }, 0xc070ff);
+      chargeTag(b.n); colPlan(b.vals, true); await FX.wait(0.3);
+      const run = counter(b.n); run.draw(true);
+      acc = await runActions(b.vals, acc, run);
+    }
     if (r.fc) acc = await fortuneChoiceShow(r, acc, ctr, sw, { x: COL_CX, y: COL_CY });
     lineGfx.forEach((g) => gsap.to(g, { alpha: 1, duration: 0.2 }));
     return acc;
   }
   // the Buy Bonus round: no spin; the reels step back, the column lands on the starting multiplier, Fortune Choice plays
-  async function buyShow(r) {
+  async function buyShow(r) {                          // whatever happens, the player's own mode comes back
+    try { await buyShowRun(r); } finally { if (Engine.mode() === "buy") exModeSync(true); }
+  }
+  async function buyShowRun(r) {
+    accCap = r.capped ? r.totalX : Infinity;
     S.state = "present"; presentAt = performance.now(); S.canSkip = false; S.respin = false;
     const bet = BETS[S.betIdx];
     Engine.setMode("buy");
@@ -2559,9 +2597,9 @@
 
   async function present(r) {
     S.state = "present"; presentAt = performance.now();
-    S.canSkip = !r.nudges.length && !r.fc && !TIER_ORDER.includes(Engine.tier(r.totalX)); S.respin = false;
+    S.canSkip = !r.nudges.length && !r.fc && !(r.boardRuns && r.boardRuns.length) && !TIER_ORDER.includes(Engine.tier(r.totalX)); S.respin = false;
     const cells = new Set();
-    r.lines.forEach((l) => l.rows.forEach((row, reel) => cells.add(reel * 3 + row)));
+    r.lines.forEach((l) => l.rows.forEach((row, reel) => cells.add(reel * 3 + row))); (r.boardRuns || []).forEach((b) => cells.add(b.cell));
     // dim the losing cells. White (user 2026-11-11: "during the win, remove the frames of symbols, simply make the lighter
     // parts with bigger radius"): one dark veil per reel with a rounded hole for every winning cell
     reels.forEach((rl, reel) => {
@@ -2608,7 +2646,7 @@
     plaqueBg.alpha = 1; plaqueGlow.alpha = 0.5; plaqueTxt.visible = true; plaqueBig.visible = false;
     plaque.visible = true; wbTotal.visible = false;
     // a win below the stake (no feature) is a net loss: it goes straight to its total, with no multiplier flight
-    const quiet = rung === 0 && !r.nudges.length && !r.fc, firstCount = quiet ? r.win : r.baseWin;
+    const quiet = rung === 0 && !r.nudges.length && !r.fc && !(r.boardRuns && r.boardRuns.length), firstCount = quiet ? r.win : r.baseWin;
     plaqueShown.v = MOBILE ? firstCount : firstCount * 0.15; drawPlaque();   // white: phones show the final number at once (each redraw of this big text costs 10-30 ms there)
     plaque.alpha = 0; plaque.scale.set(0.6 * PLAQUE_S);
     gsap.to(plaque, { alpha: 1, duration: 0.1 });
@@ -2618,7 +2656,7 @@
     SFX.line();
     await FX.wait(rung === 0 ? 0.08 : S.turbo ? 0.1 : 0.25);
     // multiplier phase
-    if (r.nudges.length || r.fc) {
+    if (r.nudges.length || r.fc || (r.boardRuns && r.boardRuns.length)) {
       const acc = await nudgePhase(r);
       await laserApply(Math.max(1, acc));
     } else if (r.mult > 1 && quiet) {
@@ -3029,7 +3067,11 @@
     else if (force === "max") {
       // DEMO only: a max win is too rare to find by seed search (none in tens of millions), so the demo sets up a
       // real, possible outcome: two full lines of WILDs with the 1000x chip (capped at the max win), settled by the engine as usual
-      r = Engine.settle([["wild", "wild", "K"], ["wild", "wild", "J"], ["wild", "wild", "A"]], Engine.STRIP.indexOf(1000), bet, stake());
+      // white: with the 50,000x cap a real max win needs Fortune Choice: a board of SUPER WILDs, the 1000x chip in the
+      // centre, the first seed whose round hits the cap (found in under a few thousand seeds in every mode)
+      const sg = [0, 1, 2].map(() => ["super_wild", "super_wild", "super_wild"]), ci = Engine.STRIP.indexOf(1000);
+      for (let sd = 1; sd < 300000 && !r; sd++) { const t = Engine.settle(sg, ci, bet, stake(), Engine.mulberry32(sd)); if (t.capped) r = t; }
+      if (!r) r = Engine.settle([["wild", "wild", "K"], ["wild", "wild", "J"], ["wild", "wild", "A"]], Engine.STRIP.indexOf(1000), bet, stake());
     }
     else if (force) { const f = Engine.findRound(force, bet, exArg(), 1 + Math.floor(Math.random() * 1e6)); r = f ? f.round : Engine.spin(bet, exArg()); }
     else r = Engine.spin(bet, exArg());
@@ -3085,7 +3127,7 @@
     const colFinal = [3, 2, 1, 0, -1, -2, -3].map((k) => (k > 0 && k <= r.nudges.length ? colIdxOf(r.nudges[k - 1]) : stripAt(colC, k)));   // white (spec)
     if (r.win > 0 && !tb && !quick) {                // a win to multiply: the column rolls on, ticking chip by chip
       colTeaseOn();
-      const small = r.win < r.stake && !r.nudges.length && !r.fc;            // a short roll for a win below the stake
+      const small = r.win < r.stake && !r.nudges.length && !r.fc && !(r.boardRuns && r.boardRuns.length);            // a short roll for a win below the stake
       landed.push(colReel.teaseStop(colFinal, { vSlow: small ? 5.5 : 4.2, tau: 0.2, t1: small ? 0.42 : 0.85, t2: small ? 0.45 : 0.75, over: 0.09,
         extra: (n) => Array.from({ length: n }, (_, k) => stripAt(colC, k - n - 2)),
         onTick: (left, v) => {
@@ -3119,6 +3161,11 @@
     gsap.fromTo(boardL, { y: 3 }, { y: 0, duration: 0.14, ease: "power2.out" });
     for (let row = 0; row < 3; row++) {
       const id = r.grid[i][row];
+      if (id === "charge" && r.boardCharges && r.boardCharges[i * 3 + row]) {   // white: a CHARGE symbol lands with its count
+        const cv = reels[i].view(row), cx = REEL_CX[i], cy = rowY(row);
+        cv.showCharge(r.boardCharges[i * 3 + row]); gsap.fromTo(cv.chg.scale, { x: 1.6, y: 1.6 }, { x: 1, y: 1, duration: 0.3, ease: "back.out(3)" });
+        ringAt(cx, cy, 0xc070ff, 1.5, 0.4); flashAt(cx, cy, 0xe0b0ff, 1.0, 0.25); SFX.nudgeActivate(); buzz(15);
+      }
       if (Engine.WILDS.has(id)) {
         const x = REEL_CX[i], y = rowY(row);
         const v = reels[i].view(row);
@@ -3228,7 +3275,8 @@
     const rules = [
       "5 fixed lines. WILD and SUPER WILD replace every symbol.",
       "The centre multiplier of the column multiplies the line win.",
-      "A CHARGE chip in the centre of a win runs its actions: each adds a multiplier.",
+      "A CHARGE chip in the centre, or a CHARGE symbol on the reels, of a win",
+      "runs its actions on the column: each adds a multiplier.",
       "A SUPER WILD in a win opens FORTUNE CHOICE: its number = Choices,",
       "9 positions: multipliers, CHARGE and +2 Choices; line win x Bonus Total.",
       `EXTRA BET ${Engine.MODES[1].cost}x / ${Engine.MODES[2].cost}x / ${Engine.MODES[3].cost}x: multipliers 3x / 15x / 50x and up.`,

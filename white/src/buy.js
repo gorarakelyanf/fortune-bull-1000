@@ -9,8 +9,9 @@
   const RES = 2;                                        // canvas art is drawn at 2x the 1080x1920 design size
   const PW = 900, PH = 730, CW = 820, CH = 380;         // panel and card size (white, spec: one Buy -> one card)
   const TX = 160, TW = 440;                             // card text column: centre x and max width
-  const ART = window.ART || "assets";
-  const SRC = window.ART_SRC || ((p) => `${ART}/${p}.webp`);     // game.js: per-version source (V1 symbols)
+  // game.js: per-version source (V1 symbols, the user's SUPER WILD). Looked up when drawn: game.js sets window.ART_SRC
+  // after this file has loaded (white 2026-11-12: the BUY card showed the OLD super wild from assets/)
+  const SRC = (p) => (window.ART_SRC ? window.ART_SRC(p) : `${window.ART || "assets"}/${p}.webp`);
   const T = (p) => PIXI.Assets.get(SRC(p)) || PIXI.Assets.get(`assets/${p}.webp`) || PIXI.Texture.from(SRC(p));
   const cache = {};
 
@@ -210,11 +211,14 @@
       const halo = sprite(FX.tex.glow, 1.35); halo.blendMode = ADD; halo.alpha = 0.4; halo.tint = kind !== "nudge" ? 0xffa030 : 0x3ad8ff;
       art.addChild(halo);
       A(gsap.to(halo, { alpha: 0.7, duration: 1.3, yoyo: true, repeat: -1, ease: "sine.inOut", delay: idx * 0.4 }));
+      // white (user 2026-11-12: "fix the logo"): the additive orange halo turned into a muddy blob behind the SUPER WILD
+      // on the dark card -> no halo there, only a soft dark shadow that seats the crest on the card
+      if (kind !== "nudge") { halo.visible = false; const sh = sprite(FX.tex.glow, 0.95); sh.tint = 0x000000; sh.alpha = 0.45; sh.y = 14; art.addChild(sh); }
       if (kind !== "nudge") {                // white (spec): FORTUNE CHOICE = the SUPER WILD with a 1000x chip
         const mini = kind === "bonus" ? chip("Multipliers/label_1000x", "Multipliers/chip_bg_1000") : chip("Multipliers/label_nudge5");
         mini.scale.set(0.56); mini.position.set(84, 100);
-        art.addChild(sprite(T("Symbols/super_wild"), 0.8), mini);
-        art.children[1].y = -16;
+        const crest = sprite(T("Symbols/super_wild"), 0.8); art.addChild(crest, mini);
+        crest.y = -16;
         A(gsap.to(mini.scale, { x: 0.61, y: 0.61, duration: 0.7, yoyo: true, repeat: -1, ease: "sine.inOut" }));
       } else {
         const ch = chip("Multipliers/label_nudge5"); ch.scale.set(1.18); art.addChild(ch);

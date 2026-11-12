@@ -246,7 +246,7 @@ GX.plugin(function (ctx) {
     if (!SH) return;
     const cs = SH.cs || 0.72;
     SH.coins.forEach((c, i) => {
-      if (c.used && i !== idx) { gsap.to(c.scale, { x: cs * 0.78, y: cs * 0.78, duration: 0.08 }); return; }
+      if (c.used) { gsap.to(c.scale, { x: cs * 0.78, y: cs * 0.78, duration: 0.08 }); gsap.to(c.dimL, { alpha: 0.55, duration: 0.06 }); gsap.to(c.glow, { alpha: 0, duration: 0.06 }); return; }   // spent: stays dark
       const on = i === idx, rest = idx < 0;
       gsap.to(c.dimL, { alpha: rest || on ? 0 : 0.42, duration: 0.06 });
       gsap.to(c.glow, { alpha: on ? 0.95 : 0, duration: 0.06 });
@@ -283,7 +283,7 @@ GX.plugin(function (ctx) {
         me.coins.forEach((c) => { if (c.seated && !c.destroyed) { const p = slot(c); c.position.set(p.x, p.y); } });
         if (st.selecting) {
           let best = -1, bd = 9;
-          me.coins.forEach((c, i) => { const a = Math.atan2(Math.sin(c.ang + st.rot + Math.PI / 2), Math.cos(c.ang + st.rot + Math.PI / 2)); if (Math.abs(a) < bd) { bd = Math.abs(a); best = i; } });
+          me.coins.forEach((c, i) => { if (c.used) return; const a = Math.atan2(Math.sin(c.ang + st.rot + Math.PI / 2), Math.cos(c.ang + st.rot + Math.PI / 2)); if (Math.abs(a) < bd) { bd = Math.abs(a); best = i; } });
           if (best !== st.lit) { st.lit = best; shLight(best); }
         }
         P.update(Math.min(0.05, dr / 60));
