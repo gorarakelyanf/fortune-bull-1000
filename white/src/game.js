@@ -46,7 +46,11 @@
   const HALO_MIN = +(params.get("halomin") || 100);       // halo wheel on throws of this multiplier and up (?halomin=5 to see it often)                                 // round multiplier coins (gap #2); NUDGE keeps its square plate
   // ?mobile = the phone build: one shared bull video + one shared wild video (src/segvideo.js), a still bull whenever the
   // video is not really playing, taps unlock video, steady video speed, no edge smoothing, lighter effects
-  const MOBILE = params.has("mobile");
+  // white (video audit 2026-11-12): phones and tablets get the phone build by themselves (touch is their main pointer);
+  // ?desktop forces the desktop build. A plain link on a phone used to load six separate videos.
+  const MOBILE = params.has("mobile") || (!params.has("desktop") && ((window.matchMedia && matchMedia("(pointer: coarse)").matches) ||
+    (navigator.maxTouchPoints > 1 && /Macintosh/.test(navigator.userAgent))));
+  const CLIPV = window.CLIPV ? "?v=" + window.CLIPV : "";    // white: the clips' content hash (build_deploy.py)
   const BASE_TS = +(params.get("ts") || 1);          // ?ts=0.1 = slow motion (QA video capture)
   gsap.globalTimeline.timeScale(BASE_TS);
 
@@ -111,9 +115,9 @@
   const layout = await (await fetch("assets/layout.json")).json();
   const fxPts = await (await fetch("assets/fx_points.json")).json();
   let clipList = {};
-  try { clipList = await (await fetch("assets/clips/clips.json")).json(); } catch (e) { clipList = {}; }
+  try { clipList = await (await fetch("assets/clips/clips.json" + CLIPV)).json(); } catch (e) { clipList = {}; }
   if (VER === 4) {                                   // V4 bull clips replace the bull_* entries (same placement, own tracks)
-    try { const v4 = await (await fetch("assets/clips/v4/clips.json")).json();
+    try { const v4 = await (await fetch("assets/clips/v4/clips.json" + CLIPV)).json();
       for (const [k, c] of Object.entries(v4)) clipList[k] = Object.assign({}, c, { sub: "v4/" }); /* "sub" = clip folder; "dir" is the throw's direction */ } catch (e) { console.warn("v4 clips", e); }
   }
   // ---------- clip downloads (Kling) ----------
@@ -128,9 +132,11 @@
   let mobBull = null, mobWild = null;
   if (MOBILE && window.SegVideo) {
     try {
-      const mc = await (await fetch("assets/clips/m/clips.json")).json();
-      mobBull = new SegVideo.SegPlayer("assets/clips/m/" + mc.bull.file, mc.bull.segments, { fps: mc.fps, minRate: 0.5, maxRate: 2.5 });
-      mobWild = new SegVideo.SegPlayer("assets/clips/m/" + mc.wilds.file, mc.wilds.segments, { fps: mc.fps, minRate: 1, maxRate: 1 });
+      const mc = await (await fetch("assets/clips/m/clips.json" + CLIPV)).json();
+      mobBull = new SegVideo.SegPlayer("assets/clips/m/" + mc.bull.file + CLIPV, mc.bull.segments, { fps: mc.fps, minRate: 0.5, maxRate: 2.5 });
+      mobWild = new SegVideo.SegPlayer("assets/clips/m/" + mc.wilds.file + CLIPV, mc.wilds.segments, { fps: mc.fps, minRate: 1, maxRate: 1, lazy: true });
+      // white (video audit): the bull video downloads alone first; the wild video starts once it is all here (10 s at most)
+      { const w0 = performance.now(), go = () => { if (mobBull.full() || performance.now() - w0 > 10000) mobWild.start(); else setTimeout(go, 250); }; go(); }
       const metaOf = (pl) => new Promise((res) => { if (pl.v.readyState >= 1) res(); pl.v.addEventListener("loadedmetadata", res, { once: true }); pl.v.addEventListener("error", res, { once: true }); });
       const bm = metaOf(mobBull), wm = metaOf(mobWild);
       const entry = (video, cfg, pl, meta, frame) => ({ video, sprite: null, cfg, meta, ready: Promise.resolve(), start: () => {}, shared: pl, frame });
@@ -153,12 +159,16 @@
       const dir = c.sub || ((VER === 1 || VER === 4) && /^(super_)?wild_/.test(name) ? "_v1/" : "");    // V1/V4 = original wild clips
       v.muted = true; v.playsInline = true; v.loop = !!c.loop; v.preload = "auto";
       v.crossOrigin = "anonymous";
+      // white (video audit): in the page, invisible (some browsers throttle a video that is not in the document)
+      v.style.cssText = "position:fixed;left:0;top:0;width:2px;height:2px;opacity:0.01;pointer-events:none;z-index:-1"; document.body.appendChild(v);
       v.defaultPlaybackRate = v.playbackRate = BASE_TS;          // clips follow ?ts= slow motion too
       const meta = new Promise((res) => { v.addEventListener("loadedmetadata", res, { once: true }); v.addEventListener("error", res, { once: true }); });
       const ready = new Promise((res) => { v.addEventListener("canplaythrough", res, { once: true }); v.addEventListener("error", res, { once: true }); });
-      const start = () => { if (!v.src) { v.src = `assets/clips/${dir}${c.file}`; v.load(); } };
+      const start = () => { if (!v.src) { v.src = `assets/clips/${dir}${c.file}${CLIPV}`; v.load(); } };
       clipPend[name] = { video: v, sprite: null, cfg: c, meta, ready, start };
-      if (BOOT_CLIPS.has(name)) { start(); clipReady.push(Promise.race([ready, new Promise((res) => setTimeout(res, 15000))])); }
+      // white (video audit): the boot waits for the first frame (iOS never fires canplaythrough for a paused video)
+      const first = new Promise((res) => { v.addEventListener("loadeddata", res, { once: true }); v.addEventListener("error", res, { once: true }); });
+      if (BOOT_CLIPS.has(name)) { start(); clipReady.push(Promise.race([first, new Promise((res) => setTimeout(res, 15000))])); }
     } catch (e) { console.warn("clip", name, e); }
   }
   const files = [];
@@ -231,6 +241,24 @@
   })();
   // textures only once a clip knows its size: a PIXI VideoResource made before that can recurse forever
   // (_onPlayStart <-> _onCanPlay while width is still 0) on a slow connection. A clip that never loads stays off.
+  // white (video audit 2026-11-12): one GPU upload per NEW video frame (requestVideoFrameCallback = updateFPS 0) instead
+  // of a fixed 24-30 fps timer that skipped frames and re-sent unchanged ones. A browser that never calls back for a
+  // playing video gets the timer back.
+  const vidFPS = (v) => (v.requestVideoFrameCallback ? 0 : 30);
+  function vidProbe(bt, v, fps) {
+    if (!v.requestVideoFrameCallback || !bt || !bt.resource) return;
+    let ok = false; v.requestVideoFrameCallback(() => { ok = true; });
+    const chk = () => { if (!ok && !v.paused && bt.resource) { bt.resource.updateFPS = fps; console.warn("video: no frame callbacks, timer uploads"); } };
+    if (!v.paused) setTimeout(chk, 1500); else v.addEventListener("playing", () => setTimeout(chk, 1500), { once: true });
+  }
+  // white (video audit): a clip plays only once it is downloaded (a phone segment: its time range; a file: all of it)
+  function clipBuffered(v) {
+    if (v.ready) return v.ready();
+    const b = v.buffered, d = v.duration;
+    if (!d || !b) return false;
+    for (let i = 0; i < b.length; i++) if (b.start(i) <= 0.05 && b.end(i) >= d - 0.1) return true;
+    return false;
+  }
   function activateClip(name) {
     const o = clipPend[name]; if (!o || clips[name]) return;
     const v = o.video, c = o.cfg;
@@ -238,9 +266,9 @@
     let tex;
     if (o.shared) {                                   // phone build: one texture per shared video, wilds as halves of it
       const pl = o.shared;
-      if (!pl.base_) pl.base_ = PIXI.BaseTexture.from(pl.v, { resourceOptions: { autoPlay: false, updateFPS: pl.fps } });
+      if (!pl.base_) { pl.base_ = PIXI.BaseTexture.from(pl.v, { resourceOptions: { autoPlay: false, updateFPS: pl.v.requestVideoFrameCallback ? 0 : pl.fps } }); vidProbe(pl.base_, pl.v, pl.fps); }
       tex = o.frame ? new PIXI.Texture(pl.base_, new PIXI.Rectangle(o.frame[0], o.frame[1], o.frame[2], o.frame[3])) : new PIXI.Texture(pl.base_);
-    } else tex = PIXI.Texture.from(v, { resourceOptions: { autoPlay: false, updateFPS: 30 } });
+    } else { tex = PIXI.Texture.from(v, { resourceOptions: { autoPlay: false, updateFPS: vidFPS(v) } }); vidProbe(tex.baseTexture, v, 30); }
     const sp = new PIXI.Sprite(tex);
     sp.position.set(c.x || 0, c.y || 0); sp.width = c.w; sp.height = c.h; sp.visible = false;
     if (c.key === "green") sp.filters = [/^bull/.test(name) ? keyFilterEdge : keyFilter];
@@ -1377,7 +1405,7 @@
       const mv = bullLive() ? bullPlay("bull_big") : null;
       const at = mv && mv.c.cfg.events && mv.c.cfg.events.roar;
       if (!mv) SFX.roar();
-      else if (mv.fresh) { if (at == null) SFX.roar(); else mv.at("roar").then(() => { if (!mv.ended || mv.why === "end") SFX.roar(); }); }
+      else if (mv.fresh) { if (at == null) SFX.roar(); else mv.at("roar").then(() => SFX.roar()); }
     }
   }
   const clipBusy = {};
@@ -1388,7 +1416,7 @@
   const BULL_TURBO = 1.35, BULL_HURRY = 2.6;
   function bullPlay(name, k) {
     const c = clips[name], idle = clips.bull_idle;
-    if (!c || !idle) return null;
+    if (!c || !idle || !clipBuffered(c.video)) return null;   // white: not downloaded yet = the code move (no frozen bull)
     const same = [bullDir.cur].concat(bullDir.queue).find((m) => m && m.name === name && !m.ended);
     if (same) { same.fresh = false; return same; }
     const mv = { name, c, fresh: true, hurry: false, started: false, ended: false, waits: [], t: 0, k: k || 1 };
@@ -2770,6 +2798,9 @@
   const wildUploads = (on) => { const b = mobWild && mobWild.base_; if (b && b.resource) b.resource.autoUpdate = on; };
   function playCellClip(id, reel, row) {
     const w = clips[id + "_win"]; if (!w) return;
+    // white (video audit): the clip replaces the wild art only when it can really show (a decoded frame, not refused by
+    // Low Power Mode, its part downloaded); otherwise the static wild with its code effects stays
+    if ((w.shared && w.shared.blocked) || w.video.readyState < 2 || !clipBuffered(w.video)) return;
     wildUploads(true);
     const v = reels[reel].view(row);
     const sp = new PIXI.Sprite(w.sprite.texture); sp.anchor.set(0.5); sp.width = w.cfg.w; sp.height = w.cfg.h;
