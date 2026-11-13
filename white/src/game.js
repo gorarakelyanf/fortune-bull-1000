@@ -185,7 +185,7 @@
   if (V2ART) { add("Multipliers/chip_bg_nudge5"); add("UI/buy_button"); }
   ["title_big", "title_mega", "title_super", "title_epic", "title_max", "wp_medallion_gold", "wp_medallion_tint", "wp_banner_gold", "wp_banner_tint", "wp_tablet_gold", "wp_tablet_tint"].forEach((n) => files.push(`assets/Popup/${n}.webp`));
   ["chip_coat", "chip_glints", "chip_rim", "chip_shadow"].forEach((n) => add("Multipliers/" + n));
-  ["Multipliers/centre_frame", "UI/nudge_box", "UI/total_box", "UI/counter_screen", "UI/total_plate", "UI/cf_arrow", "vfx/winline", "vfx/winline_rest", "UI/exp_panel", "UI/exp_card_red", "UI/exp_card_amber", "UI/exp_card_purple", "UI/exp_confirm", "UI/buy_label", "UI/ex_plate", "UI/charge_badge", "UI/charge_window", "UI/charge_chev", "UI/charge_digit_0", "UI/charge_digit_1", "UI/charge_digit_2", "UI/charge_digit_3", "UI/charge_digit_4", "UI/charge_digit_5", "UI/charge_digit_6", "UI/charge_digit_7", "UI/charge_digit_8", "UI/charge_digit_9", "UI/charge_digit_slash", "UI/ex_switch_off", "UI/ex_switch_on"].forEach((p) => files.push(`assets/${p}.webp`));   // every art set uses these
+  ["Multipliers/centre_frame", "UI/nudge_box", "UI/total_box", "UI/counter_screen", "UI/total_plate", "UI/cf_arrow", "vfx/winline", "vfx/winline_rest", "UI/exp_panel", "UI/exp_card_red", "UI/exp_card_amber", "UI/exp_card_purple", "UI/exp_confirm", "UI/buy_label", "UI/ex_plate", "UI/charge_badge", "UI/charge_window", "UI/charge_chev", "UI/charge_digit_0", "UI/charge_digit_1", "UI/charge_digit_2", "UI/charge_digit_3", "UI/charge_digit_4", "UI/charge_digit_5", "UI/charge_digit_6", "UI/charge_digit_7", "UI/charge_digit_8", "UI/charge_digit_9", "UI/charge_digit_slash", "UI/total_x", "UI/ex_switch_off", "UI/ex_switch_on"].forEach((p) => files.push(`assets/${p}.webp`));   // every art set uses these
   if (GPASS) ["Board/panel_dark", "Board/tile_low", "Board/tile_low_blur", "Board/tray_dark", "Board/plinth_slim", "Board/plinth_fade", "Board/frame_stone"].forEach((p) => files.push(`assets/${p}.webp`));
   if (COINS) { Engine.MULT_VALUES.forEach((v) => files.push(`assets/Multipliers/coin_${v}.webp`)); ["coin_shadow", "coin_rim", "centre_frame_thin"].forEach((n) => files.push(`assets/Multipliers/${n}.webp`)); }
   ["autoplay", "autoplay_shadow", "balance_bar_border", "balance_bar_fill", "bet_window_border", "bet_window_fill",
@@ -561,6 +561,7 @@
     }`;
   const magicFilters = [];
   // white: the CHARGE badge in the chip box (badge art 262 x 256 px; its window centre and size in badge px)
+  let colDimK = 0;                                     // white: win spotlight on the column (0 = off)
   const CB = { k: 0.57, wx: 0.6, wy: -34.9, ww: 137.6, wh: 82.8, dk: 0.42 };
   // WHITE VERSION (user 2026-11-11: "multiplier chips equal or upper 25 should have a glowing or burning frame so they will
   // be visible during the scroll"): a soft fire glow behind the chip and a hot rim line over it, tinted per value
@@ -693,7 +694,8 @@
     setY(y) { this.b.y = this.f.y = this.fb.y = y;
       const s = chipFit(Math.abs(y - COL_CY) / COL_P); this.b.scale.set(s.bx, s.by); this.f.scale.set(s.l); this.fb.scale.set(s.l);
       const want = Math.abs(y - COL_CY) < COL_P / 2 ? this.inner : this.fb;   // white: centre = over the frame, else under it
-      if (this.cb && this.cb.parent !== want) want.addChild(this.cb); }
+      if (this.cb && this.cb.parent !== want) want.addChild(this.cb);
+      if (colDimK > 0) this.dim(Math.abs(y - COL_CY) < COL_P / 2 ? 0 : colDimK); }   // white: the spotlight follows the centre
     dim(k) { const g = Math.round(255 * (1 - 0.55 * k)); const t = (g << 16) | (g << 8) | g;
       [this.bg, this.rim, this.label, this.gl].forEach((s) => (s.tint = t)); if (this.cbBadge) this.cbBadge.tint = t; this.hotK = 1 - 0.75 * k; }
     set visible(v) { this.b.visible = this.f.visible = this.fb.visible = v; }
@@ -1560,7 +1562,7 @@
     winObjs.forEach((o) => { killDeep(o); o.destroy({ children: true }); });
     winObjs.length = 0;
     reels.forEach((rl) => rl.views.forEach((v) => { gsap.killTweensOf(v.inner.scale); gsap.killTweensOf(v.b.scale); v.inner.scale.set(1); v.b.scale.set(1); v.dim(0); }));
-    colReel.views.forEach((v) => { gsap.killTweensOf(v.inner.scale); v.inner.scale.set(1); v.dim(0); });
+    colDimK = 0; colReel.views.forEach((v) => { gsap.killTweensOf(v.inner.scale); v.inner.scale.set(1); v.dim(0); });
     plaque.visible = false; accum.visible = false; cntBox.visible = false; plaqueBig.visible = false; centreMark.visible = false;
     lineGfx.length = 0; for (const k of Object.keys(winCells)) delete winCells[k];
     feature(false);
@@ -1776,10 +1778,20 @@
   cntBg.visible = false; accBg.visible = false; accGlow.visible = false;
   cntBox.position.set(CS_X, 478); cntLab.y = -18; cntTxt.y = 8; accum.position.set(CS_X, 548); accLab.y = -20; accTxt.y = 10;
   cntLab.visible = false; accLab.visible = false; cntBox.position.set(CS_X, 481); cntTxt.y = 0; accum.position.set(CS_X, 556); accTxt.y = 0;
-  cntTxt.style = FX.gold(44, PLATE_NUM);
+  cntTxt.style = FX.gold(44, Object.assign({}, PLATE_NUM, { letterSpacing: 7 }));   // white: spaced (user 2026-11-13)
   accTxt.style = new PIXI.TextStyle({ fontFamily: "Georgia, serif", fontWeight: "900", fontStyle: "italic", fontSize: 50, fill: ["#FFF3B8", "#F5C24A", "#C47A16"], fillGradientStops: [0, 0.55, 1], stroke: "#4a2206", strokeThickness: 6, dropShadow: true, dropShadowColor: "#1a0800", dropShadowAlpha: 0.6, dropShadowBlur: 2, dropShadowDistance: 2, dropShadowAngle: Math.PI / 2, padding: 10 });   // = the chip labels
   const accPlate = new PIXI.Sprite(T("UI/total_plate")); accPlate.anchor.set(0.5); accPlate.position.set(CS_X, 556); cscreen.addChildAt(accPlate, 1);   // fixed: only the number pops
   accPlate.visible = false; accTxt.style = FX.gold(50, PLATE_NUM);   // white: parchment, like the count above it
+  // white (user 2026-11-13: "use the lower x font for the upper one"): the TOTAL's "x" is the chip labels' own x
+  // (assets/UI/total_x.webp, cut from label_1x by tools/total_x.py); the number stays bold gold.
+  // accTxt.text = "x12" -> the x goes to accX, the number to accTxt, centred as a pair.
+  const accX = new PIXI.Sprite(T("UI/total_x")); accX.scale.set(0.78);
+  accX.anchor.set(1, 0.5); accTxt.parent.addChild(accX);
+  { const pd = Object.getOwnPropertyDescriptor(PIXI.Text.prototype, "text");
+    Object.defineProperty(accTxt, "text", { configurable: true, get() { return pd.get.call(this); }, set(v) {
+      v = String(v); const hx = v.charAt(0) === "x"; pd.set.call(this, hx ? v.slice(1) : v); accX.visible = hx;
+      const dw = this.width / (this.scale.x || 1), xw = hx ? accX.width : 0, gap = hx ? -2 : 0, x0 = -(xw + gap + dw) / 2;
+      accX.position.set(x0 + xw, this.y - 2); this.x = x0 + xw + gap + dw / 2; } }); }   // white: parchment, like the count above it
   function screenUp(on) {
     gsap.killTweensOf(cscreen);
     if (on) { cscreen.visible = true; cscreen.y = CS_HIDE; accum.visible = true; accum.alpha = 1; accum.scale.set(1); accTxt.text = "x0";
@@ -2743,7 +2755,7 @@
     const d = { k: 0 };
     gsap.to(d, { k: 1, duration: 0.1, onUpdate: () => {
       reels.forEach((rl, reel) => [0, 1, 2].forEach((row) => { if (!cells.has(reel * 3 + row)) rl.view(row).dim(d.k); }));
-      colReel.views.forEach((v, i) => { if (i !== 4) v.dim(d.k * 0.8); });
+      colDimK = Math.max(0.001, d.k * 0.8); colReel.views.forEach((v) => v.dim(Math.abs(v.b.y - COL_CY) < COL_P / 2 ? 0 : colDimK));
     } });
     r.lines.forEach((l) => lineGfx.push(payline(l.rows)));
     cells.forEach((c) => { winCells[c] = cellHighlight(Math.floor(c / 3), c % 3); });
