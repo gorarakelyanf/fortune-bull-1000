@@ -13,41 +13,41 @@
   "file": "spin_start.mp3",
   "kind": "sfx",
   "loop": false,
-  "gain": 0.55,
-  "duration": 0.8983,
+  "gain": 1.5,
+  "duration": 0.9629,
   "channels": 1,
-  "lufs": -25.3,
-  "peak": -1.6
+  "lufs": -26.0,
+  "peak": -1.5
  },
  "reel_stop_1": {
   "file": "reel_stop_1.mp3",
   "kind": "sfx",
   "loop": false,
-  "gain": 0.8,
-  "duration": 0.6,
-  "channels": 2,
-  "lufs": -15.0,
-  "peak": -2.1
+  "gain": 1.002,
+  "duration": 0.2323,
+  "channels": 1,
+  "lufs": -17.0,
+  "peak": -1.5
  },
  "reel_stop_2": {
   "file": "reel_stop_2.mp3",
   "kind": "sfx",
   "loop": false,
-  "gain": 0.8,
-  "duration": 0.6,
+  "gain": 0.997,
+  "duration": 0.2394,
   "channels": 1,
-  "lufs": -20.7,
-  "peak": -1.7
+  "lufs": -16.9,
+  "peak": -1.5
  },
  "reel_stop_3": {
   "file": "reel_stop_3.mp3",
   "kind": "sfx",
   "loop": false,
-  "gain": 0.8,
-  "duration": 0.6,
+  "gain": 1.007,
+  "duration": 0.2255,
   "channels": 1,
-  "lufs": -19.8,
-  "peak": -1.6
+  "lufs": -17.0,
+  "peak": -1.5
  },
  "column_stop": {
   "file": "column_stop.mp3",
@@ -293,14 +293,14 @@
   "file": "reel_spin_loop.mp3",
   "kind": "loop",
   "loop": true,
-  "gain": 0.45,
+  "gain": 2.281,
   "loopStart": 0.12,
-  "loopEnd": 1.46206,
+  "loopEnd": 1.93161,
   "encDelay": 0.0251,
-  "duration": 1.5821,
+  "duration": 2.0516,
   "channels": 1,
-  "lufs": -20.3,
-  "peak": -1.8
+  "lufs": -24.6,
+  "peak": -1.5
  },
  "count_loop": {
   "file": "count_loop.mp3",
