@@ -912,14 +912,14 @@
   const reels = [0, 1, 2].map((r) => {
     const c = new PIXI.Container(); reelsL.addChild(c);
     const m = maskRect(REEL_X[r][0] - 2, CELL_Y0, REEL_X[r][1] + 2, WIN_Y1);
-    return new Reel({ rows: 3, pitch: CELL_H, y0: rowY(0), vmax: 28, vNormal: 28, vTurbo: 40, accel: 400, stopDur: 0.6, spinDim: 0.55, stopFast: 0.2,
+    return new Reel({ rows: 3, pitch: CELL_H, y0: rowY(0), vmax: 20, vNormal: 20, vTurbo: 40, accel: 400, stopDur: 0.6, spinDim: 0.55, stopFast: 0.2,
       container: c, masks: [[c, m]], onExit: () => fireCurtain(r),
       make: () => new SymView(c, REEL_CX[r]),
       rand: () => { const s = Engine.SYMBOLS; const w = Engine.WEIGHTS; let t = 0; const fw = (k) => w[k] + (k === "charge" || k === "super_wild" ? 0 : 2); for (const k of s) t += fw(k); let x = Math.random() * t; for (const k of s) { x -= fw(k); if (x < 0) return k; } return "J"; } });
   });
   const colQ = [];                                   // white (spec): chips queued to slide in next (colPlan)
   const colBlur = new PIXI.BlurFilter(0, MOBILE ? 2 : 4); colBlur.blurX = 0; colBlur.blurY = 0;
-  const colReel = new Reel({ rows: 7, pitch: COL_P, y0: COL_Y0, vmax: 40, vNormal: 40, vTurbo: 52, accel: 400, stopDur: 0.62, stopFast: 0.22,
+  const colReel = new Reel({ rows: 7, pitch: COL_P, y0: COL_Y0, vmax: 30, vNormal: 30, vTurbo: 52, accel: 400, stopDur: 0.62, stopFast: 0.22,
     masks: [[colBack, maskRect(TRAY[0], TRAY[1], TRAY[2], TRAY[3])], [colFront, maskRect(TRAY[0] - 30, TRAY[1], TRAY[2] + 30, TRAY[3])]],
     make: () => new ChipView(), rand: () => Math.floor(Math.random() * Engine.STRIP.length),
     above: (i) => (colQ.length ? colQ.shift() : (i + 1) % Engine.STRIP.length),
@@ -3170,7 +3170,7 @@
     // A stop request lands ~0.15 s later (the final symbols scroll in), so requests go out that much earlier.
     reels.forEach((rl) => rl.start(0, tb)); colReel.start(0, tb);   // Garuda: every reel starts at once, no lift
     // Porco: each reel may start its stop when the previous one has; stops come one loop apart (~0.4 s)
-    const tStop = tb ? [0.1, 0.15, 0.2, 0.25] : [0.58, 0.76, 0.94, 1.06], LEAD = 0;   // Garuda (measured): hard stops 0.72 / 0.90 / 1.08 / 1.25 s     // timing pass 2026-11-10 (was 0.6/1.0/1.4/1.7)
+    const tStop = tb ? [0.1, 0.15, 0.2, 0.25] : [0.75, 1.1, 1.45, 1.7], LEAD = 0;   // white 2026-11-13: calmer, towards Pascal (0.6/1.0/1.4/1.7)   // Garuda (measured): hard stops 0.72 / 0.90 / 1.08 / 1.25 s     // timing pass 2026-11-10 (was 0.6/1.0/1.4/1.7)
     const wildsEarly = [0, 1].reduce((a, reel) => a + r.grid[reel].filter((s) => Engine.WILDS.has(s)).length, 0);
     const doTease = wildsEarly >= 2 && !tb;
     await waitSkippable(Math.max(0.02, tStop[0] - LEAD));
