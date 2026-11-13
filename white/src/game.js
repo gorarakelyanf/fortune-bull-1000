@@ -2256,6 +2256,7 @@
   // ---------- the bull acts on the board (Garuda-style), timed to the bull_big clip (fist up 0.8-3.5 s) ----------
   const FIST = { x: 283, y: 175 }, MOUTH = { x: 535, y: 225 }, CHEST = { x: 474, y: 326 };
   function hopCells(P, amt, radius) {
+    if (!dropWorthy()) return;                           // white: symbols hop only for WILD / SUPER WILD / CHARGE
     const A = amt || 10, Rr = radius || 520;
     reels.forEach((rl, reel) => [0, 1, 2].forEach((row) => {
       const v = rl.view(row), dd = Math.hypot(REEL_CX[reel] - P.x, rowY(row) - P.y);
@@ -3245,7 +3246,7 @@
   }
   // a NUDGE chip in the centre fires: cyan shock, lightning, "+N NUDGES" flies to the counter
   async function nudgeChipFire(n) {
-    boardDrop(1.2);                                      // white: a CHARGE fires: strong drop
+    boardDrop(1.2);                                     // white: a CHARGE fires: strong drop
     const v = colReel.views[4];
     if (v.reveal) await v.reveal(n);                    // white: the badge's chevrons fly up and its count rolls in
     gsap.fromTo(v.inner.scale, { x: 1.5, y: 1.5 }, { x: 1, y: 1, duration: 0.6, ease: "elastic.out(1,0.45)" });
