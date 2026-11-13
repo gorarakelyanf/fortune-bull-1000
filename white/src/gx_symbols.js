@@ -18,6 +18,8 @@ GX.plugin(function (ctx) {
   const TAU = Math.PI * 2, DEG = Math.PI / 180;
   const LOW_COL = { A: 0xff3a3a, K: 0xb45cff, Q: 0x3f8eff, J: 0x2fe07a };
   const LOW_HI = { A: 0xffc0b0, K: 0xeac8ff, Q: 0xbfe0ff, J: 0xc0ffd8 };
+  // white 2026-11-13: the win rings lean yellow (a colour mixed k of the way to gold)
+  const yel = (c, k = 0.5) => { const g = [0xff, 0xd0, 0x40], o = [(c >> 16) & 255, (c >> 8) & 255, c & 255].map((v, i) => Math.round(v + (g[i] - v) * k)); return (o[0] << 16) | (o[1] << 8) | o[2]; };
 
   // our own particle layers (front = over the reels, updated on the gsap ticker in game time so ?ts slow-mo applies)
   const front = new FX.Particles(layers.boardFx);
@@ -309,9 +311,9 @@ GX.plugin(function (ctx) {
     const c1 = sup ? 0xff4a14 : 0xb45cff, c2 = sup ? 0xffc040 : 0xf0c8ff;
     const peak = sup ? 1.2 : 1.14;
     A.tw(gsap.timeline()
-      .to(h.scale, { x: 0.93, y: 0.93, duration: 0.12, ease: "power2.in" })
-      .to(h.scale, { x: peak, y: peak, duration: 0.12, ease: "back.out(2.5)" })
-      .to(h.scale, { x: 1, y: 1, duration: 0.55, ease: "elastic.out(1,0.38)" }));
+      .to(h.scale, { x: 0.93, y: 0.93, duration: 0.2, ease: "power2.in" })          // white: slower (user 2026-11-13)
+      .to(h.scale, { x: peak, y: peak, duration: 0.22, ease: "back.out(1.8)" })
+      .to(h.scale, { x: 1, y: 1, duration: 0.9, ease: "elastic.out(1,0.45)" }));
     if (sup) A.tw(gsap.timeline({ delay: 0.12 })
       .to(h, { rotation: 3 * DEG, duration: 0.04 }).to(h, { rotation: -3 * DEG, duration: 0.06 })
       .to(h, { rotation: 2 * DEG, duration: 0.06 }).to(h, { rotation: 0, duration: 0.2, ease: "power2.out" }));
@@ -336,7 +338,7 @@ GX.plugin(function (ctx) {
       t += dt;
       const rate = (t < 0.8 ? 16 : 5) * (sup ? 1.3 : 1) * (MOBILE ? 0.5 : 1);
       acc += dt * rate;
-      while (acc >= 1) { acc -= 1; lick(t < 0.8); }
+      while (acc >= 1) { acc -= 1; }   // white: no flame licks (user 2026-11-13: "remove the fire tongues")
     });
     // two (super: three) shock rings from the roar
     const ring = (delay, s1, tint, life) => A.later(delay, () => {
@@ -344,10 +346,22 @@ GX.plugin(function (ctx) {
       A.tw(gsap.to(r.scale, { x: s1, y: s1 * 0.92, duration: life, ease: "power2.out" }));
       A.tw(gsap.to(r, { alpha: 0, duration: life, ease: "power1.in" }));
     });
-    ring(0.22, sup ? 2.0 : 1.6, c1, 0.5);
-    ring(0.34, sup ? 2.5 : 2.0, c2, 0.55);
-    if (sup) ring(0.46, 2.9, 0xff7a20, 0.6);
-    A.later(0.22, () => {
+    ring(0.4, sup ? 2.0 : 1.6, yel(c1), 0.6);
+    ring(0.54, sup ? 2.5 : 2.0, yel(c2), 0.65);
+    if (sup) ring(0.68, 2.9, yel(0xff7a20), 0.7);
+    // white: the burn on every winning wild - a wild whose video is not showing (SUPER WILD: no clip) glows itself
+    A.later(0.06, () => {
+      const v = d.view; if (!v.a.visible || v.a.destroyed) return;     // the video took the cell
+      const bl = new PIXI.Container(); v.inner.addChild(bl); A.own(bl);
+      const b1 = spr(v.a.texture, bl, { tint: sup ? 0xff7a1a : 0xffa040, alpha: 0 }), b2 = spr(v.a.texture, bl, { tint: 0xffe08a, alpha: 0 });
+      [b1, b2].forEach((b) => { b.scale.copyFrom(v.a.scale); b.position.copyFrom(v.a.position); b.anchor.copyFrom(v.a.anchor); });
+      const st = { k: 0 };
+      A.tw(gsap.to(st, { k: 1, duration: 0.5, ease: "power2.out" }));
+      let tt = 0;
+      A.onStep((dt) => { tt += dt; const f = 0.5 + 0.5 * Math.sin(tt * 3.2), g = 0.5 + 0.5 * Math.sin(tt * 7.1 + 1.3);
+        b1.alpha = st.k * (0.28 + 0.22 * f); b2.alpha = st.k * (0.08 + 0.1 * g * f); });
+    });
+    A.later(0.4, () => {
       const f = spr(FX.tex.glow, fx, { tint: sup ? 0xffb060 : 0xe0b8ff, s: 0.6, alpha: 0.9 });
       A.tw(gsap.to(f.scale, { x: 1.5, y: 1.4, duration: 0.35, ease: "power2.out" }));
       A.tw(gsap.to(f, { alpha: 0, duration: 0.35 }));
@@ -372,7 +386,7 @@ GX.plugin(function (ctx) {
         .call(() => [s1, s2, hl].forEach((s) => s.destroy())));
     };
     // white: no horn glints
-    A.later(1.0, () => A.tw(gsap.to(h.scale, { x: 1.03, y: 1.03, duration: 0.8, ease: "sine.inOut", yoyo: true, repeat: -1 })));
+    A.later(1.5, () => A.tw(gsap.to(h.scale, { x: 1.03, y: 1.03, duration: 1.2, ease: "sine.inOut", yoyo: true, repeat: -1 })));
   }
 
   // ---------- A K Q J, white (user 2026-11-12: "we don't like the simple symbol animation that jumps, make it like the
@@ -382,24 +396,24 @@ GX.plugin(function (ctx) {
   function letterRoar(d, A) {
     const col = LOW_COL[d.id], hi = LOW_HI[d.id], h = A.hero;
     A.tw(gsap.timeline()
-      .to(h.scale, { x: 0.92, y: 0.92, duration: 0.12, ease: "power2.in" })
-      .to(h.scale, { x: 1.18, y: 1.18, duration: 0.12, ease: "back.out(2.5)" })
-      .to(h.scale, { x: 1, y: 1, duration: 0.55, ease: "elastic.out(1,0.38)" }));
+      .to(h.scale, { x: 0.92, y: 0.92, duration: 0.2, ease: "power2.in" })          // white: slower (user 2026-11-13)
+      .to(h.scale, { x: 1.18, y: 1.18, duration: 0.22, ease: "back.out(1.8)" })
+      .to(h.scale, { x: 1, y: 1, duration: 0.9, ease: "elastic.out(1,0.45)" }));
     const fx = A.fx(), P = A.parts(fx);
     const ring = (delay, s1, tint, life) => A.later(delay, () => {
       const r = spr(FX.tex.ring, fx, { tint, s: 0.3, alpha: 1 });
       A.tw(gsap.to(r.scale, { x: s1, y: s1 * 0.92, duration: life, ease: "power2.out" }));
       A.tw(gsap.to(r, { alpha: 0, duration: life, ease: "power1.in" }));
     });
-    ring(0.22, 1.5, col, 0.5); ring(0.34, 1.9, hi, 0.55);
-    A.later(0.22, () => {
+    ring(0.4, 1.5, yel(col), 0.6); ring(0.54, 1.9, yel(hi), 0.65);
+    A.later(0.4, () => {
       for (let i = 0; i < N(12); i++) {
         const a = rnd(0, TAU), sp = rnd(240, 420);
         P.emit({ tex: FX.tex.spark, x: Math.cos(a) * 36, y: Math.sin(a) * 36, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, drag: 3,
           s0: 0.34, s1: 0.05, life: 0.5, tint: i % 2 ? col : hi, stretch: 280 });
       }
     });
-    A.later(1.0, () => A.tw(gsap.to(h.scale, { x: 1.035, y: 1.035, duration: 0.8, ease: "sine.inOut", yoyo: true, repeat: -1 })));
+    A.later(1.5, () => A.tw(gsap.to(h.scale, { x: 1.035, y: 1.035, duration: 1.2, ease: "sine.inOut", yoyo: true, repeat: -1 })));
   }
 
   const MOVES = { A: letterRoar, K: letterRoar, Q: letterRoar, J: letterRoar, hourglass, sun, chest, wild, super_wild: wild };

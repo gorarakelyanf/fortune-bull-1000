@@ -185,7 +185,7 @@
   if (V2ART) { add("Multipliers/chip_bg_nudge5"); add("UI/buy_button"); }
   ["title_big", "title_mega", "title_super", "title_epic", "title_max", "wp_medallion_gold", "wp_medallion_tint", "wp_banner_gold", "wp_banner_tint", "wp_tablet_gold", "wp_tablet_tint"].forEach((n) => files.push(`assets/Popup/${n}.webp`));
   ["chip_coat", "chip_glints", "chip_rim", "chip_shadow"].forEach((n) => add("Multipliers/" + n));
-  ["Multipliers/centre_frame", "UI/nudge_box", "UI/total_box", "UI/counter_screen", "UI/total_plate", "UI/cf_arrow", "vfx/winline", "vfx/winline_rest", "UI/exp_panel", "UI/exp_card_red", "UI/exp_card_amber", "UI/exp_card_purple", "UI/exp_confirm", "UI/buy_label", "UI/ex_plate", "UI/charge_badge", "UI/charge_window", "UI/charge_chev", "UI/charge_digit_0", "UI/charge_digit_1", "UI/charge_digit_2", "UI/charge_digit_3", "UI/charge_digit_4", "UI/charge_digit_5", "UI/charge_digit_6", "UI/charge_digit_7", "UI/charge_digit_8", "UI/charge_digit_9", "UI/ex_switch_off", "UI/ex_switch_on"].forEach((p) => files.push(`assets/${p}.webp`));   // every art set uses these
+  ["Multipliers/centre_frame", "UI/nudge_box", "UI/total_box", "UI/counter_screen", "UI/total_plate", "UI/cf_arrow", "vfx/winline", "vfx/winline_rest", "UI/exp_panel", "UI/exp_card_red", "UI/exp_card_amber", "UI/exp_card_purple", "UI/exp_confirm", "UI/buy_label", "UI/ex_plate", "UI/charge_badge", "UI/charge_window", "UI/charge_chev", "UI/charge_digit_0", "UI/charge_digit_1", "UI/charge_digit_2", "UI/charge_digit_3", "UI/charge_digit_4", "UI/charge_digit_5", "UI/charge_digit_6", "UI/charge_digit_7", "UI/charge_digit_8", "UI/charge_digit_9", "UI/charge_digit_slash", "UI/ex_switch_off", "UI/ex_switch_on"].forEach((p) => files.push(`assets/${p}.webp`));   // every art set uses these
   if (GPASS) ["Board/panel_dark", "Board/tile_low", "Board/tile_low_blur", "Board/tray_dark", "Board/plinth_slim", "Board/plinth_fade", "Board/frame_stone"].forEach((p) => files.push(`assets/${p}.webp`));
   if (COINS) { Engine.MULT_VALUES.forEach((v) => files.push(`assets/Multipliers/coin_${v}.webp`)); ["coin_shadow", "coin_rim", "centre_frame_thin"].forEach((n) => files.push(`assets/Multipliers/${n}.webp`)); }
   ["autoplay", "autoplay_shadow", "balance_bar_border", "balance_bar_fill", "bet_window_border", "bet_window_fill",
@@ -470,6 +470,21 @@
   // ---------- symbol + chip views ----------
   const swPick = () => { const w = Engine.SW_CHARGES || { 2: 1 }; let t = 0; for (const k in w) t += w[k]; let x = Math.random() * t;
     for (const k in w) { x -= w[k]; if (x < 0) return +k; } return 2; };   // white: display-only count for a SUPER WILD that passes by
+  // white: a row of gold digit sprites with a PIXI.Text-like .text / .tint (SUPER WILD count, user 2026-11-13)
+  function swDigits(init) {
+    const c = new PIXI.Container(), K = 0.3, MAX_W = 150; let txt = null, tint = 0xffffff;
+    const draw = () => {
+      c.removeChildren().forEach((o) => o.destroy());
+      const sps = txt.split("").map((ch) => { const sl = ch === "/", sp = new PIXI.Sprite(T("UI/charge_digit_" + (sl ? "slash" : ch)));
+        sp.anchor.set(0.5); sp.scale.set(K * (sl ? 0.82 : 1)); sp.tint = tint; return sp; });
+      const step = (sp) => sp.width * (sp.texture === T("UI/charge_digit_slash") ? 0.62 : 0.84);
+      const tot = sps.reduce((a, sp) => a + step(sp), 0), f = Math.min(1, MAX_W / Math.max(1, tot));
+      let x = -tot / 2; sps.forEach((sp) => { sp.x = (x + step(sp) / 2) * f; sp.scale.x *= f; sp.scale.y *= f; x += step(sp); c.addChild(sp); });
+    };
+    Object.defineProperty(c, "text", { get: () => txt, set: (v) => { v = String(v); if (v !== txt) { txt = v; draw(); } } });
+    Object.defineProperty(c, "tint", { get: () => tint, set: (v) => { tint = v; c.children.forEach((sp) => (sp.tint = v)); } });
+    c.text = init; return c;
+  }
   const SW_PLATE = { x: 0, y: 72 }, SW_LIVE_COUNT = true;    // the real count (Engine.NUDGES) on the plate; user 2026-11-11: "numbers according to logic";          // white: centre of the SUPER WILD's count plate, px from the symbol centre
   class SymView {
     constructor(parent, cx) {
@@ -480,8 +495,9 @@
       this.fire = new PIXI.Sprite(FX.tex.glow); this.fire.anchor.set(0.5); this.fire.scale.set(1.6, 1.4);
       this.fire.tint = 0xff6a10; this.fire.blendMode = PIXI.BLEND_MODES.ADD; this.fire.visible = false;
       this.inner.addChild(this.fire, this.a, this.b); this.c.addChild(this.inner);
-      this.cnt = new PIXI.Text(`${Engine.NUDGES}/${Engine.NUDGES}`, FX.gold(40, { stroke: "#4a0505", strokeThickness: 5, dropShadowDistance: 1.5, dropShadowBlur: 2, padding: 6 }));
-      this.cnt.anchor.set(0.5); this.cnt.position.set(SW_PLATE.x, SW_PLATE.y); this.cnt.visible = false; this.inner.addChild(this.cnt);
+      // white: the symbol-lettering gold digits (a centred row, no anchor)
+      this.cnt = swDigits(`${Engine.NUDGES}/${Engine.NUDGES}`);
+      this.cnt.position.set(SW_PLATE.x, SW_PLATE.y); this.cnt.visible = false; this.inner.addChild(this.cnt);
       // white: the CHARGE symbol's window shows its landed count (the badge x0.9 on the symbol; window centre 0.5, -31.4)
       this.chg = new PIXI.Container(); this.chg.position.set(0.5, -31.4); this.chg.visible = false; this.inner.addChild(this.chg);
       this.chgWin = new PIXI.Sprite(T("UI/charge_window")); this.chgWin.anchor.set(0.5); this.chgWin.scale.set(0.9);
@@ -1617,6 +1633,7 @@
   function cellReplay(c) {
     const reel = Math.floor(c / 3), row = c % 3, v = reels[reel].view(row);
     if (!v || S.state === "spinning") return;
+    if (cellClipSprites.some((sp) => sp.clipId === v.id)) cellClipKick(v.id);   // white: the wild burn loops with the win
     GX.emit("cellWin", { reel, row, cx: REEL_CX[reel], cy: rowY(row), w: REEL_X[reel][1] - REEL_X[reel][0] - 10, h: CELL_H - 10, view: v, id: v.id, winObjs });
   }
   function cellHighlight(reel, row) {
@@ -2797,6 +2814,7 @@
     const w = clips[id + "_win"], i = clips[id + "_idle"];
     if (!w || clipBusy[id + "_win"]) return;
     clipBusy[id + "_win"] = true;
+    cellClipSprites.forEach((sp) => { if (sp.clipId === id) sp.texture = w.sprite.texture; });   // white: back from the idle loop
     w.video.currentTime = 0; { const p = w.video.play(); if (p && p.catch) p.catch(() => {}); }
     w.video.onended = () => {
       clipBusy[id + "_win"] = false;
