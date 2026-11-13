@@ -185,7 +185,7 @@
   if (V2ART) { add("Multipliers/chip_bg_nudge5"); add("UI/buy_button"); }
   ["title_big", "title_mega", "title_super", "title_epic", "title_max", "wp_medallion_gold", "wp_medallion_tint", "wp_banner_gold", "wp_banner_tint", "wp_tablet_gold", "wp_tablet_tint"].forEach((n) => files.push(`assets/Popup/${n}.webp`));
   ["chip_coat", "chip_glints", "chip_rim", "chip_shadow"].forEach((n) => add("Multipliers/" + n));
-  ["Multipliers/centre_frame", "UI/nudge_box", "UI/total_box", "UI/counter_screen", "UI/total_plate", "UI/cf_arrow", "vfx/winline", "vfx/winline_rest", "UI/exp_panel", "UI/exp_card_red", "UI/exp_card_amber", "UI/exp_card_purple", "UI/exp_confirm", "UI/buy_label", "UI/ex_plate", "UI/charge_badge", "UI/charge_window", "UI/charge_chev", "UI/charge_digit_0", "UI/charge_digit_1", "UI/charge_digit_2", "UI/charge_digit_3", "UI/charge_digit_4", "UI/charge_digit_5", "UI/charge_digit_6", "UI/charge_digit_7", "UI/charge_digit_8", "UI/charge_digit_9", "UI/charge_digit_slash", "UI/total_x", "UI/ex_switch_off", "UI/ex_switch_on"].forEach((p) => files.push(`assets/${p}.webp`));   // every art set uses these
+  ["Multipliers/centre_frame", "UI/nudge_box", "UI/total_box", "UI/counter_screen", "UI/total_plate", "UI/cf_arrow", "vfx/winline", "vfx/winline_rest", "UI/exp_panel", "UI/exp_card_red", "UI/exp_card_amber", "UI/exp_card_purple", "UI/exp_confirm", "UI/buy_label", "UI/ex_plate", "UI/charge_badge", "UI/charge_window", "UI/charge_chev", "UI/charge_digit_0", "UI/charge_digit_1", "UI/charge_digit_2", "UI/charge_digit_3", "UI/charge_digit_4", "UI/charge_digit_5", "UI/charge_digit_6", "UI/charge_digit_7", "UI/charge_digit_8", "UI/charge_digit_9", "UI/charge_digit_slash", "UI/total_x", "UI/charge_rect", "UI/charge_rect_window", "UI/ex_switch_off", "UI/ex_switch_on"].forEach((p) => files.push(`assets/${p}.webp`));   // every art set uses these
   if (GPASS) ["Board/panel_dark", "Board/tile_low", "Board/tile_low_blur", "Board/tray_dark", "Board/plinth_slim", "Board/plinth_fade", "Board/frame_stone"].forEach((p) => files.push(`assets/${p}.webp`));
   if (COINS) { Engine.MULT_VALUES.forEach((v) => files.push(`assets/Multipliers/coin_${v}.webp`)); ["coin_shadow", "coin_rim", "centre_frame_thin"].forEach((n) => files.push(`assets/Multipliers/${n}.webp`)); }
   ["autoplay", "autoplay_shadow", "balance_bar_border", "balance_bar_fill", "bet_window_border", "bet_window_fill",
@@ -562,7 +562,7 @@
   const magicFilters = [];
   // white: the CHARGE badge in the chip box (badge art 262 x 256 px; its window centre and size in badge px)
   let colDimK = 0;                                     // white: win spotlight on the column (0 = off)
-  const CB = { k: 0.57, wx: 0.6, wy: -34.9, ww: 137.6, wh: 82.8, dk: 0.42 };
+  const CB = { k: 0.44, wx: 0.9, wy: -39.6, ww: 258.9, wh: 80.9, dk: 0.5 };   // white 2026-11-13: the rectangular CHARGE chip
   // WHITE VERSION (user 2026-11-11: "multiplier chips equal or upper 25 should have a glowing or burning frame so they will
   // be visible during the scroll"): a soft fire glow behind the chip and a hot rim line over it, tinted per value
   const HOT_COL = { 25: 0xff7a14, 50: 0xff5a10, 100: 0xff3a10, 200: 0xff4a0c, 500: 0xff6a08, 1000: 0xffa020 };
@@ -624,19 +624,20 @@
     chargeBuild() {
       const cs = (t) => { const s = new PIXI.Sprite(T(t)); s.anchor.set(0.5); return s; };
       this.cb = new PIXI.Container(); this.cb.visible = false; this.cb.scale.set(CB.k); this.inner.addChild(this.cb);
-      this.cbBadge = cs("UI/charge_badge");
+      this.cbBadge = cs("UI/charge_rect");
       this.cbWin = new PIXI.Container(); this.cbWin.position.set(CB.wx, CB.wy); this.cbWin.visible = false;
       this.cbChev = cs("UI/charge_chev"); this.cbNum = new PIXI.Container();
       const m = new PIXI.Graphics().beginFill(0xffffff).drawRect(-CB.ww / 2, -CB.wh / 2, CB.ww, CB.wh).endFill();
-      this.cbWin.addChild(cs("UI/charge_window"), this.cbChev, this.cbNum, m); this.cbWin.mask = m;
-      this.cbGlow = cs("UI/charge_window"); this.cbGlow.position.set(CB.wx, CB.wy); this.cbGlow.blendMode = PIXI.BLEND_MODES.ADD; this.cbGlow.alpha = 0;
+      this.cbWin.addChild(cs("UI/charge_rect_window"), this.cbChev, this.cbNum, m); this.cbWin.mask = m;
+      this.cbGlow = cs("UI/charge_rect_window"); this.cbGlow.position.set(CB.wx, CB.wy); this.cbGlow.blendMode = PIXI.BLEND_MODES.ADD; this.cbGlow.alpha = 0;
       this.cbHalo = new PIXI.Sprite(FX.tex.glow); this.cbHalo.anchor.set(0.5); this.cbHalo.tint = 0xb050ff; this.cbHalo.blendMode = PIXI.BLEND_MODES.ADD;
-      this.cbHalo.scale.set(300 / this.cbHalo.texture.width); this.cbHalo.alpha = 0.55;                            // a soft purple glow: it pops on the dark tray
+      this.cbHalo.scale.set(300 / this.cbHalo.texture.width); this.cbHalo.alpha = 0.3;                            // a soft purple glow: it pops on the dark tray
       this.cb.addChild(this.cbHalo, this.cbBadge, this.cbWin, this.cbGlow);
     }
     chargeSet() {
       const ch = this.v < 0;
-      this.cb.visible = ch; this.cbWin.visible = false; this.cbGlow.alpha = 0;
+      this.cb.visible = ch; this.cbWin.visible = ch; this.cbGlow.alpha = 0;   // white: chevrons in the window at rest
+      this.cbChev.y = 0; this.cbChev.alpha = 1; this.cbNum.removeChildren().forEach((c) => c.destroy());
       gsap.killTweensOf(this.cbChev); gsap.killTweensOf(this.cbNum); gsap.killTweensOf(this.cbNum.scale);
       [this.bg, this.rim, this.shadow].forEach((s) => (s.renderable = !ch)); this.label.visible = !ch;
     }

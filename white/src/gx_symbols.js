@@ -156,8 +156,58 @@ GX.plugin(function (ctx) {
     A.every(1.2, 0.5, () => P.emit({ tex: FX.tex.spark, x: rnd(-70, 70), y: rnd(-60, 60), vy: -20, s0: 0.05, s1: 0.3, life: 0.5, a0: 1, a1: 0, vr: 3, tint: Math.random() < 0.5 ? col : hi }));
   }
 
-  // ---------- hourglass ----------
+  // ---------- hourglass, white (user 2026-11-13: "the sandclock animation is too bad, fix it") ----------
   function hourglass(d, A) {
+    const h = A.hero, fx = A.fx(), P = A.parts(fx);
+    const GOLD = 0xffd060, HOT = 0xfff0b0;
+    // a soft violet light behind the glass (inside the tile)
+    const back = A.behind();
+    const bg = spr(FX.tex.glow, back, { tint: 0x9a5cff, s: 0.8, sy: 0.95, alpha: 0 });
+    A.tw(gsap.to(bg, { alpha: 0.55, duration: 0.3 }));
+    // the turn: lift, a full turn, an elastic landing (ends upright)
+    A.tw(gsap.timeline({ delay: 0.04 })
+      .to(h.scale, { x: 1.12, y: 1.12, duration: 0.16, ease: "power2.out" })
+      .to(h, { rotation: "+=" + TAU, duration: 0.78, ease: "power2.inOut" }, "-=0.02")
+      .to(h.scale, { x: 1.06, y: 0.94, duration: 0.07, ease: "power2.in" }, "-=0.06")
+      .to(h.scale, { x: 1, y: 1, duration: 0.6, ease: "elastic.out(1,0.42)" })
+      .call(() => { landed(); }));
+    // light in the glass: an additive copy of the art, masked to the glass, breathing while the sand runs
+    const lit = spr(h.texture, fx, { tint: 0xffc860, alpha: 0 }), litM = spr(FX.tex.glow, fx, { blend: NORMAL, y: -4, s: 0.5, sy: 0.62 });
+    lit.mask = litM;
+    A.onStep(() => { lit.position.set(h.x, h.y); lit.scale.copyFrom(h.scale); lit.rotation = h.rotation; });
+    const ring = (delay, s1, tint, life) => A.later(delay, () => {
+      const r = spr(FX.tex.ring, fx, { tint, s: 0.3, alpha: 1 });
+      A.tw(gsap.to(r.scale, { x: s1, y: s1 * 0.92, duration: life, ease: "power2.out" }));
+      A.tw(gsap.to(r, { alpha: 0, duration: life, ease: "power1.in" }));
+    });
+    let flow = false;
+    function landed() {
+      ring(0, 1.5, GOLD, 0.6); ring(0.14, 1.9, yel(0xb070ff), 0.65);
+      for (let i = 0; i < N(12); i++) {
+        const a = rnd(0, TAU), sp = rnd(220, 380);
+        P.emit({ tex: FX.tex.spark, x: Math.cos(a) * 30, y: Math.sin(a) * 30, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, drag: 3,
+          s0: 0.3, s1: 0.05, life: 0.5, tint: i % 2 ? GOLD : HOT, stretch: 260 });
+      }
+      flow = true;
+      A.tw(gsap.timeline().to(lit, { alpha: 0.6, duration: 0.2 }).to(lit, { alpha: 0.35, duration: 0.9, ease: "sine.inOut", yoyo: true, repeat: -1 }));
+      A.tw(gsap.to(h.scale, { x: 1.03, y: 1.03, duration: 1.1, ease: "sine.inOut", yoyo: true, repeat: -1, delay: 0.6 }));
+    }
+    // the sand: a thin gold stream from the neck into the lower bulb, a glint on the heap now and then
+    let acc = 0, gl = 0;
+    A.onStep((dt) => {
+      if (!flow) return;
+      acc += dt * (MOBILE ? 22 : 40);
+      while (acc >= 1) { acc -= 1;
+        P.emit({ tex: FX.tex.spark, x: rnd(-1.5, 1.5), y: rnd(-8, -2), vy: rnd(150, 190), s0: 0.11, s1: 0.08, life: rnd(0.2, 0.26), a0: 0.95, a1: 0.5, tint: Math.random() < 0.3 ? HOT : GOLD, stretch: 90 });
+      }
+      gl -= dt;
+      if (gl < 0) { gl = rnd(0.25, 0.5);
+        P.emit({ tex: FX.tex.dot, x: rnd(-26, 26), y: rnd(34, 46), vy: -8, s0: 0.05, s1: 0.16, life: 0.4, a0: 1, a1: 0, tint: HOT }); }
+    });
+  }
+
+  // ---------- hourglass (old, unused) ----------
+  function hourglassOld(d, A) {
     const h = A.hero, P = A.parts(A.fx());
     const back = A.behind();
     const sh = spr(FX.tex.glow, back, { tint: 0x9a5cff, s: 0.9, sy: 1.05, alpha: 0 });
