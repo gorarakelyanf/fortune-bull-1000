@@ -1008,14 +1008,18 @@
 
   // texts
   const UI_WHITE = { fill: ["#FFFFFF", "#FFFFFF", "#EDE2D2"] };   // core values white; only the "Balance:" label stays gold
-  const betTxt = new PIXI.Text("", FX.gold(40, UI_WHITE)); betTxt.anchor.set(0.5); betTxt.position.set(540, 1760); uiL.addChild(betTxt);
+  // white: Pascal's betting-part type (flat Poppins, a faint drop shadow only)
+  const PF = (size, wt, fill, extra) => new PIXI.TextStyle(Object.assign({ fontFamily: wt >= 700 ? "PoppinsB" : "PoppinsM", fontSize: size,
+    fontWeight: String(wt), fill, dropShadow: true, dropShadowColor: "#000000", dropShadowAlpha: 0.3, dropShadowBlur: 2, dropShadowDistance: 1,
+    dropShadowAngle: Math.PI / 2, padding: 6 }, extra || {}));
+  const betTxt = new PIXI.Text("", PF(40, 500, "#FFFFFF")); betTxt.anchor.set(0.5); betTxt.position.set(540, 1760); uiL.addChild(betTxt);
   const exBetTag = new PIXI.Text("EX", FX.gold(20, { fill: FX.TIER_FILL.mega })); exBetTag.anchor.set(0.5); exBetTag.position.set(650, 1760);
   exBetTag.visible = false; uiL.addChild(exBetTag);
-  const clockTxt = new PIXI.Text("", FX.gold(26, { ...UI_WHITE, fontFamily: "PoppinsM", fontWeight: "500" })); clockTxt.anchor.set(0, 0.5); clockTxt.position.set(48, 1864);
-  const balLab = new PIXI.Text("Balance:", FX.gold(32, { fontFamily: "PoppinsM", fontWeight: "500" })); balLab.anchor.set(0, 0.5);
-  const balVal = new PIXI.Text("", FX.gold(40, UI_WHITE)); balVal.anchor.set(0, 0.5);
-  const balUnit = new PIXI.Text("AMD", FX.gold(24, UI_WHITE)); balUnit.anchor.set(0, 0.5);
-  const demoTxt = new PIXI.Text("DEMO MODE", FX.gold(20)); demoTxt.anchor.set(0, 0.5); demoTxt.position.set(18, 1815);
+  const clockTxt = new PIXI.Text("", PF(26, 500, "#FFFFFF")); clockTxt.anchor.set(0, 0.5); clockTxt.position.set(48, 1864);
+  const balLab = new PIXI.Text("Balance:", PF(32, 500, "#FFC33E")); balLab.anchor.set(0, 0.5);
+  const balVal = new PIXI.Text("", PF(40, 700, "#FFFFFF")); balVal.anchor.set(0, 0.5);
+  const balUnit = new PIXI.Text("AMD", PF(24, 700, "#FFFFFF")); balUnit.anchor.set(0, 0.5);
+  const demoTxt = new PIXI.Text("DEMO MODE", PF(24, 700, "#FFFFFF", { stroke: "#2a0a04", strokeThickness: 4 })); demoTxt.anchor.set(0, 0.5); demoTxt.position.set(18, 1815);
   uiL.addChild(clockTxt, balLab, balVal, balUnit, demoTxt);
   // WHITE VERSION (user 2026-11-11: "we have a drop issue after reels stop, make it smoother"; qa/stop_profile.mjs: on a
   // phone-speed CPU the 0.7 s after a win spent ~110 ms re-uploading text textures - the plaque, TOTAL and balance numbers
