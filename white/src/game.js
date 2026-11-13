@@ -420,6 +420,7 @@
   frameL.addChild(frame);
   const frameTop = new PIXI.Sprite(new PIXI.Texture(frame.texture.baseTexture, new PIXI.Rectangle(frame.texture.frame.x, frame.texture.frame.y, frame.texture.frame.width, 28)));
   frameTop.position.set(0, 585); board.addChildAt(frameTop, board.getChildIndex(reelsL) + 1);   // white: the top edge stays over the symbols
+  { const m = new PIXI.Graphics().beginFill(0xffffff).drawRect(-400, 597, 1880, 2000).endFill(); board.addChild(m); reelsL.mask = m; }   // white: no symbol pokes above the frame
   // (the FORTUNE BULL 1000 title lintel over the reels was removed on 2026-11-11 at the user's request; ctx.TITLE = false)
   // soft gold rim around the centre (paying) multiplier slot: over the chip backs, under the chip labels
   let centreFrame = new PIXI.Sprite(T("Multipliers/centre_frame")); centreFrame.anchor.set(0.5); centreFrame.position.set(COL_CX, COL_CY);
