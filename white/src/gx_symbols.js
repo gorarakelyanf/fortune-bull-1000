@@ -469,7 +469,7 @@ GX.plugin(function (ctx) {
       A.tw(gsap.to(r.scale, { x: s1, y: s1 * 0.92, duration: life, ease: "power2.out" }));
       A.tw(gsap.to(r, { alpha: 0, duration: life, ease: "power1.in" }));
     });
-    ring(0.4, 1.5, yel(col), 0.6); ring(0.54, 1.9, yel(hi), 0.65);
+    void ring; void yel;   // white (user 2026-11-13: "don't burn the board behind the letters"): no shock rings on letter wins
     A.later(0.4, () => {
       for (let i = 0; i < N(12); i++) {
         const a = rnd(0, TAU), sp = rnd(240, 420);

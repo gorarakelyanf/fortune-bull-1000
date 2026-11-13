@@ -966,7 +966,8 @@
       container: c, masks: [[c, m]], onExit: () => fireCurtain(r),
       make: () => new SymView(c, REEL_CX[r]),
       // white (user 2026-11-13): a stopped SUPER WILD in the top row is lifted over the frame (whole horns); back on the next spin
-      topLift: function (on) { this.views.forEach((v, i) => { const p = on && i === 1 && v.id === "super_wild" ? swTopL : c; if (v.c.parent !== p) p.addChild(v.c); }); },
+      // (user 2026-11-13 "bull should be in front"): any stopped SUPER WILD is raised over its neighbours in the reel
+      topLift: function (on) { this.views.forEach((v, i) => { const sw = on && v.id === "super_wild", p = sw && i === 1 ? swTopL : c; if (v.c.parent !== p || sw) p.addChild(v.c); }); },
       rand: () => { const s = Engine.SYMBOLS; const w = Engine.WEIGHTS; let t = 0; const fw = (k) => w[k] + (k === "charge" || k === "super_wild" ? 0 : 2); for (const k of s) t += fw(k); let x = Math.random() * t; for (const k of s) { x -= fw(k); if (x < 0) return k; } return "J"; } });
   });
   const colQ = [];                                   // white (spec): chips queued to slide in next (colPlan)
@@ -1792,7 +1793,11 @@
     Object.defineProperty(accTxt, "text", { configurable: true, get() { return pd.get.call(this); }, set(v) {
       v = String(v); const hx = v.charAt(0) === "x"; pd.set.call(this, hx ? v.slice(1) : v); accX.visible = hx;
       const dw = this.width / (this.scale.x || 1), xw = hx ? accX.width : 0, gap = hx ? -2 : 0, x0 = -(xw + gap + dw) / 2;
-      accX.position.set(x0 + xw, this.y - 2); this.x = x0 + xw + gap + dw / 2; } }); }   // white: parchment, like the count above it
+      accX.position.set(x0 + xw, this.y - 2); this.x = x0 + xw + gap + dw / 2;
+      if (accBT) { accBT.text = v; accBT.position.set(0, this.y + 2); } } }); }
+  // white (user 2026-11-13: "make the 9 bigger and same font as X"): the TOTAL in the chips' own lettering
+  const accBT = new PIXI.BitmapText("x0", { fontName: "gold_digits", fontSize: 62 }); accBT.anchor.set(0.5); accTxt.parent.addChild(accBT);
+  accTxt.renderable = false; accX.renderable = false;   // white: parchment, like the count above it
   function screenUp(on) {
     gsap.killTweensOf(cscreen);
     if (on) { cscreen.visible = true; cscreen.y = CS_HIDE; accum.visible = true; accum.alpha = 1; accum.scale.set(1); accTxt.text = "x0";
@@ -1947,7 +1952,7 @@
       const q = FX.bezier(from, mid, to, p.t); c.position.set(q.x, q.y);
       if (nEmit(40)) topP.emit({ tex: FX.tex.spark, x: q.x, y: q.y, vx: (Math.random() - 0.5) * 90, vy: (Math.random() - 0.5) * 90, s0: 0.35, s1: 0, life: 0.2, tint: 0xffd700 });
     } });
-    impactAt(to, v);
+    SFX.impact(v >= 10);   // white: no light on the counter board (user 2026-11-13)
     const hitK = Math.min(1, Math.log10(Math.max(2, v)) / 2);          // 2x = 0.15 ... 100x+ = 1
     flashScreen(multTint(v), 0.1 + 0.14 * hitK, 0.3);
     gsap.killTweensOf(plaque.scale);
@@ -2111,7 +2116,7 @@
   function badgeIn() {
     if (accum.visible) return;
     accum.visible = true; accum.scale.set(0);
-    gsap.to(accum.scale, { x: 1, y: 1, duration: 0.25, ease: "back.out(2)" }); ringAt(accum.x, accum.y, 0xffd060, 2.2, 0.3);
+    gsap.to(accum.scale, { x: 1, y: 1, duration: 0.25, ease: "back.out(2)" });   // white: no ring on the board
   }
   const accDraw = throttled(() => { accTxt.text = "x" + Math.round(accShown.v); }, TXT_DT), accShown = { v: 0 };
   function accSet(v, pk, esc) {
@@ -2126,7 +2131,7 @@
     gsap.timeline({ onComplete: () => t.destroy() }).fromTo(t.scale, { x: 0.4, y: 0.4 }, { x: 1.1, y: 1.1, duration: 0.3, ease: "back.out(3)" })
       .to(t, { x: to.x, y: to.y, alpha: 0.2, duration: 0.45, ease: "power2.in", delay: 0.35 })
       .to(t.scale, { x: 0.5, y: 0.5, duration: 0.45 }, "<");
-    ringAt(to.x, to.y, 0x9be060, 1.6, 0.4); SFX.nudgeActivate();
+    SFX.nudgeActivate();   // white: no ring on the board
   }
   // "CHARGE n" over the column as a Fortune Choice CHARGE starts its run
   function chargeTag(n) {
@@ -2170,7 +2175,7 @@
         await FX.wait(0.08 * f);
         if (f > 0.55) await streakToBadge(v);
         badgeIn(); acc = capAdd(acc, v); accSet(acc, 1.25 + 0.5 * esc, esc);
-        ringAt(accum.x, accum.y, 0xffd060, 1.4 + esc, 0.3); SFX.impact(lastN || v >= 50); SFX.rise(esc);
+        SFX.impact(lastN || v >= 50); SFX.rise(esc);   // white: no ring on the board
         if (lastN || v >= 50) flashScreen(multTint(v), 0.14, 0.3);
       }
       const el = gsap.globalTimeline.time() - t0;
@@ -3358,7 +3363,6 @@
     await FX.tween(t, { x: cntBox.x, y: cntBox.y, alpha: 0.2, duration: 0.45, ease: "power2.in" });
     t.destroy();
     gsap.fromTo(cntBox.scale, { x: 1.6, y: 1.6 }, { x: 1, y: 1, duration: 0.4, ease: "back.out(3)" });
-    ringAt(cntBox.x, cntBox.y, 0x5ff0ff, 0.9, 0.35);
   }
   function onColumnLand(r) {
     SFX.columnStop();
