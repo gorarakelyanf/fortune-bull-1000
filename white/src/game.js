@@ -586,7 +586,8 @@
       this.label = sp(T("Multipliers/label_1x")); this.coat = sp(T("Multipliers/chip_coat"));
       this.inner.addChild(this.label); this.f.addChild(this.inner, this.coat);
       this.gl.visible = false; this.coat.visible = false;      // 2026-11-10: no white gloss/glints on the chips (flash on hits stays)
-      colBack.addChild(this.b); colFront.addChild(this.f);
+      this.fb = new PIXI.Container(); this.fb.x = COL_CX;    // white: off-centre CHARGE badge holder, under the centre frame
+      colBack.addChild(this.b, this.fb); colFront.addChild(this.f);
       this.chargeBuild();
     }
     set(idx) { this.idx = idx; this.v = Engine.STRIP[idx]; this.bg.texture = chipBgTex(this.v);
@@ -645,11 +646,13 @@
           .fromTo(this.cbGlow, { alpha: 0.75 }, { alpha: 0, duration: 0.45 }, "<");
       });
     }
-    setY(y) { this.b.y = this.f.y = y;
-      const s = chipFit(Math.abs(y - COL_CY) / COL_P); this.b.scale.set(s.bx, s.by); this.f.scale.set(s.l); }
+    setY(y) { this.b.y = this.f.y = this.fb.y = y;
+      const s = chipFit(Math.abs(y - COL_CY) / COL_P); this.b.scale.set(s.bx, s.by); this.f.scale.set(s.l); this.fb.scale.set(s.l);
+      const want = Math.abs(y - COL_CY) < COL_P / 2 ? this.inner : this.fb;   // white: centre = over the frame, else under it
+      if (this.cb && this.cb.parent !== want) want.addChild(this.cb); }
     dim(k) { const g = Math.round(255 * (1 - 0.55 * k)); const t = (g << 16) | (g << 8) | g;
       [this.bg, this.rim, this.label, this.gl].forEach((s) => (s.tint = t)); if (this.cbBadge) this.cbBadge.tint = t; this.hotK = 1 - 0.75 * k; }
-    set visible(v) { this.b.visible = this.f.visible = v; }
+    set visible(v) { this.b.visible = this.f.visible = this.fb.visible = v; }
   }
 
   // white version: off-centre chips are small 16:9, a chip grows into the centre frame (d = distance in pitches)
