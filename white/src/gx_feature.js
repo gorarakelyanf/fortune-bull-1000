@@ -330,13 +330,21 @@ GX.plugin(function (ctx) {
       }
       for (let i = 0; i < 18 * M; i++) hotP.emit({ tex: FX.tex.dot, x: chX + rnd(-90, 90), y: chY + rnd(-20, 40), vx: rnd(-60, 60), vy: rnd(-900, -500), drag: 1.6,
         s0: rnd(0.2, 0.4), s1: 0, life: rnd(0.5, 0.8), a0: 1, a1: 0, stretch: 600, tint: 0xffd27a });
-      // lightning to the multiplier column, and the hit there
-      strike(chX, chY, tx, ty, 0.38, { n: 14, jag: 70, w: 16, core: 5, branches: 3, redraws: 6, col: 0xffd27a });
-      strike(chX, chY, tx, ty - ctx.COL_P * 0.5, 0.3, { n: 12, jag: 90, w: 9, core: 3, branches: 1, redraws: 5, col: 0xffb040 });
+      // lightning to the multiplier column, and the hit there (white: from the hand's fireball)
+      const ho = ctx.handOrb ? ctx.handOrb() : { x: chX, y: chY };
+      strike(ho.x, ho.y, tx, ty, 0.38, { n: 14, jag: 70, w: 16, core: 5, branches: 3, redraws: 6, col: 0xffd27a });
+      strike(ho.x, ho.y, tx, ty - ctx.COL_P * 0.5, 0.3, { n: 12, jag: 90, w: 9, core: 3, branches: 1, redraws: 5, col: 0xffb040 });
       gsap.delayedCall(0.05, () => safe(() => { ctx.flashAt(tx, ty, 0xfff0c0, 2.4, 0.3); ctx.burstAt(tx, ty, 0xffd060, Math.round(14 * M)); }));
       ctx.shake(10, 0.25); sfx("lightning"); sfx("impact", true);
     }));
   });
+
+  // white: a bolt from the fireball in the bull's hand to a point (game.js lightning())
+  GX.on("handStrike", (d) => safe(() => {
+    strike(d.x0, d.y0, d.x, d.y, 0.34, { n: 16, jag: 60, w: 13, core: 4, branches: 2, redraws: 6, col: d.col || 0xffd27a });
+    ctx.flashAt(d.x0, d.y0, 0xffe0a0, 1.2, 0.18);
+    gsap.delayedCall(0.04, () => safe(() => ctx.flashAt(d.x, d.y, 0xfff0c0, 1.6, 0.22)));
+  }));
 
   // ---------- 4. near-win strike on the teased reel ----------
   GX.on("tease", (d) => {
@@ -344,8 +352,9 @@ GX.plugin(function (ctx) {
     const [x0, x1] = ctx.REEL_X[reel], cx = (x0 + x1) / 2, y0 = ctx.CELL_Y0, y1 = ctx.WIN_Y1;
     gsap.delayedCall(0.12, () => safe(() => {
       // pre-flash: the sky above the reel lights up a beat before the strike
-      ctx.flashAt(cx, y0 - 120, 0xfff0c0, 2.5, 0.2);
-      const g = strike(cx + rnd(-30, 30), y0 - 330, cx + rnd(-20, 20), y1 - 30, 0.5, { n: 16, jag: 55, w: 18, core: 5, branches: 4, redraws: 5, col: 0xffe2a0 });
+      const ho = ctx.handOrb ? ctx.handOrb() : { x: cx, y: y0 - 330 };   // white: from the hand's fireball
+      ctx.flashAt(ho.x, ho.y, 0xfff0c0, 2.0, 0.2);
+      const g = strike(ho.x, ho.y, cx + rnd(-20, 20), y1 - 30, 0.5, { n: 16, jag: 55, w: 18, core: 5, branches: 4, redraws: 5, col: 0xffe2a0 });
       void g;
       const beam = new PIXI.Sprite(FX.tex.ray); beam.anchor.set(0.5, 0); beam.position.set(cx, y1); beam.blendMode = ADD; beam.tint = 0xffd890;
       beam.scale.set((x1 - x0) / 128 * 1.1, -(y1 - y0 + 200) / 1024); beam.alpha = 0; layers.fxTop.addChild(beam);

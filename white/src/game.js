@@ -421,6 +421,7 @@
   const frameTop = new PIXI.Sprite(new PIXI.Texture(frame.texture.baseTexture, new PIXI.Rectangle(frame.texture.frame.x, frame.texture.frame.y, frame.texture.frame.width, 28)));
   frameTop.position.set(0, 585); board.addChildAt(frameTop, board.getChildIndex(reelsL) + 1);   // white: the top edge stays over the symbols
   { const m = new PIXI.Graphics().beginFill(0xffffff).drawRect(-400, 597, 1880, 2000).endFill(); board.addChild(m); reelsL.mask = m; }   // white: no symbol pokes above the frame
+  const swTopL = new PIXI.Container(); board.addChildAt(swTopL, board.getChildIndex(frameTop) + 1);   // white: a stopped top-row SUPER WILD, over the frame
   // (the FORTUNE BULL 1000 title lintel over the reels was removed on 2026-11-11 at the user's request; ctx.TITLE = false)
   // soft gold rim around the centre (paying) multiplier slot: over the chip backs, under the chip labels
   let centreFrame = new PIXI.Sprite(T("Multipliers/centre_frame")); centreFrame.anchor.set(0.5); centreFrame.position.set(COL_CX, COL_CY);
@@ -645,7 +646,34 @@
       let x = -sps.reduce((a, s) => a + step(s), 0) / 2;
       sps.forEach((s) => { s.x = x + step(s) / 2; x += step(s); this.cbNum.addChild(s); });
     }
+    // white (user 2026-11-13): the count spins like a reel and stops on n (the old count-up is revealOld)
     reveal(n) {
+      if (!this.cb.visible) return Promise.resolve();
+      this.cbWin.visible = true; this.cbChev.y = 0; this.cbChev.alpha = 1;
+      this.cbNum.removeChildren().forEach((c) => c.destroy()); this.cbNum.scale.set(1);
+      const P = CB.wh * 0.9, vals = [];
+      for (let i = 0; i < 18; i++) { let v; do { v = 2 + Math.floor(Math.random() * 19); } while (v === n || v === vals[vals.length - 1]); vals.push(v); }
+      vals.push(n);
+      const grp = (k) => { const g = new PIXI.Container();
+        const sps = String(k).split("").map((d) => { const s = new PIXI.Sprite(T("UI/charge_digit_" + d)); s.anchor.set(0.5); s.scale.set(CB.dk); return s; });
+        const step = (s) => s.width * 0.84; let x = -sps.reduce((a, s) => a + step(s), 0) / 2;
+        sps.forEach((s) => { s.x = x + step(s) / 2; x += step(s); g.addChild(s); }); return g; };
+      vals.forEach((k, i) => { const g = grp(k); g.y = -i * P; this.cbNum.addChild(g); });     // the strip: n on top, it scrolls down
+      const L = (vals.length - 1) * P; this.cbNum.y = -P; let last = -2;
+      return new Promise((res) => {
+        gsap.timeline({ onComplete: () => { this.chargeDigits(n); this.cbNum.y = 0; res(); } })
+          .to(this.cbChev, { y: CB.wh, alpha: 0.4, duration: 0.22, ease: "power2.in" })                    // chevrons drop away
+          .fromTo(this.cbGlow, { alpha: 0.9 }, { alpha: 0, duration: 0.5 }, 0)
+          .to(this.cbNum, { y: L + P * 0.14, duration: 1.6, ease: "power2.out", onUpdate: () => {         // the reel of numbers
+            const k = Math.round(this.cbNum.y / P); if (k !== last) { last = k; if (k >= 0 && k < vals.length) SFX.colTick(Math.min(1, k / vals.length)); }
+          } }, 0.08)
+          .to(this.cbNum, { y: L, duration: 0.2, ease: "power2.inOut" })                                     // a small overshoot, back
+          .add(() => { const g = this.cbNum.children[this.cbNum.children.length - 1]; if (g) gsap.fromTo(g.scale, { x: 1.45, y: 1.45 }, { x: 1, y: 1, duration: 0.3, ease: "back.out(3)" }); })
+          .fromTo(this.cbGlow, { alpha: 0.75 }, { alpha: 0, duration: 0.45 }, "<")
+          .to({}, { duration: 0.3 });
+      });
+    }
+    revealOld(n) {
       if (!this.cb.visible) return Promise.resolve();
       this.cbWin.visible = true; this.cbChev.y = 0; this.cbChev.alpha = 1;
       this.chargeDigits(1); this.cbNum.y = CB.wh; this.cbNum.scale.set(1);
@@ -801,8 +829,8 @@
     }
     setSyms(ids) { this.syms = ids.slice(); this.views.forEach((v, i) => v.set(ids[i], false)); this.layout(); this.rest(); }
     layout() { this.views.forEach((v, i) => v.setY(this.y0 + (i - 1 + this.offset) * this.pitch)); }
-    rest() { this.views.forEach((v, i) => (v.visible = i > 0 && i < this.n - 1)); this.unmask(); }
-    showAll() { this.views.forEach((v) => (v.visible = true)); this.domask(); }
+    rest() { this.views.forEach((v, i) => (v.visible = i > 0 && i < this.n - 1)); this.unmask(); if (this.topLift) this.topLift(true); }
+    showAll() { if (this.topLift) this.topLift(false); this.views.forEach((v) => (v.visible = true)); this.domask(); }
     domask() { this.masks.forEach(([c, m]) => (c.mask = m)); }
     unmask() { this.masks.forEach(([c, m]) => { c.mask = null; m.renderable = false; }); }
     // Fortune-games reel (Pascal Porco reelAnimationCacheBuilder): intro lifts the strip a quarter cell (linear, 0.2 s;
@@ -934,13 +962,15 @@
     return new Reel({ rows: 3, pitch: CELL_H, y0: rowY(0), vmax: 20, vNormal: 20, vTurbo: 40, accel: 400, stopDur: 0.6, spinDim: 0.55, stopFast: 0.2,
       container: c, masks: [[c, m]], onExit: () => fireCurtain(r),
       make: () => new SymView(c, REEL_CX[r]),
+      // white (user 2026-11-13): a stopped SUPER WILD in the top row is lifted over the frame (whole horns); back on the next spin
+      topLift: function (on) { this.views.forEach((v, i) => { const p = on && i === 1 && v.id === "super_wild" ? swTopL : c; if (v.c.parent !== p) p.addChild(v.c); }); },
       rand: () => { const s = Engine.SYMBOLS; const w = Engine.WEIGHTS; let t = 0; const fw = (k) => w[k] + (k === "charge" || k === "super_wild" ? 0 : 2); for (const k of s) t += fw(k); let x = Math.random() * t; for (const k of s) { x -= fw(k); if (x < 0) return k; } return "J"; } });
   });
   const colQ = [];                                   // white (spec): chips queued to slide in next (colPlan)
   const colBlur = new PIXI.BlurFilter(0, MOBILE ? 2 : 4); colBlur.blurX = 0; colBlur.blurY = 0;
   const colReel = new Reel({ rows: 7, pitch: COL_P, y0: COL_Y0, vmax: 30, vNormal: 30, vTurbo: 52, accel: 400, stopDur: 0.62, stopFast: 0.22,
     masks: [[colBack, maskRect(TRAY[0], TRAY[1], TRAY[2], TRAY[3])], [colFront, maskRect(TRAY[0] - 30, TRAY[1], TRAY[2] + 30, TRAY[3])]],
-    make: () => new ChipView(), rand: () => Math.floor(Math.random() * Engine.STRIP.length),
+    make: () => new ChipView(), rand: () => colShowPick(),          // white: Garuda's show strip while spinning
     above: (i) => (colQ.length ? colQ.shift() : (i + 1) % Engine.STRIP.length),
     onSpeed: (s) => { const b = Math.max(0, (s - 6) * 0.6); colBlur.blurY = b; colBack.filters = colFront.filters = b > 0.5 ? [colBlur] : null; } });
   const stripAt = (c, k) => (c + k + Engine.STRIP.length * 4) % Engine.STRIP.length;
@@ -1017,7 +1047,7 @@
   addAura(ui.turbo, 0x7fd0ff, 1.0); addAura(ui.ex, 0xffd060, 1.05); addAura(ui.autoplay, 0xffd060, 1.0);
   const exRing = new PIXI.Sprite(FX.tex.burst); exRing.anchor.set(0.5); exRing.scale.set(0.2); exRing.alpha = 0;
   exRing.blendMode = PIXI.BLEND_MODES.ADD; ui.ex.addChildAt(exRing, 1);
-  const exTag = new PIXI.Text("x1.5 BET", FX.gold(22)); exTag.anchor.set(0.5); exTag.position.set(0, -86); exTag.alpha = 0; ui.ex.addChild(exTag);
+  const exTag = new PIXI.Text("x1.5 BET", FX.gold(22)); exTag.anchor.set(0.5); exTag.position.set(0, -86); exTag.alpha = 0; ui.ex.addChild(exTag); exTag.renderable = false;   // white: no x8 BET tag
   const autoBadge = new PIXI.Container(); autoBadge.position.set(48, -48); autoBadge.visible = false;
   autoBadge.addChild(new PIXI.Graphics().lineStyle(3, 0xffd36b).beginFill(0x8a0e1e).drawCircle(0, 0, 26).endFill());
   const autoTxt = new PIXI.Text("50", FX.plain(24, "#ffffff")); autoTxt.anchor.set(0.5); autoBadge.addChild(autoTxt);
@@ -1033,7 +1063,7 @@
     dropShadowAngle: Math.PI / 2, padding: 6 }, extra || {}));
   const betTxt = new PIXI.Text("", PF(40, 500, "#FFFFFF")); betTxt.anchor.set(0.5); betTxt.position.set(540, 1760); uiL.addChild(betTxt);
   const exBetTag = new PIXI.Text("EX", FX.gold(20, { fill: FX.TIER_FILL.mega })); exBetTag.anchor.set(0.5); exBetTag.position.set(650, 1760);
-  exBetTag.visible = false; uiL.addChild(exBetTag);
+  exBetTag.visible = false; uiL.addChild(exBetTag); exBetTag.renderable = false;   // white: no EX2 tag after the bet
   const clockTxt = new PIXI.Text("", PF(26, 500, "#FFFFFF")); clockTxt.anchor.set(0, 0.5); clockTxt.position.set(48, 1864);
   const balLab = new PIXI.Text("Balance:", PF(32, 500, "#FFC33E")); balLab.anchor.set(0, 0.5);
   const balVal = new PIXI.Text("", PF(40, 700, "#FFFFFF")); balVal.anchor.set(0, 0.5);
@@ -2026,6 +2056,29 @@
   // The column's own strip is decor: the chips that will slide into the centre are set to the engine's draws first.
   let accCap = Infinity;                                 // at the max-win cap the shown total stops at the paid one
   const capAdd = (acc, v) => Math.min(accCap, acc + v);
+  // white (Garuda column logic, 2026-11-13): a spinning column shows big chips; a landed window is drawn fresh
+  function colShowPick() {
+    const S_ = Engine.STRIP;
+    if (Math.random() < 0.55) { const hot = []; for (let i = 0; i < S_.length; i++) if (S_[i] >= 50) hot.push(i); if (hot.length) return hot[Math.floor(Math.random() * hot.length)]; }
+    return Math.floor(Math.random() * S_.length);
+  }
+  // slots k = 3..-3 (k > 0 above the centre); fixed = { k: strip index } for the slots the engine owns (centre, nudges)
+  function colWindow(fixed) {
+    const S_ = Engine.STRIP, L = S_.length, cv = S_[fixed[0]];
+    const pick = (ok) => { for (let t = 0; t < 40; t++) { const i = Math.floor(Math.random() * L); if (ok(S_[i])) return i; } return Math.floor(Math.random() * L); };
+    const out = {};
+    for (const k of [3, 2, 1, -1, -2, -3]) {
+      if (fixed[k] !== undefined) { out[k] = fixed[k]; continue; }
+      const outer = Math.abs(k) >= 2;
+      out[k] = pick((v) => (v < 0 ? outer || Math.random() < 0.25 : true));            // NUDGE chips mostly on the outer slots
+    }
+    if (cv > 0 && Math.random() < 0.7) {                                                // near miss: a bigger chip beside the centre
+      const free = [1, -1].filter((k) => fixed[k] === undefined);
+      if (free.length) { const k = free[Math.floor(Math.random() * free.length)], up = pick((v) => v > cv);
+        if (S_[up] > cv) out[k] = up; }
+    }
+    return [3, 2, 1, 0, -1, -2, -3].map((k) => (k === 0 ? fixed[0] : out[k]));
+  }
   const colIdxOf = (v) => { const i = Engine.STRIP.indexOf(v); return i < 0 ? 0 : i; };
   function colPlan(vals, flash) {                       // next values into views[3], [2], [1], [0]; the rest queue up
     for (let j = 0; j < 4 && j < vals.length; j++) {
@@ -2326,7 +2379,7 @@
     for (let k = 0; k < N; k++) {
       const reel = k % 3, row = Math.floor(Math.random() * 3);
       const to = { x: REEL_CX[reel] + (Math.random() - 0.5) * 120, y: rowY(row) + (Math.random() - 0.5) * 100 };
-      const from = k % 2 ? MOUTH : FIST;
+      const from = handOrb();                       // white: every bolt from the hand's fireball
       shots.push(FX.wait(k * gap).then(() => bolt(from, to)).then(() => { if (k % 3 === 0) SFX.impact(false); }));
     }
     await Promise.all(shots);
@@ -2520,6 +2573,7 @@
     gsap.to(st, { alpha: 0, rotation: st.rotation + 0.6, duration: 0.42, ease: "power1.in", onComplete: () => st.destroy() });
   }
   function lightBeam(x, y, tint) {
+    if (!lightBeam.on) return;   // white (user 2026-11-13): no light beam up from the column
     const b = new PIXI.Sprite(FX.tex.ray); b.anchor.set(0.5, 0); b.position.set(x, y); b.scale.set(1.3, -0.95);
     b.tint = tint; b.blendMode = PIXI.BLEND_MODES.ADD; b.alpha = 0; fxTop.addChild(b);
     gsap.timeline({ onComplete: () => b.destroy() }).to(b, { alpha: 0.95, duration: 0.07 }).to(b, { alpha: 0, duration: 0.75, ease: "power2.in" });
@@ -3133,7 +3187,8 @@
     SFX.unlock();
     const now = performance.now();
     if (S.state === "idle") { spinAt = now; return spin(); }
-    if (S.state === "spinning") { if (now - spinAt < 450) return; quick = true; if (skipWait) skipWait(); if (colReel.tween) colReel.tween.timeScale(4); return; }
+    // white (user 2026-11-13): a double click on SPIN stops the reels at once (only a 60 ms debounce for a double-fired tap)
+    if (S.state === "spinning") { if (now - spinAt < 60) return; quick = true; if (skipWait) skipWait(); if (colReel.tween) colReel.tween.timeScale(4); return; }
     if (S.state === "present") {
       if (now - Math.max(spinAt, presentAt) < 500) return;
       // an ordinary win (no feature, no popup): the tap skips the rest of the show and the next spin starts at once.
@@ -3215,7 +3270,9 @@
     await waitSkippable(quick ? 0.03 : tStop[3] - tStop[2]);
     colC = r.multIndex;
     colReel.onLand = () => onColumnLand(r);
-    const colFinal = [3, 2, 1, 0, -1, -2, -3].map((k) => (k > 0 && k <= r.nudges.length ? colIdxOf(r.nudges[k - 1]) : stripAt(colC, k)));   // white (spec)
+    // white (Garuda): a fresh window round the engine's centre and nudge values
+    const colFix = { 0: stripAt(colC, 0) }; for (let k = 1; k <= 3; k++) if (k <= r.nudges.length) colFix[k] = colIdxOf(r.nudges[k - 1]);
+    const colFinal = colWindow(colFix);
     if (r.win > 0 && !tb && !quick) {                // a win to multiply: the column rolls on, ticking chip by chip
       colTeaseOn();
       const small = r.win < r.stake && !r.nudges.length && !r.fc && !(r.boardRuns && r.boardRuns.length);            // a short roll for a win below the stake
@@ -3307,7 +3364,10 @@
     const x0 = REEL_X[reel][0], x1 = REEL_X[reel][1];
     embers([x0, WIN_Y1 - 10, x1, WIN_Y1], 2, 0xff9a40);
   }
+  // white: the orb in the bull's hand, in fxTop px (the magic flame rides the tracked hand; the orb glow sits 60 px up)
+  function handOrb() { try { return fxTop.toLocal(flame.c.toGlobal(new PIXI.Point(0, -60))); } catch (e) { return { x: FIST.x, y: FIST.y }; } }
   function lightning(x, y, col) {
+    { const o = handOrb(); SFX.lightning(); GX.emit("handStrike", { x0: o.x, y0: o.y, x, y, col }); return; }   // white: from the hand's fireball
     if (FX.tex.bolts) return lightningArt(x, y, col);
     SFX.lightning();
     const g = new PIXI.Graphics(); g.blendMode = PIXI.BLEND_MODES.ADD; fxTop.addChild(g);
@@ -3562,7 +3622,7 @@
     REEL_X, REEL_CX, CELL_Y0, CELL_H, WIN_Y1, rowY, COL_CX, COL_CY, COL_P, TRAY, HIGH,
     layers: { bgL, ambBack, bullL, ambFront, boardL, uiL, fxTop, popL, board, boardFx, cellFxBack, frameL, reelsL, plaqueL },
     pop: { pop, popBody, popDark, popGlow, popBurst, popTitle, popTitleArt, popAmt, popPlate, popHero, popRays, popFlame, popCoins, popFaders, POP_DY },
-    bull, bullFit, bullToL, bullDir, bullReact, handNow, flame, featRays, vignette, topP, boardP, winObjs,
+    bull, bullFit, bullToL, bullDir, bullReact, handNow, handOrb, flame, featRays, vignette, topP, boardP, winObjs,
     burstAt, ringAt, boom, flashAt, starFlash, lightBeam, lightning, shake, hitStop, flameKick, multTint, nEmit,
     fireFrame, tease, colTease, FireRect, embers, TITLE: !GPASS,
     isFeature: () => featureOn });

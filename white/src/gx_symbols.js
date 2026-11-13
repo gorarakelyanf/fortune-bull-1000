@@ -273,9 +273,15 @@ GX.plugin(function (ctx) {
     const back = A.behind();
     const fx = A.fx(), P = A.parts(fx);
     // gold glow pouring out of the lid
-    const lidY = -34;
-    const gl = spr(FX.tex.glow, fx, { tint: 0xffb52a, x: 0, y: lidY, s: 0.3, sy: 0.2, alpha: 0 });
-    const gl2 = spr(FX.tex.glow, fx, { tint: 0xfff0b0, x: 0, y: lidY, s: 0.18, sy: 0.1, alpha: 0 });
+    const lidY = -40;                                   // white: the top of the treasure (coins and gems leave from here)
+    // white (user 2026-11-13): the light comes from under the lid - a small source inside the lid, the treasure itself lit
+    const gl = spr(FX.tex.glow, fx, { tint: 0xffb52a, x: 10, y: -54, s: 0.3, sy: 0.08, alpha: 0 });
+    const gl2 = spr(FX.tex.glow, fx, { tint: 0xfff0b0, x: 10, y: -52, s: 0.18, sy: 0.05, alpha: 0 });
+    const lit = spr(h.texture, fx, { tint: 0xffd890, alpha: 0 }), litM = spr(FX.tex.glow, fx, { blend: NORMAL, x: 8, y: -14, s: 0.85, sy: 0.32 });
+    lit.mask = litM;
+    A.onStep(() => { lit.position.set(h.x, h.y); lit.scale.copyFrom(h.scale); litM.y = -14 + (h.y - y0); });
+    A.tw(gsap.timeline({ delay: 0.22 }).to(lit, { alpha: 0.8, duration: 0.15 }).to(lit, { alpha: 0.45, duration: 0.6 })
+      .to(lit, { alpha: 0.7, duration: 0.9, ease: "sine.inOut", yoyo: true, repeat: -1 }));
     const shafts = [];
     for (let i = 0; i < (MOBILE ? 3 : 5); i++) {
       const s = spr(FX.tex.ray, fx, { tint: 0xffd060, x: (i - 2) * 22, y: lidY + 10, ax: 0.5, ay: 1, s: 0.32, sy: 0, rot: (i - 2) * 0.22, alpha: 0.55 });
@@ -284,8 +290,8 @@ GX.plugin(function (ctx) {
     const bk = spr(FX.tex.glow, back, { tint: 0xffa020, s: 1.0, sy: 0.9, alpha: 0 });
     A.tw(gsap.timeline({ delay: 0.22 })
       .to([gl, gl2], { alpha: 1, duration: 0.12 })
-      .to(gl.scale, { x: 0.95, y: 0.5, duration: 0.25, ease: "power2.out" }, "<")
-      .to(gl2.scale, { x: 0.55, y: 0.28, duration: 0.25, ease: "power2.out" }, "<")
+      .to(gl.scale, { x: 0.62, y: 0.13, duration: 0.25, ease: "power2.out" }, "<")       // white: stays inside the lid
+      .to(gl2.scale, { x: 0.36, y: 0.07, duration: 0.25, ease: "power2.out" }, "<")
       .to(bk, { alpha: 0.75, duration: 0.2 }, "<")
       .to(shafts.map((s) => s.scale), { y: 0.2, duration: 0.3, ease: "power2.out", stagger: 0.03 }, "<")
       .to([gl, gl2, bk], { alpha: 0.45, duration: 0.6 })
@@ -355,11 +361,19 @@ GX.plugin(function (ctx) {
       const bl = new PIXI.Container(); v.inner.addChild(bl); A.own(bl);
       const b1 = spr(v.a.texture, bl, { tint: sup ? 0xff7a1a : 0xffa040, alpha: 0 }), b2 = spr(v.a.texture, bl, { tint: 0xffe08a, alpha: 0 });
       [b1, b2].forEach((b) => { b.scale.copyFrom(v.a.scale); b.position.copyFrom(v.a.position); b.anchor.copyFrom(v.a.anchor); });
+      const eyes = [];
+      if (sup) {   // white (user 2026-11-13): the SUPER WILD's eyes light up like the WILD's video
+        const tw_ = v.a.texture.width, th_ = v.a.texture.height, ex = (tx) => v.a.x + (tx - tw_ / 2) * v.a.scale.x, ey = v.a.y + (113 - th_ / 2) * v.a.scale.y;
+        [134, 190].forEach((tx) => { eyes.push(spr(FX.tex.glow, bl, { tint: 0xff5a00, x: ex(tx), y: ey, s: 0.34, sy: 0.2, alpha: 0 }),
+          spr(FX.tex.glow, bl, { tint: 0xffd24a, x: ex(tx), y: ey, s: 0.16, sy: 0.09, alpha: 0 }),
+          spr(FX.tex.glow, bl, { tint: 0xfff6d0, x: ex(tx), y: ey, s: 0.07, sy: 0.04, alpha: 0 })); });
+      }
       const st = { k: 0 };
       A.tw(gsap.to(st, { k: 1, duration: 0.5, ease: "power2.out" }));
       let tt = 0;
       A.onStep((dt) => { tt += dt; const f = 0.5 + 0.5 * Math.sin(tt * 3.2), g = 0.5 + 0.5 * Math.sin(tt * 7.1 + 1.3);
-        b1.alpha = st.k * (0.28 + 0.22 * f); b2.alpha = st.k * (0.08 + 0.1 * g * f); });
+        b1.alpha = st.k * (0.28 + 0.22 * f); b2.alpha = st.k * (0.08 + 0.1 * g * f);
+        eyes.forEach((e, i) => (e.alpha = st.k * [0.9, 1, 1][i % 3] * (0.82 + 0.18 * g))); });
     });
     A.later(0.4, () => {
       const f = spr(FX.tex.glow, fx, { tint: sup ? 0xffb060 : 0xe0b8ff, s: 0.6, alpha: 0.9 });
