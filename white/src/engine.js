@@ -259,7 +259,8 @@
         fc: !!r.fc, fcchoice: !!r.fc && r.fc.picks.some((p) => p.t === "choice2"), fccharge: !!r.fc && r.fc.picks.some((p) => p.t === "charge"),
         nudge4: r.nudges.length >= 4 || (!!r.fc && r.fc.picks.length >= 4),
         big: t === "big", mega: t === "mega", super: t === "super", epic: t === "epic", max: t === "max",
-        tease: r.totalX === 0 && r.grid[0].concat(r.grid[1]).filter((x) => WILDS.has(x)).length >= 2,
+        tease: r.totalX >= 5 && r.grid[0].concat(r.grid[1]).filter((x) => WILDS.has(x)).length >= 2,   // b20 (user 2026-11-19): a tease always pays 5x+
+        teaselose: r.totalX === 0 && r.grid[0].concat(r.grid[1]).filter((x) => WILDS.has(x)).length >= 2,   // the old demo (no tease plays now)
         m1000: r.startMult === 1000 && r.baseX > 0,
         halo: r.nudges.length === 0 && !r.fc && r.mult >= 100 && r.baseX > 0 && r.win >= r.stake,
         nudgechip: r.chipSteps > 0 && r.totalX < 100,

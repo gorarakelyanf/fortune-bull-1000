@@ -1,11 +1,11 @@
 // Fortune Bull 1000 - effect plugin: HALO WHEEL (see src/gx.js). On throws of 100x and up (HALO_MIN in game.js) the game
 // awaits GX.run("halo", {mult, tint}) before the bull's throw:
-//   0.00 a gold sun-halo (an oval round his head) opens behind the bull, rays turning behind it
-//   0.10 seven multiplier coins fly out of the column into slots round the halo
+//   0.00 a gold sun-halo (a circle round his head through the hand ball) opens behind the bull, rays turning behind it
+//   0.10 seven multiplier balls fly out of the column into equal slots on the circle (the hand ball is the 8th slot)
 //   0.85 a fire beam rises from a super wild on the board (else from the column) into the halo
-//   1.00 the wheel whips round (~2.5 turns) and slows over 2.3 s; the coin under the top pointer is lit, the rest dim
-//   ~3.2 it stops on the round's multiplier: the coin pops out with rays, the rest fade, the halo closes
-//   ~3.7 the coin flies into the bull's raised hand; the throw then plays with that value already landed (gx_picker)
+//   1.00 b20 WHEEL: values roll ON the hand ball (the ring stands still), slow down and land on the round's multiplier
+//   ~2.75 the ring ball with that value glides into the hand ball; the halo closes
+//   ~3.3 the rolled value rides the hand ball into the throw (gx_picker adopts it) until the release
 // Presentation only: it always lands on the multiplier the engine already picked. Turbo runs it ~2.2x faster.
 GX.plugin(function (ctx) {
   "use strict";
@@ -25,6 +25,9 @@ GX.plugin(function (ctx) {
   // flare / centre flash / coin glow pulse when a SUPER WILD's flames hit the ring, off; ?swflash brings it back.
   const QS = (() => { try { return new URLSearchParams(location.search); } catch (e) { return new URLSearchParams(""); } })();
   const SW_SHAFT = QS.has("swshaft"), SW_HIT_FLASH = QS.has("swflash");
+  // b20 lead (calm look, the 100x halo): no flash + ring as it opens, no ring per seated ball, no flash / dot burst / shake /
+  // dot spray with the beam from the board (the beam itself stays); ?halofx brings them back
+  const HALO_FX = QS.has("halofx");
 
   // the halo ring: a thick polished-gold band with beads, a hot inner edge and a soft prismatic outer rim (canvas, once)
   const ringTex = (() => {
@@ -129,9 +132,12 @@ GX.plugin(function (ctx) {
   // balls (user 2026-11-19 b): "no ball should cover the hand ball, it should be properly placed". handGeo = the bull's hand
   // orb in fxTop space (r = its visible radius: sphere x 1.45 for the rim fire); clearHand pushes a wheel coin's point straight
   // away from it until the coin's live radius + HAND_GAP clears it (every tick, so lit / winner growth is covered too);
-  // swLayout spaces the SUPER WILD wheel's positions evenly along the ring with the arc next to the hand left free.
+  // (b20: swLayout is gone - wheelGeo puts both wheels on an even circle with the hand ball as one slot; clearHand stays as
+  // the safety net for when the hand moves).
   // HAND_REST = the bull's pose while a wheel is up (measured: desktop and ?mobile alike).
-  const HAND_GAP = 26, HAND_REST = { x: 273.4, y: 343.2, r: 42 * 1.45 };
+  // b20 WHEEL (user 2026-11-19): HAND_GAP 26 -> 12: on the even circle the hand slot's neighbours sit one equal step
+  // (138 px) from the hand orb; 61 (orb rim) + 61 (ball rim) + 12 fits, so the safety net does not bend the circle at rest
+  const HAND_GAP = 12, HAND_REST = { x: 273.4, y: 343.2, r: 42 * 1.45 };
   function handGeo() {
     try {
       const o = ctx.flame && ctx.flame.c && ctx.flame.c.orb; if (!o || !o.orbM.worldVisible) return null;
@@ -147,39 +153,130 @@ GX.plugin(function (ctx) {
     const ux = d > 1e-3 ? dx / d : 1, uy = d > 1e-3 ? dy / d : 0;
     return { x: hg.x + ux * need, y: hg.y + uy * need };
   }
-  // N parametric angles round the ellipse (CX, CY, RX, RY), equal arc-length apart, clockwise from the top; the arc where a
-  // lit coin (radius rLit) would come within HAND_GAP of the resting hand orb is skipped (no gap -> the old even spread)
-  function swLayout(N, CX, CY, RX, RY, rLit) {
-    const even = Array.from({ length: N }, (_, i) => -Math.PI / 2 + (i / N) * TAU2);
-    if (!BALLS) return even;
-    const M = 720, pts = [];
-    let s = 0, px = 0, py = 0;
-    for (let k = 0; k <= M; k++) {
-      const a = -Math.PI / 2 + (k / M) * TAU2, x = CX + Math.cos(a) * RX, y = CY + Math.sin(a) * RY;
-      if (k) s += Math.hypot(x - px, y - py); px = x; py = y;
-      pts.push({ a, s, bad: Math.hypot(x - HAND_REST.x, y - HAND_REST.y) < HAND_REST.r + rLit + HAND_GAP });
-    }
-    const P = s, bad = pts.filter((q) => q.bad);
-    if (!bad.length || bad.length > M * 0.5 || pts[0].bad) return even;
-    const g0 = bad[0].s, g1 = bad[bad.length - 1].s, L = P - (g1 - g0);
-    const at = (sv) => { sv = ((sv % P) + P) % P; let i = 1; while (i < pts.length - 1 && pts[i].s < sv) i++; const q0 = pts[i - 1], q1 = pts[i]; return q0.a + (q1.a - q0.a) * ((sv - q0.s) / Math.max(1e-6, q1.s - q0.s)); };
-    const out = Array.from({ length: N }, (_, k) => at(g1 + (k * L) / (N - 1)));
-    const top = (a) => ((((a + Math.PI / 2) % TAU2) + TAU2) % TAU2);
-    return out.sort((x, y) => top(x) - top(y));                       // index 0 nearest the top, clockwise (like the old spread)
+  // b20 WHEEL (user 2026-11-19: "for the wheel, the halo spheres should be equally circular and choosing should happen always
+  // in the hand ball, and the hand ball should be thrown", "the balls of halo should not dim"). Both wheels (100x halo and the
+  // SUPER WILD / Fortune Choice wheel) put their balls on a TRUE circle through the hand orb's rest point: the hand ball is
+  // the selector slot, N balls + the hand = N + 1 equal angle steps, clockwise from the hand (index 0 just above it, index
+  // N-1 just below it). WC_R / WC_CY (fxTop px, measured on desktop + &mobile): the top ball stays on the desktop screen
+  // (fxTop y 50), the bottom ball above the board frame, the right-most ball (x ~770) left of the counter boards (x ~840);
+  // the centre (~496, 326) sits under the head (548, 234). One equal step = 138 px (9 balls) / 171 px (7 balls).
+  // The wheel stands still: no turning, no whip, no pointer, no running light; every ball rests at WHEEL_CS (= the hand
+  // orb's size), full brightness, never dimmed.
+  const WC_R = 224, WC_CY = 326, WHEEL_CS = 0.6;
+  function wheelGeo(N) {
+    const h = HAND_REST, dy = h.y - WC_CY, CX = h.x + Math.sqrt(Math.max(0, WC_R * WC_R - dy * dy)), CY = WC_CY;
+    const a0 = Math.atan2(h.y - CY, h.x - CX), step = (Math.PI * 2) / (N + 1);
+    return { CX, CY, R: WC_R, a0, ang: Array.from({ length: N }, (_, k) => a0 + (k + 1) * step) };
+  }
+  // the hand orb's centre + sphere radius (fxTop)
+  const orbC = () => { const hg = handGeo(); return hg ? { x: hg.x, y: hg.y, rs: hg.rs } : { x: HAND_REST.x, y: HAND_REST.y, rs: 42 }; };
+  const orbOld = () => { try { const o = ctx.handOrb(); return { x: o.x, y: o.y - 8 }; } catch (e) { return { x: HAND_REST.x, y: HAND_REST.y }; } };
+  // a value written ON the hand ball: numerals only (or the CHARGE badge / "+2"), fitted to the orb, centred
+  function orbText(v, parent) {
+    const c = new PIXI.Container(); parent.addChild(c);
+    let o;
+    if (v === "c2") { o = new PIXI.Text("+2", FX.gold(70, { fill: ["#F4FFE6", "#C8F58A", "#4E9A18"], strokeThickness: 7 })); o.anchor.set(0.5); c.addChild(o); }
+    else if (v < 0) o = sp(ctx.T("UI/charge_badge"), c);
+    else if (KNOWN.has(v)) o = sp(labelTex(v), c);
+    else { o = new PIXI.Text(v + "x", FX.gold(48)); o.anchor.set(0.5); c.addChild(o); }
+    const rs = orbC().rs, w = (typeof v === "number" && VIS[v]) || o.width, h = o.height;
+    o.scale.set(Math.min(1.9 * rs / Math.max(1, w), 1.25 * rs / Math.max(1, h)));
+    return c;
+  }
+  // b20 WHEEL: the choice is a roll of values ON the hand ball (the slowGather roller, shared): faces drop in from above,
+  // 1/14 s steps through pool() (the values still on the ring), slowing, landing on the engine's value. ok() = the wheel is
+  // still up. handoff(): the rolled numerals stay glued to the orb and go to gx_picker throwCharge (window.GX_HALO_HANDOFF,
+  // txt) - the value stays readable on the hand ball until the release; flyTo(): a short calm flight off the ball (+2).
+  function handRoller(front, pool, ok) {
+    const R = { c: null, face: null, last: null, v: null };
+    R.live = () => live(R.c);
+    R.make = (v) => (BALLS ? orbText(v, R.c) : coinOf(v, R.c));
+    R.next = () => { const P = pool() || []; if (!P.length) return R.last; let v, n = 0; do { v = P[Math.floor(Math.random() * P.length)]; } while (v === R.last && P.length > 1 && ++n < 20); return v; };
+    R.set = (v, dur) => {
+      if (!R.live()) return;
+      kill(R.face); R.v = R.last = v; R.face = R.make(v);
+      R.face.y = -16; R.face.scale.y = 0.72;
+      gsap.to(R.face, { y: 0, duration: dur, ease: "power2.out" }); gsap.to(R.face.scale, { y: 1, duration: dur, ease: "power2.out" });
+    };
+    R.start = () => {
+      if (!ok()) return;
+      R.drop(); R.c = new PIXI.Container(); front.addChild(R.c);
+      const p = BALLS ? orbC() : orbOld(); R.c.position.set(p.x, p.y); R.c.scale.set(0);
+      if (!BALLS) { const g = sp(FX.tex.glow, R.c); g.blendMode = ADD; g.tint = 0xffd070; g.alpha = 0.45; g.scale.set(1.3); }   // ?oldcoins: a chip in the hand
+      R.set(R.next(), 0.05);
+      gsap.to(R.c.scale, { x: BALLS ? 1 : 0.8, y: BALLS ? 1 : 0.8, duration: 0.2, ease: "back.out(2.6)" });
+    };
+    R.land = (v) => {
+      if (!ok() || !R.live()) return;
+      kill(R.face); R.v = R.last = v; R.face = R.make(v);
+      gsap.fromTo(R.face.scale, { x: 1.3, y: 1.3 }, { x: 1, y: 1, duration: 0.3, ease: "back.out(2.4)" });
+    };
+    R.follow = () => { if (!R.live()) return; const p = BALLS ? orbC() : orbOld(); R.c.position.set(p.x, p.y); };
+    R.drop = () => { kill(R.face); kill(R.c); R.face = R.c = null; };
+    R.handoff = (life) => {
+      if (!R.live()) return null;
+      const c = R.c; R.c = R.face = null;
+      gsap.killTweensOf(c.scale); c.scale.set(BALLS ? 1 : 0.8);
+      const g = layers.fxTop.toLocal(c.getGlobalPosition()); layers.fxTop.addChild(c); c.position.set(g.x, g.y);
+      const fol = () => { if (!live(c)) { gsap.ticker.remove(fol); return; } const q = BALLS ? orbC() : orbOld(); c.position.set(q.x, q.y); };
+      gsap.ticker.add(fol);
+      const H = { c, x: g.x, y: g.y, s: c.scale.x, txt: BALLS, rs: orbC().rs, v: R.v, stop: () => gsap.ticker.remove(fol) };
+      window.GX_HALO_HANDOFF = H;
+      gsap.delayedCall(life, () => { gsap.ticker.remove(fol); if (window.GX_HALO_HANDOFF === H) window.GX_HALO_HANDOFF = null; if (live(c) && c.parent === layers.fxTop) kill(c); });
+      return H;
+    };
+    R.flyTo = (to, dur) => {
+      if (!R.live()) return;
+      const c = R.c; R.c = R.face = null;
+      const p0 = { x: c.x, y: c.y }, mid = { x: (p0.x + to.x) / 2, y: Math.min(p0.y, to.y) - 90 }, pr = { t: 0 }, s0 = c.scale.x;
+      gsap.to(pr, { t: 1, duration: dur, ease: "power2.in", onUpdate: () => {
+        if (!live(c)) return;
+        const q = FX.bezier(p0, mid, to, pr.t); c.position.set(q.x, q.y); c.scale.set(s0 * (1 - 0.35 * pr.t)); c.alpha = pr.t > 0.7 ? 1 - (pr.t - 0.7) / 0.3 : 1;
+      }, onComplete: () => kill(c) });
+    };
+    return R;
+  }
+  // the roll on a timeline (turbo / ?ts scale it): starts at t0, rolls `dur` s (1/14 s steps, each 1.35x longer after
+  // `fast` s), lands on v; returns the landing time
+  function rollOn(tl, R, t0, dur, fast, v, onLand) {
+    tl.call(() => R.start(), null, t0);
+    const rs = { t: 0 }; let nextAt = 0, step = 1 / 14, n = 0;
+    tl.to(rs, { t: dur, duration: dur, ease: "none", onUpdate: () => {
+      if (!R.live() || rs.t < nextAt) return;
+      R.set(R.next(), Math.min(0.05, step * 0.8)); if (++n % 2 === 0) sfx("tick");
+      if (rs.t > fast) step *= 1.35;
+      nextAt = rs.t + step;
+    } }, t0 + 0.2);
+    tl.call(() => { R.land(v); if (onLand) onLand(); }, null, t0 + 0.2 + dur);
+    return t0 + 0.2 + dur;
+  }
+  // b20 WHEEL: the landed ball leaves its slot and merges into the hand ball (glides onto the orb, shrinking; it fades only in
+  // the last third, as it goes into the orb) - it is never dimmed on the ring. Its slot stays empty (c.used).
+  function mergeIn(c, dur) {
+    if (!live(c)) return;
+    c.used = true; c.seated = false; gsap.killTweensOf(c); gsap.killTweensOf(c.scale); if (c.glow) { gsap.killTweensOf(c.glow); c.glow.alpha = 0; }
+    const p0 = { x: c.x, y: c.y }, s0 = c.scale.x, pr = { t: 0 };
+    gsap.to(pr, { t: 1, duration: dur, ease: "power2.in", onUpdate: () => {
+      if (!live(c)) return;
+      const q = orbC(); c.position.set(p0.x + (q.x - p0.x) * pr.t, p0.y + (q.y - p0.y) * pr.t);
+      c.scale.set(s0 * (1 - 0.6 * pr.t)); c.alpha = pr.t > 0.66 ? 1 - (pr.t - 0.66) / 0.34 : 1;
+    }, onComplete: () => { if (live(c)) { c.visible = false; c.alpha = 0; } } });
   }
 
   // debug probe for QA
   let probe = null; window.GX_HALO = () => probe;
+  window.GX_HALO_WHEEL = () => SH;   // b20 QA: the open SUPER WILD wheel (coins, CX, CY, RX) or null
 
   GX.on("halo", (d) => new Promise((resolve) => {
     const objs = [], tws = [];
-    let done = false;
-    const finish = () => { if (done) return; done = true; probe = null; tws.forEach((t) => { try { t.kill(); } catch (e) {} }); objs.forEach(kill); resolve(); };
+    let done = false, RL = null;
+    const finish = () => { if (done) return; done = true; probe = null; tws.forEach((t) => { try { t.kill(); } catch (e) {} }); objs.forEach(kill); if (RL) RL.drop(); resolve(); };   // b20: never a roller left on the hand
     try {
       const win = +d.mult || 100, tint = d.tint || 0xffd070, turbo = !!ctx.S.turbo;
-      const H = headPos(), RX = 232, RY = 188, CX = H.x, CY = Math.max(H.y + 62, RY + 70 - (ctx.LIFT || 0));   // white 2026-11-17: the layer sits LIFT higher; the top pointer (CY - RY - 64) stays on screen   // an oval round the head, inside the screen top
       const vals = slotValues(win), winIdx = vals.indexOf(win), N = vals.length;
-      probe = { phase: "open", lit: -1, win, vals };
+      // b20 WHEEL: a true circle through the hand slot (was an oval RX 232 / RY 188 round the head, turning under a top pointer)
+      const WG = wheelGeo(N), RX = WG.R, RY = WG.R, CX = WG.CX, CY = WG.CY, CS = WHEEL_CS;
+      probe = { phase: "open", lit: -1, win, vals, roll: null, R: WG.R, CX, CY };   // b20: phase open / roll / landed / handoff; roll = the value on the hand ball
 
       // behind the bull: rays + halo ring
       const back = new PIXI.Container(); back.position.set(CX, CY); back.scale.set(0.2); back.alpha = 0;
@@ -191,24 +288,17 @@ GX.plugin(function (ctx) {
       const ring = sp(ringTex, back); ring.scale.set(RX / 262, RY / 262);
       // in front: the coins, the selector glow, the beam
       const front = new PIXI.Container(); layers.fxTop.addChild(front); objs.push(front);
-      const coins = vals.map((v, i) => { const c = makeCoin(v, front); c.ang = -Math.PI / 2 + (i / N) * Math.PI * 2; c.scale.set(0); c.position.set(ctx.COL_CX, ctx.COL_CY); return c; });
-      // the wheel turns: steadily while it fills, then a fast whip that slows to rest with the winner at the top pointer
-      const rot = { v: 0 };
-      const slot = (c) => ({ x: CX + Math.cos(c.ang + rot.v) * RX, y: CY + Math.sin(c.ang + rot.v) * RY });
-      const pointer = new PIXI.Graphics().beginFill(0x2a0e02).drawPolygon([-20, -6, 20, -6, 0, 26]).endFill()
-        .beginFill(0xffd36b).lineStyle(2, 0x7a4a10).drawPolygon([-14, -2, 14, -2, 0, 19]).endFill();
-      pointer.position.set(CX, CY - RY - 58); pointer.alpha = 0; front.addChild(pointer);
-      let litIdx = -1, selecting = false;
+      const coins = vals.map((v, i) => { const c = makeCoin(v, front); c.ang = WG.ang[i]; c.scale.set(0); c.position.set(ctx.COL_CX, ctx.COL_CY); return c; });
+      // b20 WHEEL: the wheel stands still (no turn, no whip, no top pointer, no running light: a turning ring would pass
+      // balls through the hand slot)
+      const slot = (c) => ({ x: CX + Math.cos(c.ang) * RX, y: CY + Math.sin(c.ang) * RY });
+      RL = handRoller(front, () => vals, () => !done); Object.defineProperty(probe, "coins", { value: coins, enumerable: false });   // QA: the balls (JSON-safe probe)
       const P = new FX.Particles(front);
       const tick = () => {
         rays.rotation += 0.004 * gsap.ticker.deltaRatio();
         const hg = handGeo();                              // balls (user 2026-11-19 b): the coins pass round the hand ball, never over it
         coins.forEach((c) => { if (c.seated) { const p = clearHand(slot(c), coinR(c), hg); c.position.set(p.x, p.y); } });
-        if (selecting) {                                   // the coin passing under the pointer is lit
-          let best = -1, bd = 9;
-          coins.forEach((c, i) => { const a = Math.atan2(Math.sin(c.ang + rot.v + Math.PI / 2), Math.cos(c.ang + rot.v + Math.PI / 2)); if (Math.abs(a) < bd) { bd = Math.abs(a); best = i; } });
-          if (best !== litIdx) { litIdx = best; light(best); }
-        }
+        if (RL) { RL.follow(); if (probe) probe.roll = RL.v; }   // b20: the roller rides the hand ball
         P.update(Math.min(0.05, gsap.ticker.deltaRatio() / 60));
       };
       gsap.ticker.add(tick); tws.push({ kill: () => gsap.ticker.remove(tick) });
@@ -217,18 +307,18 @@ GX.plugin(function (ctx) {
       tl.timeScale(turbo ? 2.2 : 1);
       // open the halo
       tl.to(back, { alpha: 1, duration: 0.2 }, 0).to(back.scale, { x: 1, y: 1, duration: 0.45, ease: "back.out(1.5)" }, 0)
-        .call(() => { sfx("rise", 0.6); ctx.flashAt(CX, CY, 0xffd27a, 1.2, 0.25); ctx.ringAt(CX, CY, 0xffe08a, 3.2, 0.45); }, null, 0.05);
+        .call(() => { sfx("rise", 0.6); if (HALO_FX) { ctx.flashAt(CX, CY, 0xffd27a, 1.2, 0.25); ctx.ringAt(CX, CY, 0xffe08a, 3.2, 0.45); } }, null, 0.05);   // b20 lead (calm look): no flash / ring as it opens
       // coins fly out of the column to their slots
       coins.forEach((c, i) => {
         const t0 = 0.1 + i * 0.07;
         tl.call(() => {
           const from = { x: ctx.COL_CX, y: ctx.COL_CY }, to = slot(c), mid = { x: (from.x + to.x) / 2 + rnd(-80, 80), y: Math.min(from.y, to.y) - 160 };
           const pr = { t: 0 };
-          gsap.to(c.scale, { x: 0.72, y: 0.72, duration: 0.3, ease: "back.out(2)" });
+          gsap.to(c.scale, { x: CS, y: CS, duration: 0.3, ease: "back.out(2)" });   // b20: the hand ball's size (was 0.72)
           tws.push(gsap.to(pr, { t: 1, duration: 0.45, ease: "power2.inOut", onUpdate: () => {
             const hg = handGeo(), q = clearHand(FX.bezier(from, mid, clearHand(slot(c), coinR(c), hg), pr.t), coinR(c), hg); c.position.set(q.x, q.y);   // balls (user 2026-11-19 b)
             if (Math.random() < 0.6 * M + 0.2) P.emit({ tex: FX.tex.dot, x: q.x, y: q.y, s0: 0.35, s1: 0, life: 0.3, tint: 0xffd060, blend: ADD });
-          }, onComplete: () => { c.seated = true; ctx.ringAt(c.x, c.y, 0xffe08a, 0.7, 0.2); sfx("tick"); } }));
+          }, onComplete: () => { c.seated = true; if (HALO_FX) ctx.ringAt(c.x, c.y, 0xffe08a, 0.7, 0.2); sfx("tick"); } }));   // b20 lead: no ring as a ball seats
         }, null, t0);
       });
       // the beam from the board up into the halo
@@ -239,58 +329,28 @@ GX.plugin(function (ctx) {
         const core = sp(FX.tex.glow, beam); core.anchor.set(0.5, 0); core.blendMode = ADD; core.tint = 0xfff2c0; core.scale.set(0.32, L / 256); core.alpha = 0;
         gsap.timeline().to([outer, core], { alpha: 1, duration: 0.08 }).to([outer, core], { alpha: 0, duration: 0.45, delay: 0.15, ease: "power2.in" });
         gsap.fromTo(beam.scale, { x: 0.3 }, { x: 1.2, duration: 0.12, ease: "power3.out" });
+        sfx("impact", false);
+        if (HALO_FX) {                                    // b20 lead (calm look): the beam alone - no flash / dot burst / shake / spray
         if (!s.wild) { ctx.flashAt(s.x, s.y, 0xffd060, 1.8, 0.3); ctx.burstAt(s.x, s.y, 0xffa040, Math.round(18 * M)); }   // white 2026-11-16: no flash on a SUPER WILD
-        ctx.flashAt(CX, CY, 0xfff0c0, 1.1, 0.2); ctx.shake(7, 0.2); sfx("impact", false);
-        for (let i = 0; i < 26 * M; i++) {
+        ctx.flashAt(CX, CY, 0xfff0c0, 1.1, 0.2); ctx.shake(7, 0.2); }
+        if (HALO_FX) for (let i = 0; i < 26 * M; i++) {
           const f = rnd(0, 1); P.emit({ tex: FX.tex.dot, x: s.x + dx * f + rnd(-20, 20), y: s.y + dy * f, vx: rnd(-80, 80), vy: rnd(-300, -60), s0: rnd(0.25, 0.45), s1: 0, life: rnd(0.3, 0.6), tint: Math.random() < 0.5 ? 0xffd27a : 0xff7a20, blend: ADD });
         }
       }, null, 0.85);
-      const light = (idx) => {
-        coins.forEach((c, i) => {
-          const on = i === idx;
-          gsap.to(c.dimL, { alpha: on ? 0 : 0.42, duration: 0.06 });
-          gsap.to(c.glow, { alpha: on ? 0.95 : 0, duration: 0.06 });
-          gsap.to(c.scale, { x: on ? 0.9 : 0.68, y: on ? 0.9 : 0.68, duration: 0.08, ease: "power2.out" });
-        });
-        if (probe) probe.lit = idx;
-        sfx("tick");
-      };
-      // rotation: 1.5 rad/s while the coins arrive, then a whip of ~2.5 turns slowing over 2.3 s onto the winner at the top
-      const TAU = Math.PI * 2, s0 = 1.5, want = -(winIdx / N) * TAU;       // winner at the top when rot = -i/N turns
-      let sEnd = want; while (sEnd < s0 + 2.5 * TAU) sEnd += TAU;
-      const t = 1.0 + 2.3;
-      tl.to(rot, { v: s0, duration: 1.0, ease: "none" }, 0)
-        .call(() => { selecting = true; if (probe) probe.phase = "select"; gsap.to(pointer, { alpha: 1, duration: 0.15 }); }, null, 1.0)
-        .to(rot, { v: sEnd, duration: 2.3, ease: "power3.out" }, 1.0)
-        .call(() => { selecting = false; if (litIdx !== winIdx) { litIdx = winIdx; light(winIdx); } }, null, t)
-        .to(pointer, { alpha: 0, duration: 0.3 }, t + 0.45);
-      // land on the winner
+      // b20 WHEEL: the choice rolls ON the hand ball through the ring's values, slows and lands on the round's multiplier
+      // (was: a 2.5-turn whip under a top pointer, the passing coin lit, the rest dimmed, the winner popping with rays /
+      // star flash / rings / burst / shake). Calm landing: the sound and the hand's flame kick only.
       const winC = coins[winIdx];
-      tl.call(() => {
-        if (probe) probe.phase = "landed";
-        front.addChild(winC);
-        const wr = sp(FX.tex.burst); wr.blendMode = ADD; wr.tint = tint; wr.alpha = 0.55; wr.scale.set(0.2); front.addChildAt(wr, front.getChildIndex(winC));
-        wr.position.copyFrom(winC.position); objs.push(wr);
-        gsap.to(wr.scale, { x: 1.1, y: 1.1, duration: 0.35, ease: "back.out(1.6)" });
-        tws.push(gsap.to(wr, { rotation: 1.2, duration: 1.4, ease: "none", onUpdate: () => wr.position.copyFrom(winC.position) }));
-        gsap.fromTo(winC.scale, { x: 1.6, y: 1.6 }, { x: 1.2, y: 1.2, duration: 0.35, ease: "back.out(2.4)" });
-        ctx.starFlash(winC.x, winC.y, 1.6, 0xfff2c0); ctx.ringAt(winC.x, winC.y, tint, 2.4, 0.4); ctx.ringAt(winC.x, winC.y, 0xffffff, 1.4, 0.25);
-        ctx.burstAt(winC.x, winC.y, 0xffd060, Math.round(22 * M)); ctx.flashAt(winC.x, winC.y, 0xfff0c0, 0.9, 0.18);
-        ctx.shake(9, 0.25); ctx.hitStop && ctx.hitStop(60); ctx.flameKick && ctx.flameKick(1.3);
-        sfx("impact", true);
-        coins.forEach((c, i) => { if (i !== winIdx) { gsap.to(c, { alpha: 0, duration: 0.3 }); gsap.to(c.scale, { x: 0.3, y: 0.3, duration: 0.3, ease: "power2.in" }); } });
-      }, null, t + 0.05);
-      // the halo closes and hands the winning coin over to the throw: gx_picker adopts it (same frame, same size) and carries
-      // it into the bull's hand, so coin and throw stay one continuous object
-      tl.to(back, { alpha: 0, duration: 0.3 }, t + 0.2).to(back.scale, { x: 1.15, y: 1.15, duration: 0.3 }, t + 0.2)
-        .call(() => {
-          winC.seated = false; tws.forEach((tw) => { if (tw !== tl) { try { tw.kill(); } catch (e) {} } });
-          const g = layers.fxTop.toLocal(winC.getGlobalPosition()); layers.fxTop.addChild(winC); winC.position.set(g.x, g.y);
-          const H = { c: winC, x: g.x, y: g.y, s: winC.scale.x }; window.GX_HALO_HANDOFF = H;
-          gsap.delayedCall(4, () => { if (window.GX_HALO_HANDOFF === H) window.GX_HALO_HANDOFF = null; if (live(winC) && winC.parent === layers.fxTop) kill(winC); });   // balls (user 2026-11-19): the picker may have adopted it
-          const i = objs.indexOf(winC); if (i >= 0) objs.splice(i, 1);
-        }, null, t + 0.5)
-        .to({}, { duration: 0.01 }, t + 0.51);
+      tl.call(() => { if (probe) probe.phase = "roll"; }, null, 1.0);
+      const t = rollOn(tl, RL, 1.0, 1.5, 0.9, win, () => { if (probe) probe.phase = "landed"; sfx("impact", true); if (ctx.flameKick) ctx.flameKick(1.3); });
+      // the ring ball with that value leaves its slot and merges into the hand ball (no dimming of the others)
+      tl.call(() => mergeIn(winC, turbo ? 0.2 : 0.45), null, t + 0.05);
+      // the halo closes (the rest fade out with it) and the rolled value goes to the throw: gx_picker adopts the numerals on
+      // the hand ball and keeps them there until the release (no second ball or chip over the hand ball)
+      tl.to(back, { alpha: 0, duration: 0.3 }, t + 0.3).to(back.scale, { x: 1.15, y: 1.15, duration: 0.3 }, t + 0.3)
+        .call(() => { coins.forEach((c, i) => { if (i !== winIdx && live(c)) { gsap.to(c, { alpha: 0, duration: 0.3 }); gsap.to(c.scale, { x: CS * 0.5, y: CS * 0.5, duration: 0.3, ease: "power2.in" }); } }); }, null, t + 0.3)
+        .call(() => { if (probe) probe.phase = "handoff"; RL.handoff(4); }, null, t + 0.6)
+        .to({}, { duration: 0.01 }, t + 0.6 + 0.01);
     } catch (e) { console.warn("gx halo", e); finish(); }
   }));
 
@@ -323,20 +383,19 @@ GX.plugin(function (ctx) {
     return c;
   }
   const coinOf = (v, parent) => (v === "c2" ? choiceCoin(parent) : v < 0 ? chargeCoin(v, parent) : makeCoin(v, parent));
-  // a picked position is spent: it stays on the wheel, dark and small (spec: positions never refill)
-  function spend(c) { c.used = true; gsap.to(c, { alpha: 0.42, duration: 0.3 }); if (c.dimL) gsap.to(c.dimL, { alpha: 0.55, duration: 0.3 }); gsap.to(c.glow, { alpha: 0, duration: 0.2 }); }
-  function shLight(idx) {
+  // b20 WHEEL ("the balls of halo should not dim"): a picked position has merged into the hand ball (mergeIn) and its slot
+  // stays empty (spec: positions never refill) - was: it stayed on the wheel dark and small (alpha 0.42, dimL 0.55, x0.78).
+  // shRest: every ball still on the ring at rest = the same size, full brightness, no glow; spent slots stay empty.
+  function shRest() {
     if (!SH) return;
-    const cs = SH.cs || 0.72;
-    SH.coins.forEach((c, i) => {
-      if (c.used) { gsap.to(c.scale, { x: cs * 0.78, y: cs * 0.78, duration: 0.08 }); gsap.to(c.dimL, { alpha: 0.55, duration: 0.06 }); gsap.to(c.glow, { alpha: 0, duration: 0.06 }); return; }   // spent: stays dark
-      const on = i === idx, rest = idx < 0;
-      gsap.to(c.dimL, { alpha: rest || on ? 0 : 0.42, duration: 0.06 });
-      gsap.to(c.glow, { alpha: on ? 0.95 : 0, duration: 0.06 });
-      const k = on ? cs * 1.25 : rest ? cs : cs * 0.94;
-      gsap.to(c.scale, { x: k, y: k, duration: 0.08, ease: "power2.out" });
+    const cs = SH.cs || WHEEL_CS;
+    SH.coins.forEach((c) => {
+      if (!live(c)) return;
+      if (c.used) { c.visible = false; c.alpha = 0; return; }
+      if (c.dimL) { gsap.killTweensOf(c.dimL); c.dimL.alpha = 0; }
+      gsap.to(c.glow, { alpha: 0, duration: 0.06 });
+      gsap.to(c.scale, { x: cs, y: cs, duration: 0.08, ease: "power2.out" });
     });
-    if (idx >= 0) sfx("tick");
   }
   // white 2026-11-16 SUPER WILD sequence, step 4 (user: "it slowly gather multipliers on the halo wheel, 7 chosen and one
   // randomly generated"; Fortune Garuda: one coin out of the multiplier reel at a time, the last slot rolled in the raised
@@ -402,17 +461,7 @@ GX.plugin(function (ctx) {
     // balls (user 2026-11-19 b): the rolling value is written ON the hand ball (numerals only, fitted to the orb, centred),
     // never a second ball over it; at the landing the real value stays on the orb, then its ball grows out of the orb's centre
     // (orb-sized) and flies to its slot
-    const orbC = () => { const hg = handGeo(); return hg ? { x: hg.x, y: hg.y, rs: hg.rs } : { x: me.CX - me.RX, y: me.CY, rs: 42 }; };
-    const orbText = (v, parent) => {
-      const c = new PIXI.Container(); parent.addChild(c);
-      let o;
-      if (v === "c2") { o = new PIXI.Text("+2", FX.gold(70, { fill: ["#F4FFE6", "#C8F58A", "#4E9A18"], strokeThickness: 7 })); o.anchor.set(0.5); c.addChild(o); }
-      else if (v < 0) o = sp(ctx.T("UI/charge_badge"), c);
-      else o = sp(labelTex(KNOWN.has(v) ? v : nearest(v)), c);
-      const rs = orbC().rs, w = (typeof v === "number" && VIS[v]) || o.width, h = o.height;
-      o.scale.set(Math.min(1.9 * rs / Math.max(1, w), 1.25 * rs / Math.max(1, h)));
-      return c;
-    };
+    // (b20: orbC / orbText are shared with the pick roller, see handRoller)
     let k0 = 0.5;
     const setFace = (dur) => {                                         // gx_picker setFace: the new face drops in from above
       if (!live(roller)) return;
@@ -470,8 +519,10 @@ GX.plugin(function (ctx) {
   GX.on("superHaloOpen", (d) => new Promise((resolve) => {
     if (SH) { resolve(); return; }
     try {
-      const turbo = !!ctx.S.turbo, H = headPos(), RX = 232, RY = 188, CX = H.x, CY = Math.max(H.y + 62, RY + 70 - (ctx.LIFT || 0));
-      const vals = (d.vals || [1]).slice(0, 9), N = vals.length, CS = N > 7 ? 0.6 : 0.72;   // spec: 9 positions
+      const turbo = !!ctx.S.turbo, vals = (d.vals || [1]).slice(0, 9), N = vals.length, CS = WHEEL_CS;   // spec: 9 positions
+      // b20 WHEEL: a true circle through the hand slot, N + 1 equal steps (was an oval RX 232 / RY 188 with an arc-length
+      // spread and a gap by the hand, swLayout); every ball at the hand ball's size (was 0.72 for 7 or fewer)
+      const WG = wheelGeo(N), RX = WG.R, RY = WG.R, CX = WG.CX, CY = WG.CY;
       const back = new PIXI.Container(); back.position.set(CX, CY); back.scale.set(0.2); back.alpha = 0;
       layers.bullL.addChildAt(back, 0);
       const rays = sp(FX.tex.burst, back); rays.blendMode = ADD; rays.tint = 0xffb040; rays.alpha = 0.3; rays.scale.set(2.2);
@@ -479,14 +530,13 @@ GX.plugin(function (ctx) {
       const haze = sp(FX.tex.glow, back); haze.blendMode = ADD; haze.tint = 0xff9a30; haze.alpha = 0.18; haze.scale.set(3.6);
       const ring = sp(ringTex, back); ring.scale.set(RX / 262, RY / 262);
       const front = new PIXI.Container(); layers.fxTop.addChild(front);
-      const ANG = swLayout(N, CX, CY, RX, RY, (BALL_D / 2) * 1.45 * CS * 1.25);   // balls (user 2026-11-19 b): the arc by the hand ball stays free
-      const coins = vals.map((v, i) => { const c = coinOf(v, front); c.ang = ANG[i]; c.scale.set(0); c.position.set(ctx.COL_CX, ctx.COL_CY); return c; });
+      const coins = vals.map((v, i) => { const c = coinOf(v, front); c.ang = WG.ang[i]; c.scale.set(0); c.position.set(ctx.COL_CX, ctx.COL_CY); return c; });   // b20: index N-1 (the generated value) = the slot just below the hand
       const pointer = new PIXI.Graphics().beginFill(0x2a0e02).drawPolygon([-20, -6, 20, -6, 0, 26]).endFill()
         .beginFill(0xffd36b).lineStyle(2, 0x7a4a10).drawPolygon([-14, -2, 14, -2, 0, 19]).endFill();
       pointer.position.set(CX, CY - RY - 58); pointer.alpha = 0; front.addChild(pointer);
       const P = new FX.Particles(front);
       const st = { rot: 0 };                                          // the wheel stands still (Garuda); the pointer is not drawn:
-      pointer.renderable = false;                                     // white 2026-11-17: a light runs round the coins instead
+      pointer.renderable = false;                                     // (b20: the choice rolls on the hand ball)
       let me = null;                                                    // this wheel (SH goes null when it closes)
       const slot = (c) => ({ x: CX + Math.cos(c.ang + st.rot) * RX, y: CY + Math.sin(c.ang + st.rot) * RY });
       const tick = () => {
@@ -494,11 +544,12 @@ GX.plugin(function (ctx) {
         rays.rotation += 0.004 * dr;
         if (!me) return;
         if (me.follow) me.follow();                                      // slow fill: the hand coin rides the bull's orb
+        if (me.pickR) { me.pickR.follow(); if (probe && probe.wheel === "B") probe.roll = me.pickR.v; }   // b20: a pick's roller rides the hand ball
         const hg = handGeo();                                            // balls (user 2026-11-19 b): never over the hand ball
         me.coins.forEach((c) => { if (c.seated && !c.destroyed) { const p = clearHand(slot(c), coinR(c), hg); c.position.set(p.x, p.y); } });
         P.update(Math.min(0.05, dr / 60));
       };
-      me = SH = { back, front, coins, P, st, slot, CX, CY, RX, RY, pointer, tick, rel, N, cs: CS, haze, follow: null, tl: null, done: resolve };
+      me = SH = { back, front, coins, P, st, slot, CX, CY, RX, RY, pointer, tick, rel, N, cs: CS, haze, follow: null, tl: null, done: resolve, pickR: null };
       gsap.ticker.add(tick);
       const tl = gsap.timeline({ onComplete: resolve }); tl.timeScale(turbo ? 2.2 : 1); me.tl = tl;
       tl.to(back, { alpha: 1, duration: 0.2 }, 0).to(back.scale, { x: 1, y: 1, duration: 0.45, ease: "back.out(1.5)" }, 0)
@@ -508,11 +559,12 @@ GX.plugin(function (ctx) {
   }));
   // white 2026-11-17 (user: "look at the video 04:10 to 05:05 to fix the animation", Fortune Garuda): one Choice on the
   // SUPER WILD wheel. 1. the SUPER WILD that owns it pops and turns into a fireball, three flame streaks fan up into the ring,
-  // the ring flares and every coin pops (d.sw; else the old beam from d.from); 2. a light runs round the coins, clockwise from
-  // the top, slowing, and stops on the engine's position (the wheel stands still: no whip, no pointer); 3. the winner grows
-  // big, the rest go dark; 4. d.throw (a multiplier): the ring fades, the winning coin is left in fxTop as
-  // window.GX_HALO_HANDOFF for the bull to take into his hand and throw (game.js bullOrb picked; superHaloShow re-opens the
-  // ring); else a copy flies to d.to (CHARGE: the column, +2: the counter) and the ring stays.
+  // the ring flares and every coin pops (d.sw; else the old beam from d.from); 2. b20 WHEEL: the values still on the ring roll
+  // ON the hand ball, slow down and land on the engine's value (d.v at d.pos) - no running light, no winner growth, nothing
+  // dimmed; 3. the ring ball at d.pos glides into the hand ball (its slot stays empty: positions never refill); 4. d.throw (a
+  // multiplier / CHARGE): the ring fades, the rolled value stays on the hand ball (window.GX_HALO_HANDOFF txt) for the bull
+  // to throw (game.js bullOrb picked; superHaloShow re-opens the ring); else (+2) the "+2" leaves the hand ball in a short
+  // calm flight to d.to (the counter) and the ring stays.
   function swShot(S2, from, tl, t0) {
     const cs = S2.cs || 0.72, on = () => SH === S2;
     tl.call(() => {
@@ -555,7 +607,7 @@ GX.plugin(function (ctx) {
       if (SW_HIT_FLASH && S2.haze) gsap.fromTo(S2.haze, { alpha: 0.85 }, { alpha: 0.18, duration: 0.6, ease: "power2.out" });
       gsap.fromTo(S2.back.scale, { x: 1.08, y: 1.08 }, { x: 1, y: 1, duration: 0.45, ease: "power2.out" });
       S2.coins.forEach((o) => { if (o.used || !live(o)) return;
-        gsap.fromTo(o.scale, { x: cs * 1.3, y: cs * 1.3 }, { x: cs, y: cs, duration: 0.4, ease: "power2.out" }); if (SW_HIT_FLASH) gsap.fromTo(o.glow, { alpha: 0.9 }, { alpha: 0, duration: 0.45 }); });
+        gsap.fromTo(o.scale, { x: cs * 1.12, y: cs * 1.12 }, { x: cs, y: cs, duration: 0.4, ease: "power2.out" }); if (SW_HIT_FLASH) gsap.fromTo(o.glow, { alpha: 0.9 }, { alpha: 0, duration: 0.45 }); });   // b20: x1.12 (was 1.3): the hand slot's neighbours keep their equal step
       if (SW_HIT_FLASH) ctx.flashAt(S2.CX, S2.CY, 0xfff0c0, 1.6, 0.25);
       sfx("impact", true); if (ctx.shake) ctx.shake(5, 0.15);
     }, null, tHit);
@@ -578,51 +630,31 @@ GX.plugin(function (ctx) {
       }, null, 0);
       t = 0.5;
     }
-    // the running light: about one lap (at least 8 steps), each step a little longer, ending on the engine's coin
-    const order = S2.coins.filter((o) => live(o) && !o.used).map((o) => ({ o, a: (((o.ang + st.rot + Math.PI / 2) % TAU2) + TAU2) % TAU2 })).sort((a, b) => a.a - b.a).map((x) => x.o);
-    const n = Math.max(1, order.length), ti = Math.max(0, order.indexOf(c)), laps = n > 1 ? Math.ceil(8 / n) * n : 0, steps = laps + ti;   // ~1 lap, at least 8 steps (Garuda: ~2 s)
-    let dt = 0.055; const kk = Math.pow(0.32 / 0.055, 1 / Math.max(1, steps - 1));
-    const chgStop = typeof v === "number" && v < 0;   // b18b: the light stops on a CHARGE coin without its pink glow
-    for (let i = 0; i <= steps; i++) {
-      const o = order[i % n];
-      tl.call(() => { if (on() && live(o)) { shLight(S2.coins.indexOf(o)); if (chgStop && i === steps && o.glow) { gsap.killTweensOf(o.glow); o.glow.alpha = 0; } } }, null, t);
-      if (i < steps) { t += dt; dt *= kk; }
-    }
-    // the winner grows big, the others stay dark
-    // b18b (QA: a CHARGE pick got a one-frame white flash, then a pink aura ~0.7 s): a CHARGE winner just grows - no flash,
-    // its (purple) glow off; multiplier / +2 winners unchanged
-    const chg = typeof v === "number" && v < 0;
-    tl.call(() => {
-      if (!on() || !live(c)) return;
-      shLight(idx); gsap.killTweensOf(c.scale);
-      gsap.fromTo(c.scale, { x: cs * 1.25, y: cs * 1.25 }, { x: cs * 1.75, y: cs * 1.75, duration: 0.35, ease: "back.out(2.2)" });
-      if (chg) { gsap.killTweensOf(c.glow); c.glow.alpha = 0; }
-      else { gsap.to(c.glow, { alpha: 1, duration: 0.15 }); ctx.flashAt(c.x, c.y, 0xfff2c0, 1.0, 0.18); }
-      sfx("impact", true); if (ctx.hitStop) ctx.hitStop(40);
-    }, null, t + 0.06);
-    t += 0.06 + 0.65;
+    // b20 WHEEL: the choice rolls ON the hand ball through the values still on the ring, slows and lands on the engine's value
+    // (was: a light running round the coins, the rest dimmed, the winner growing x1.75 with a flash). The ring stays as it is.
+    if (S2.pickR) S2.pickR.drop();
+    const RL = handRoller(S2.front, () => S2.coins.filter((o) => live(o) && !o.used).map((o) => o.v), on);
+    S2.pickR = RL; probe = { wheel: "B", phase: "roll", v, pos: idx, roll: null };
+    t = rollOn(tl, RL, t, 1.3, 0.75, v, () => { if (probe && probe.wheel === "B") probe.phase = "landed"; sfx("impact", true); if (ctx.flameKick) ctx.flameKick(1.0); });
+    // the ring ball at d.pos leaves its slot and merges into the hand ball; its slot stays empty
+    tl.call(() => { if (on()) mergeIn(c, turbo ? 0.2 : 0.45); }, null, t + 0.05);
+    t += 0.05 + 0.45;
     if (d.throw) {
       tl.call(() => {
         if (!on()) return;
         gsap.to(S2.back, { alpha: 0, duration: 0.3 });
         S2.coins.forEach((o) => { if (o !== c && live(o)) gsap.to(o, { alpha: 0, duration: 0.25 }); });
         S2.hidden = true;
-        if (!live(c)) return;
-        const g = layers.fxTop.toLocal(c.getGlobalPosition()), f = coinOf(v, layers.fxTop); f.position.set(g.x, g.y); f.scale.set(c.scale.x); f.glow.alpha = chg ? 0 : 0.6; if (f.body && c.body) { f.body.orb.osh.uniforms.uSeed = c.body.orb.osh.uniforms.uSeed; f.body.sd = c.body.sd; }   // balls (user 2026-11-19 c): the same ball (same seed)   // b18b: no pink glow on a handed CHARGE coin
-        gsap.killTweensOf(c); gsap.killTweensOf(c.scale); c.used = true; c.alpha = 0; c.scale.set(cs * 0.78); if (c.dimL) c.dimL.alpha = 0.55; c.glow.alpha = 0;
-        const H = { c: f, x: g.x, y: g.y, s: f.scale.x }; window.GX_HALO_HANDOFF = H;
-        gsap.delayedCall(8, () => { if (window.GX_HALO_HANDOFF === H) window.GX_HALO_HANDOFF = null; if (live(f) && f.parent === layers.fxTop) kill(f); });
+        // the rolled value stays on the hand ball and goes to the throw (gx_picker throwCharge adopts it; b18b: a CHARGE
+        // value carries no glow either way)
+        S2.pickR = null; RL.handoff(8);
+        if (probe && probe.wheel === "B") probe = null;
       }, null, t);
       tl.to({}, { duration: 0.01 }, t + 0.3);
     } else {
-      tl.call(() => {
-        if (!on() || !live(c)) return;
-        const g = ctx.layers.fxTop.toLocal(c.getGlobalPosition()), f = coinOf(v, ctx.layers.fxTop); f.position.set(g.x, g.y); f.scale.set(c.scale.x);
-        const to = d.to || { x: ctx.COL_CX, y: ctx.COL_CY }, mid = { x: (g.x + to.x) / 2, y: Math.min(g.y, to.y) - 90 }, pr = { t: 0 }, s0 = c.scale.x;
-        gsap.to(pr, { t: 1, duration: 0.4, ease: "power2.in", onUpdate: () => { const q = FX.bezier(g, mid, to, pr.t); f.position.set(q.x, q.y); f.scale.set(s0 - (s0 - 0.45) * pr.t); },
-          onComplete: () => { ctx.flashAt(to.x, to.y, 0xfff0c0, 0.9, 0.18); kill(f); } });
-      }, null, t)
-        .call(() => { if (on()) { spend(c); shLight(-1); } }, null, t + 0.45)
+      // "+2 CHOICES": the "+2" leaves the hand ball in a short calm flight to the counter (no flash at the landing)
+      tl.call(() => { if (!on()) return; S2.pickR = null; RL.flyTo(d.to || { x: ctx.COL_CX, y: ctx.COL_CY }, turbo ? 0.25 : 0.45); if (probe && probe.wheel === "B") probe = null; }, null, t)
+        .call(() => { if (on()) shRest(); }, null, t + 0.45)
         .to({}, { duration: 0.01 }, t + 0.47);
     }
   }
@@ -630,8 +662,8 @@ GX.plugin(function (ctx) {
     if (!SH || !SH.hidden) { resolve(); return; }
     const S2 = SH; S2.hidden = false;
     gsap.to(S2.back, { alpha: 1, duration: 0.35 }); gsap.fromTo(S2.back.scale, { x: 0.9, y: 0.9 }, { x: 1, y: 1, duration: 0.4, ease: "back.out(1.6)" });
-    S2.coins.forEach((o) => { if (!live(o)) return; gsap.killTweensOf(o); gsap.to(o, { alpha: o.used ? 0.42 : 1, duration: 0.35 }); });
-    shLight(-1); sfx("rise", 0.4);
+    S2.coins.forEach((o) => { if (!live(o)) return; gsap.killTweensOf(o); if (o.used) { o.visible = false; o.alpha = 0; } else gsap.to(o, { alpha: 1, duration: 0.35 }); });   // b20: spent slots stay empty (was alpha 0.42)
+    shRest(); sfx("rise", 0.4);
     gsap.delayedCall(ctx.S.turbo ? 0.2 : 0.42, resolve);
   }));
   GX.on("superHaloPick", (d) => new Promise((resolve) => {
@@ -657,6 +689,7 @@ GX.plugin(function (ctx) {
     try {
       // white 2026-11-16: closed while the slow fill still runs (round cap): stop it, drop the hand coin, release its promise
       try { if (S2.tl) S2.tl.kill(); if (S2.dropRoller) S2.dropRoller(); S2.follow = null; if (S2.done) S2.done(); } catch (e) {}
+      try { if (S2.pickR) S2.pickR.drop(); S2.pickR = null; if (probe && probe.wheel === "B") probe = null; } catch (e) {}   // b20: closed mid-roll -> no roller left on the hand ball
       try { if (S2.shaft && !S2.shaft.destroyed) gsap.to(S2.shaft, { alpha: 0, duration: 0.2, onComplete: () => S2.shaftKill && S2.shaftKill() }); } catch (e) {}
       gsap.to(S2.back, { alpha: 0, duration: 0.3 }); gsap.to(S2.back.scale, { x: 1.15, y: 1.15, duration: 0.3 });
       S2.coins.forEach((c) => { gsap.to(c, { alpha: 0, duration: 0.25 }); gsap.to(c.scale, { x: 0.3, y: 0.3, duration: 0.25 }); });

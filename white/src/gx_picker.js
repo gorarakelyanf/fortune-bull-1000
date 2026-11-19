@@ -60,7 +60,7 @@ GX.plugin(function (ctx) {
     try { k.tw && k.tw.kill(); } catch (e) {}
     try { k.extra.forEach((t) => t.kill()); } catch (e) {}
     try { gsap.ticker.remove(k.follow); } catch (e) {}
-    if (ringFrom && live(k.c)) {
+    if (ringFrom && live(k.c) && !k.txt) {                         // b20: a wheel's value leaves the hand ball quietly (no ring / flash)
       const p = ringFrom.x != null ? ringFrom : { x: k.c.x, y: k.c.y };
       ctx.ringAt(p.x, p.y, k.tint, 0.9, 0.25);
       ctx.flashAt(p.x, p.y, 0xfff4dc, 0.5, 0.12);
@@ -99,7 +99,17 @@ GX.plugin(function (ctx) {
     // hand-off from the halo wheel (gx_halo): adopt its winning coin in the same frame, same place and size, and carry it into the hand
     const H = d.picked ? window.GX_HALO_HANDOFF : null; window.GX_HALO_HANDOFF = null;
     let blend = null;
-    if (H && live(H.c)) {
+    if (H && live(H.c) && H.txt) {
+      // b20 WHEEL (user 2026-11-19: "choosing should happen always in the hand ball, and the hand ball should be thrown"): the
+      // value rolled ON the hand ball (gx_halo handRoller) - adopt its numerals, keep them centred on the orb and fitted to it
+      // (k.follow) until the release; no chip face, glow, sheen or second ball over the hand ball
+      try { if (H.stop) H.stop(); } catch (e) {}
+      gsap.killTweensOf(H.c); gsap.killTweensOf(H.c.scale);
+      coin.addChild(H.c); H.c.position.set(0, 0); H.c.scale.set(1); H.c.alpha = 1; H.c.visible = true;
+      face.visible = label.visible = false; glow.visible = false; sheen.visible = false;
+      k.txt = H.c; k.rs0 = H.rs || 42; k.handoff = true;
+      const o = orbGeo(); if (o) c.position.set(o.x, o.y); c.scale.set(o ? o.rs / k.rs0 : 1);
+    } else if (H && live(H.c)) {
       blend = { t: 0, x: H.c.x, y: H.c.y }; k.handoff = true;
       c.position.set(H.c.x, H.c.y); c.scale.set(H.c.scale.x);
       if (KNOWN.has(real) || real < 0) { face.texture = faceTex(real); label.texture = labelTex(real); setRim(real); }
@@ -117,6 +127,10 @@ GX.plugin(function (ctx) {
     k.follow = () => {
       if (!live(c)) return;
       const p = handPos(); if (!p) return;
+      if (k.txt) {                                                   // b20 WHEEL: the numerals ride the hand ball's centre at its size
+        const o = orbGeo(), q = o || p; c.position.set(q.x, q.y); c.scale.set(o ? o.rs / k.rs0 : 1);
+        c.visible = p.on > 0.05; return;
+      }
       if (k.ball) {                                                  // balls (user 2026-11-19 b): centred on the hand ball, its size x 0.95
         const o = orbGeo(), kk = o ? (2 * o.rs * 0.95) / (k.ball.ballD || 168) : SC, q = o || p;
         const e = blend && blend.t < 1 ? blend.t : 1;
@@ -134,10 +148,10 @@ GX.plugin(function (ctx) {
     const tLand = d.picked ? 0.01 : cd * (short ? 0.6 : 0.62);      // picked by the halo wheel: it arrives already landed
     const tSlow = tLand * 0.6;
     const pulses = d.picked ? [cd * 0.3] : short ? [cd * 0.3] : [cd * 0.14, cd * 0.3, cd * 0.46];
-    if (blend && k.ball) { /* balls (user 2026-11-19 b): k.follow sizes it to the hand ball */ }
+    if (k.txt || (blend && k.ball)) { /* balls (user 2026-11-19 b) / b20: k.follow sizes it to the hand ball */ }
     else if (blend) k.extra.push(gsap.to(c.scale, { x: SC * 1.08, y: SC * 1.08, duration: Math.min(0.4, cd * 0.45), ease: "power2.inOut" }));
     else k.extra.push(gsap.to(c.scale, { x: SC, y: SC, duration: popD, ease: "back.out(2.6)" }));
-    if (!calmC) ctx.flashAt(p0 ? p0.x : 0, p0 ? p0.y : 0, tint, 0.6, 0.18);
+    if (!calmC && !k.txt) ctx.flashAt(p0 ? p0.x : 0, p0 ? p0.y : 0, tint, 0.6, 0.18);   // b20: no flash on the hand ball when a wheel's value arrives
 
     let last = POOL[0], nextAt = 0, step = 1 / 15, landed = false, pi = 0;
     const setFace = (v) => {
@@ -153,24 +167,24 @@ GX.plugin(function (ctx) {
       gsap.killTweensOf(glow); gsap.killTweensOf(glow.scale);
       gsap.fromTo(glow, { alpha: 1 }, { alpha: 0.45, duration: Math.min(0.3, cd * 0.15), ease: "power2.out" });
       gsap.fromTo(glow.scale, { x: 1.35 * big, y: 1.35 * big }, { x: 0.9, y: 0.9, duration: Math.min(0.3, cd * 0.15), ease: "power2.out" });
-      if (!k.ball) gsap.fromTo(c.scale, { x: SC * 1.2 * big, y: SC * 1.2 * big }, { x: SC, y: SC, duration: Math.min(0.22, cd * 0.12), ease: "power2.out" });   // balls (b): sized by k.follow
+      if (!k.ball && !k.txt) gsap.fromTo(c.scale, { x: SC * 1.2 * big, y: SC * 1.2 * big }, { x: SC, y: SC, duration: Math.min(0.22, cd * 0.12), ease: "power2.out" });   // balls (b) / b20: sized by k.follow
       if (!k.handoff) ctx.ringAt(c.x, c.y, tint, 0.8 + 0.2 * pi, 0.28);   // white 2026-11-17: a wheel coin arrives without rings
     };
     const land = () => {
       landed = true; k.phase = "landed"; k.v = real;
       face.texture = faceTex(real); setRim(real);
       if (KNOWN.has(real) || real < 0) label.texture = labelTex(real);
-      else if (!k.ball) {                                                // balls (user 2026-11-19): the adopted ball already carries its value
+      else if (!k.ball && !k.txt) {                                      // balls (user 2026-11-19) / b20: the adopted ball / numerals carry the value
         label.texture = PIXI.Texture.EMPTY;
         try { const tx = new PIXI.Text(real + "x", FX.gold(64)); tx.anchor.set(0.5); coin.addChild(tx); } catch (e) {}
       }
       gsap.killTweensOf([coin, coin.scale]); coin.y = 0; coin.alpha = 1; coin.scale.set(1);
       if (!k.handoff) gsap.fromTo(c.scale, { x: SC * 1.45, y: SC * 1.45 }, { x: SC * 1.08, y: SC * 1.08, duration: 0.3, ease: "back.out(2.4)" });
-      if (!calmC && !k.ball) gsap.fromTo(sheen, { alpha: 0.55 }, { alpha: 0, duration: 0.3, ease: "power2.in" });   // b18b: no white sheen over a picked CHARGE coin
+      if (!calmC && !k.ball && !k.txt) gsap.fromTo(sheen, { alpha: 0.55 }, { alpha: 0, duration: 0.3, ease: "power2.in" });   // b18b: no white sheen over a picked CHARGE coin
       gsap.fromTo(glow, { alpha: 1 }, { alpha: 0.65, duration: 0.35 });
       gsap.fromTo(glow.scale, { x: 2.0, y: 2.0 }, { x: 1.15, y: 1.15, duration: 0.35, ease: "power2.out" });
       // light streak: a hot diagonal blade across the coin, sweeping through
-      if (!calmC && !k.ball) {                                          // balls (user 2026-11-19 b): no white sheen / streak / flash over the hand ball
+      if (!calmC && !k.ball && !k.txt) {                                // balls (user 2026-11-19 b) / b20: no white sheen / streak / flash over the hand ball
       const st = sp(FX.tex.shine || FX.tex.glow); st.blendMode = ADD; st.tint = 0xfff4dc; st.rotation = -0.42;
       st.position.set(c.x, c.y); st.scale.set(0.1, 0.5); st.alpha = 1; fxTop.addChild(st);
       gsap.to(st.scale, { x: 2.4, y: 0.18, duration: 0.26, ease: "power3.out" });

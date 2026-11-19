@@ -1977,11 +1977,17 @@
   // bar (y 590) and rises out of it; level 2 = CHARGES (UI/counter_board_open, parchment) stands on level 1's top band and
   // rises out of it (cscreenA, hidden behind level 1 at CS_A_HIDE). Art bottoms (anchor 0.5, 1): level 1 at the bar's top
   // edge, level 2 in the middle of level 1's top band (505.5..526).
-  const CS_X = 944, CS_HIDE = 100, CS_A_HIDE = 86, CB_BAR = 591, CB_A = 516;
-  const CNT_Y = 473, ACC_Y = 558;                       // row centres: level 2 face 440..505, level 1 face 526..591
+  // b20 (user 2026-11-19: "first box bigger than the second", screenshot of the red x3 TOTAL board under the 0/2 CHARGES board):
+  // level 1's red face is LV1_EXTRA px taller (66 -> 92 px; a NineSlicePlane, so its gold top band stays as drawn), level 2
+  // stands that much higher, and the TOTAL number is drawn at LV1_NUM (was 56). LV1_EXTRA 0 + LV1_NUM 56 = the b18 tower
+  const LV1_EXTRA = 26, LV1_NUM = 64;
+  const CS_X = 944, CS_HIDE = 100 + LV1_EXTRA, CS_A_HIDE = 86 + LV1_EXTRA, CB_BAR = 591, CB_A = 516 - LV1_EXTRA;
+  const CNT_Y = 473 - LV1_EXTRA, ACC_Y = 558 - LV1_EXTRA / 2;   // row centres: level 2 face 440..505, level 1 face 526..591 (both - LV1_EXTRA at the top)
   const cscreen = new PIXI.Container(); cscreen.visible = false; plaqueL.addChild(cscreen);
   const cscreenA = new PIXI.Container(); cscreenA.y = CS_A_HIDE;   // level 2 (board + count), moves with level 1
-  const cscreenBg = new PIXI.Sprite(T("UI/counter_board_red")); cscreenBg.anchor.set(0.5, 1); cscreenBg.position.set(CS_X, CB_BAR);
+  const cscreenBg = new PIXI.NineSlicePlane(T("UI/counter_board_red"), 0, 30, 0, 0);   // b20: rows 0-29 = the top band (kept), the face stretches
+  cscreenBg.width = cscreenBg.texture.width; cscreenBg.height = cscreenBg.texture.height + LV1_EXTRA;
+  cscreenBg.position.set(CS_X - cscreenBg.width / 2, CB_BAR - cscreenBg.height);   // (was a Sprite, anchor 0.5, 1 at CS_X, CB_BAR)
   const cscreenBgA = new PIXI.Sprite(T("UI/counter_board_open")); cscreenBgA.anchor.set(0.5, 1); cscreenBgA.position.set(CS_X, CB_A);
   const cscreenMask = new PIXI.Graphics().beginFill(0xffffff).drawRect(760, 280, 380, CB_BAR - 280).endFill(); plaqueL.addChild(cscreenMask); cscreen.mask = cscreenMask;
   cscreen.addChild(cscreenA, cscreenBg); cscreenA.addChild(cscreenBgA);
@@ -2035,7 +2041,7 @@
     };
     return c;
   }
-  const accNum = goldNum(56, 176); accTxt.parent.addChild(accNum); accBT.renderable = false; accNum.set("");
+  const accNum = goldNum(LV1_NUM, 176); accTxt.parent.addChild(accNum); accBT.renderable = false; accNum.set("");
   // b19 (user 2026-11-19: "change the second popup text size according to the blue box"): the CHARGES count ("2/8") drawn
   // CNT_K of its old size (same lettering + outline, in a scaled holder), widest CNT_FIT px (the blue box, ~61% of the face).
   // cbPk(cntNum) still measures the unscaled number, so a pop peaks at most CNT_K x the old clamp (never back to the old size).
@@ -2315,7 +2321,8 @@
     head.destroy();
   }
   // the running total fires a cyan-white laser into the plaque, then slams in (Garuda 01:01.7)
-  async function laserApply(acc) {
+  const MH_COIN_K = 1.4;                                            // b19: a hit's coin spread is this much richer than a plain win's
+  async function laserApply(acc, coinK) {                           // b20: coinK > 0 = the coin spread in the hit frame (coin rule)
     const from = fxTop.toLocal(accum.getGlobalPosition()), to = { x: plaque.x, y: plaque.y };   // white 2026-11-16: the badge's real place
     const g = new PIXI.Container(); fxTop.addChild(g);
     const L = Math.hypot(to.x - from.x, to.y - from.y), ang = Math.atan2(to.y - from.y, to.x - from.x);
@@ -2349,6 +2356,7 @@
     if (MH_WINDUP) boom(to.x, to.y, 1.0, 0xffe0b0);
     impactAt(to, acc); winBarHit(acc);
     if (DROP_HIT) boardDropHit(acc);                   // b19 (lead, user item 6 "and charge"): the CHARGE total's hit drops the board too                 // white 2026-11-16: the total-win board takes the hit
+    if (coinK > 0) winBoardCoins(coinK, true);         // b20 (coin rule 2): CHARGE / SUPER WILD / Buy Bonus totals spread their coins at the hit
     gsap.to(lab, { alpha: 0, duration: 0.15, onComplete: () => lab.destroy() });
   }
   // WHITE VERSION: the SUPER WILD's count lives on the symbol's own ruby plate (SymView.cnt). Garuda logic (user
@@ -2438,7 +2446,7 @@
   // is clamped so the popped number stays inside its board (face ~190 x 65 px; the number itself is ~66 px tall with its
   // outline): width <= CB_POP_W, height <= CB_POP_H. cbPk(num, pk) = the allowed peak scale (>= 1)
   const CB_POP_W = 184, CB_POP_H = 74;
-  const cbPk = (num, pk) => Math.max(1, Math.min(pk, CB_POP_W / Math.max(1, num.width), CB_POP_H / Math.max(1, num.height)));
+  const cbPk = (num, pk) => Math.max(1, Math.min(pk, CB_POP_W / Math.max(1, num.width), (CB_POP_H + (num === accNum ? LV1_EXTRA : 0)) / Math.max(1, num.height)));   // b20: the TOTAL board is LV1_EXTRA taller
   const cntShow = (o, pop) => {                         // the counter screen: done / total
     cntTxt.text = Math.min(o.done, o.tot) + "/" + o.tot;
     cntTxt.scale.set(Math.min(1, CB_FIT / Math.max(1, cntTxt.width / (cntTxt.scale.x || 1))));
@@ -2751,7 +2759,7 @@
     r.bullActed = true;
     acc = await fortuneChoiceShow(r, acc, ctr, [], { x: 540, y: 470 });
     window.G.lastAcc = acc;                              // QA: the shown total vs the engine's r.totalX
-    await laserApply(Math.max(1, acc));
+    await laserApply(Math.max(1, acc), r.win > 0 ? (r.win < r.stake ? 0.5 : r.totalX >= 5 ? 1.3 : 1) * MH_COIN_K : 0);   // b20 (coin rule): the spread at the hit
     const tier = Engine.tier(r.totalX), popWin = TIER_ORDER.includes(tier);
     gsap.to(plaqueBg, { alpha: 0, duration: 0.15 }); gsap.to(plaqueGlow, { alpha: 0.95, duration: 0.15 });
     plaqueTxt.visible = false; plaqueBig.visible = true; plaqueShown.v = bet; drawBig();
@@ -2973,13 +2981,16 @@
     const g = new PIXI.Sprite(FX.tex.glow); g.anchor.set(0.5); g.tint = tint; g.blendMode = PIXI.BLEND_MODES.ADD; g.scale.set(0.1);
     const ring = new PIXI.Sprite(FX.tex.ring); ring.anchor.set(0.5); ring.tint = tint; ring.blendMode = PIXI.BLEND_MODES.ADD; ring.scale.set(0.1);
     cg.addChild(g, ring);
-    if (calm) { ring.visible = false; g.alpha = 0.45; g.visible = !(label < 0); }   // b18b: a calm (Fortune Choice) throw: no ring, no pulled sparks, a soft glow (none on a CHARGE coin)
-    gsap.to(g.scale, { x: calm ? 0.6 : 1.0, y: calm ? 0.6 : 1.0, duration: cd, ease: "power1.in" });
+    // b20 WHEEL (user 2026-11-19: "the hand ball should be thrown"): a wheel's throw (picked; the 100x halo too) charges the
+    // hand ball quietly like a calm throw - no ring, no pulled sparks, a soft glow - so the rolled value stays readable on it
+    const quiet = calm || picked;
+    if (quiet) { ring.visible = false; g.alpha = 0.45; g.visible = !(label < 0); }   // b18b: a calm (Fortune Choice) throw: no ring, no pulled sparks, a soft glow (none on a CHARGE coin)
+    gsap.to(g.scale, { x: quiet ? 0.6 : 1.0, y: quiet ? 0.6 : 1.0, duration: cd, ease: "power1.in" });
     gsap.to(ring.scale, { x: 0.6, y: 0.6, duration: cd });
     const follow = () => {
       if (flame.gx == null) return;
       cg.position.set(flame.gx, flame.gy - 70); ring.rotation += 0.18; cg.visible = flame.on > 0.05;
-      for (let e = calm ? 0 : nEmit(25); e > 0; e--) {
+      for (let e = quiet ? 0 : nEmit(25); e > 0; e--) {
         const a = Math.random() * Math.PI * 2, r0 = 120;
         topP.emit({ tex: FX.tex.dot, x: cg.x + Math.cos(a) * r0, y: cg.y + Math.sin(a) * r0, vx: -Math.cos(a) * r0 * 3.2, vy: -Math.sin(a) * r0 * 3.2, s0: 0.3, s1: 0, life: 0.3, tint });
       }
@@ -2995,24 +3006,27 @@
     const c = mv.c, from = flame.gx != null && flame.on > 0.05 ? { x: flame.gx, y: flame.gy - 70 } : bullPt(c, c.cfg.release || [560, 230]);
     const d = c.cfg.dir || [90, 60], dl = Math.hypot(d[0], d[1]);
     const ctrl = { x: Math.min(W - 40, from.x + d[0] / dl * 420), y: from.y + d[1] / dl * 420 };
-    if (!calm) { flashAt(from.x, from.y, 0xffffff, 1.8, 0.2); starFlash(from.x, from.y, 1.3, tint); }   // b18b: a calm throw leaves the hand quietly
+    if (!quiet) { flashAt(from.x, from.y, 0xffffff, 1.8, 0.2); starFlash(from.x, from.y, 1.3, tint); }   // b18b: a calm throw leaves the hand quietly (b20: a wheel's throw too - the hand ball is seen leaving)
     GX.emit("throwRelease", { from, to, tint, label });
-    await comet(from, ctrl, to, tint, label, S.turbo ? 0.22 : 0.3, calm);
+    await comet(from, ctrl, to, tint, label, S.turbo ? 0.22 : 0.3, calm, picked && BALL_THROW);
     orbImpact(to, tint, calm);
   }
+  // b20 lead (user 2026-11-19: "the hand ball should be thrown"): a wheel's fire ball flies as the hand ball itself - the
+  // comet's fire + glow with the value's numerals, no painted chip face / rim (?oldcoins = the chip wheels keep their faces)
+  const BALL_THROW = !params.has("oldcoins");
   // white 2026-11-17: the coin a wheel handed over (window.GX_HALO_HANDOFF) flies to `to` itself (no throw clip)
   async function coinFlies(to, tint, label, calm) {
     const H = window.GX_HALO_HANDOFF; window.GX_HALO_HANDOFF = null;
     const from = H && H.c && !H.c.destroyed ? { x: H.c.x, y: H.c.y } : handOrb();
     if (H && H.c && !H.c.destroyed) H.c.destroy({ children: true });
-    await comet(from, { x: from.x + 160, y: (from.y + to.y) / 2 }, to, tint, label, S.turbo ? 0.25 : 0.35, calm);
+    await comet(from, { x: from.x + 160, y: (from.y + to.y) / 2 }, to, tint, label, S.turbo ? 0.25 : 0.35, calm, BALL_THROW);   // b20: the hand ball, no chip face
     orbImpact(to, tint, calm);
   }
   // a fireball with a trailing magic flame, flown along a curve
   // calm (b18b, the Fortune Choice coins: QA "a big glow ball around the coin covers the counter boards"): a modest glow
   // behind the coin (0.75, half alpha), no white core / ring / white speed streak, a thin trail; the coin fades out over
   // 0.12 s at the landing so the chip swap under it cross-fades (pickThrow / pickCharge swap on the landing frame)
-  function comet(from, ctrl, to, tint, label, dur, calm) {
+  function comet(from, ctrl, to, tint, label, dur, calm, bare) {   // b20: bare = a wheel's fire ball (numerals only, no chip face / rim)
     const o = new PIXI.Container(); o.position.set(from.x, from.y); fxTop.addChild(o);
     const tail = VFX.magicFlame(o, 150, 300, rgbOf(tint)); tail.power = calm ? 0.7 : 1.5;
     const G0 = calm ? 0.75 : 2.1;
@@ -3024,7 +3038,7 @@
       const f = new PIXI.Sprite(T("UI/charge_badge")); f.anchor.set(0.5); f.scale.set(0.86 * 0.52); o.addChild(f);
     } else if (label) {                                      // the same coin the bull held (face + numerals, picker size), so the hand-off reads as one object
       const k = COINS ? 0.86 : 0.6;
-      if (COINS) {
+      if (COINS && !bare) {
         const f = new PIXI.Sprite(chipBgTex(label)); f.anchor.set(0.5); f.scale.set(label < 0 ? k * NUDGE_K : k); o.addChild(f);
         const rm = new PIXI.Sprite(T(label < 0 ? "Multipliers/chip_rim" : "Multipliers/coin_rim")); rm.anchor.set(0.5); rm.scale.copyFrom(f.scale); o.addChild(rm);
       }
@@ -3325,7 +3339,14 @@
     // Fortune Choice, a WILD in a win line, or any CHARGE (column CHARGE chip, board CHARGE run); plain line wins keep them
     const coinsOK = !r.fc && !r.nudges.length && !(r.boardRuns && r.boardRuns.length) && !(r.startMult < 0) && !r.chipSteps
       && !r.lines.some((l) => l.rows.some((row, reel) => Engine.WILDS.has(r.grid[reel][row])));
-    if (rung && coinsOK) [...cells].forEach((c, ci) => {
+    // b20 (user 2026-11-19, the coin rule: "1. if we have a 1x multiplier and a win, play the coin spread; 2. if we have a win
+    // and a multiplier bigger than 1x, play the coin spread at the end, during the hit of the total win board"): the spread
+    // (winBoardCoins) follows the multiplier alone, in every round type - a 1x win spreads as its win shows, a >1x win spreads
+    // once, in the frame its multiplier hits the total win board (multHit / laserApply). The coin flights into the bar
+    // (coinTrail) keep b18's rule (none with WILD / SUPER WILD / CHARGE) and fly on 1x wins only (a >1x win waits for the hit).
+    // SPREAD_RULE false = b19 (spreads only on plain wins without WILD / CHARGE, flights on every plain win)
+    const SPREAD_RULE = true, featRound = !!(r.nudges.length || r.fc || (r.boardRuns && r.boardRuns.length));
+    if (rung && coinsOK && !(SPREAD_RULE && r.mult > 1)) [...cells].forEach((c, ci) => {
       const from = { x: REEL_CX[Math.floor(c / 3)], y: rowY(c % 3) };
       for (let k = 0; k < (rung === 2 ? 6 : 3); k++) coinTrail(from, { x: 540, y: WB_Y2 }, 0.12 + ci * 0.05 + k * 0.08, winBarPop);
       // white 2026-11-16 (user: "the animations are too many on the symbols"): no extra beat on top of each symbol's own move
@@ -3346,13 +3367,13 @@
     const simpleWin = !r.nudges.length && !r.fc && !(r.boardRuns && r.boardRuns.length), coinK = rung === 0 ? 0.5 : rung === 1 ? 1 : 1.3;
     // b19 (user 2026-11-19: "when you hit the total win board, we need coins at that second, not after"): with a multiplier > 1
     // the one burst fires in multHit's landing frame (MH_COIN_K x richer, it replaces the before + after bursts); 1x keeps this one
-    const MH_COIN_K = 1.4, hitCoins = simpleWin && coinsOK && r.mult > 1 ? coinK * MH_COIN_K : 0;
-    if (simpleWin && coinsOK && !(r.mult > 1)) winBoardCoins(coinK);    // white 2026-11-17: coins on the win board (b18: not with WILD / SUPER WILD / CHARGE)
+    const hitCoins = (SPREAD_RULE ? !featRound : simpleWin && coinsOK) && r.mult > 1 ? coinK * MH_COIN_K : 0;
+    if (SPREAD_RULE ? !featRound && !(r.mult > 1) : simpleWin && coinsOK && !(r.mult > 1)) winBoardCoins(coinK);    // white 2026-11-17: coins on the win board; b20: every 1x win (rule 1)
     await FX.wait(rung === 0 ? 0.08 : S.turbo ? 0.1 : simpleWin ? 0.45 : 0.25);
     // multiplier phase
     if (r.nudges.length || r.fc || (r.boardRuns && r.boardRuns.length)) {
       const acc = await nudgePhase(r);
-      await laserApply(Math.max(1, acc));
+      await laserApply(Math.max(1, acc), SPREAD_RULE ? coinK * MH_COIN_K : 0);   // b20 (coin rule): the spread at the final hit into the win board
     } else if (r.mult > 1 && quiet) {
       // white 2026-11-16 (user: "during the multiplier bigger than 1, we need to hit the total win board"): small wins too:
       // the one-row screen shows xN, the number hits the board, the plaque counts on to the total
@@ -3800,7 +3821,11 @@
     // Porco: each reel may start its stop when the previous one has; stops come one loop apart (~0.4 s)
     const tStop = tb ? [0.1, 0.15, 0.2] : [0.75, 1.1, 1.45], LEAD = 0;   // white 2026-11-13: calmer, towards Pascal (0.6/1.0/1.4/1.7)   // Garuda (measured): hard stops 0.72 / 0.90 / 1.08 / 1.25 s     // timing pass 2026-11-10 (was 0.6/1.0/1.4/1.7)
     const wildsEarly = [0, 1].reduce((a, reel) => a + r.grid[reel].filter((s) => Engine.WILDS.has(s)).length, 0);
-    const doTease = wildsEarly >= 2 && !tb;
+    // b20 (user 2026-11-19: "the tease case - it works based on the win, if the win is 5x and more you can tease it and give a
+    // win"): the reel-3 tease only plays when the round pays 5x the bet or more (was every round with 2 WILDs on reels 1-2:
+    // ~77% of those teased and paid less, mostly nothing). TEASE_MIN_X 0 = the old rule
+    const TEASE_MIN_X = 5;
+    const doTease = wildsEarly >= 2 && !tb && r.totalX >= TEASE_MIN_X;
     // white 2026-11-17 (user: "the multiplier part should stop after the 3rd reel equally timing", "smooth reel rotation and
     // stop"): the column is the fourth reel. It lands one reel-gap after the third reel, in every round (was: a long roll on
     // a win that eased down, hung on 500x / 1000x and crept in ~1.5 s after the reels). Its stop is a glide (Reel.glideStop):

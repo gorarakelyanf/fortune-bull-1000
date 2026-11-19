@@ -22,6 +22,7 @@ GX.plugin(function (ctx) {
     GLOW_A: 0.72, PULSE: 0.09, PULSE_HZ: 1.4,
     LAYERS: MOBILE ? 2 : 3, SPECKS: MOBILE ? 650 : 900,   // baked glitter layers (each re-weighted every few frames)
     PARTS: MOBILE ? 80 : 160, GLINTS: MOBILE ? 4 : 7, DRIFT: MOBILE ? 7 : 14,
+    FLOW: MOBILE ? 40 : 80,                // b20: gold-dust specks streaming along the band (0 = the b19 frame: twinkles only)
     DIM: false,                            // COLDUST_DIM (later: dim the board while the column runs) - not used yet
   };
   const R = 2;                                                     // textures baked at 2x
@@ -125,7 +126,8 @@ GX.plugin(function (ctx) {
     const parts = []; for (let i = 0; i < TM.PARTS; i++) { const p = { s: mk(tx.tw), age: 0, life: 0, f: 1, n: 0 }; spawnPart(p, true); parts.push(p); }
     const glints = []; for (let i = 0; i < TM.GLINTS; i++) glints.push({ s: mk(FX.tex.spark), age: 1, life: 0 });
     const drift = []; for (let i = 0; i < TM.DRIFT; i++) drift.push({ s: mk(tx.tw), age: 1, life: 0 });
-    F = { c, glow, lay, pc, parts, glints, drift, t: 0, glintT: 0, driftT: 0, dying: false, fade: null };
+    const flow = []; for (let i = 0; i < TM.FLOW; i++) { const p = { s: mk(tx.tw) }; spawnFlow(p, true); flow.push(p); }
+    F = { c, glow, lay, pc, parts, glints, drift, flow, t: 0, glintT: 0, driftT: 0, dying: false, fade: null };
     F.fade = gsap.to(c, { alpha: peak, duration: TM.FADE_IN, ease: "power1.out" });
     tickSync();
   }
@@ -134,6 +136,30 @@ GX.plugin(function (ctx) {
     p.s.position.set(e.x, e.y); p.life = rnd(0.22, 0.65); p.age = pre ? Math.random() * p.life : 0;
     p.size = Math.random() < 0.2 ? rnd(9, 14) : rnd(4, 8); p.s.tint = TINTS[Math.floor(Math.random() * TINTS.length)];
     p.s.rotation = Math.random() < 0.5 ? 0 : Math.PI / 4; p.s.visible = true;
+  }
+  // b20 (user 2026-11-19: "the side frame glowing effect we added should have moving particles as well"): FLOW specks stream
+  // UP the band on both sides of the window (70-170 px/s, a slight sway, 0.7-1.5 s each, fading in and out) and, along the top
+  // and bottom bands, run out to the nearer corner. Small soft twinkles only (calm look: no bursts, streaks or rings); they
+  // stay inside the window (never over the reels on its left)
+  function spawnFlow(p, pre) {
+    const d = TM.BAND * 0.9 * Math.pow(Math.random(), 1.2);
+    if (Math.random() < 0.8) { const left = Math.random() < 0.5; p.x = left ? Math.max(1.5, d) : W - d; p.y = rnd(0, H); p.vx = 0; p.vy = -rnd(70, 170); }
+    else { const top = Math.random() < 0.5; p.x = rnd(0, W); p.y = top ? d : H - d; p.vx = (p.x < W / 2 ? -1 : 1) * rnd(40, 90); p.vy = 0; }
+    p.ph = rnd(0, 6); p.sw = rnd(1.5, 4); p.life = rnd(0.7, 1.5); p.age = pre ? Math.random() * p.life : 0;
+    if (pre) { p.x += p.vx * p.age; p.y += p.vy * p.age; }
+    p.size = Math.random() < 0.15 ? rnd(6, 9) : rnd(3, 5.5); p.s.tint = TINTS[Math.floor(Math.random() * TINTS.length)]; p.s.visible = true;
+  }
+  function flowTick(f, dt) {
+    const tw = tex.twW;
+    f.flow.forEach((p) => {
+      p.age += dt; p.x += p.vx * dt; p.y += p.vy * dt;
+      if (p.age >= p.life || p.y < -4 || p.y > H + 4 || p.x < 1 || p.x > W + 2) spawnFlow(p, false);
+      const u = p.age / p.life, env = Math.min(1, u * 5) * (1 - u);
+      const sway = p.vx === 0 ? Math.sin(f.t * p.sw + p.ph) * 2.5 : 0;
+      p.s.position.set(Math.max(1, p.x + sway), p.y);
+      p.s.alpha = Math.min(1, env * 1.5) * (Math.random() < 0.1 ? 0.5 : 1);
+      p.s.scale.set((p.size / tw) * (0.75 + 0.25 * env));
+    });
   }
   function frameTick(dt) {
     const f = F; f.t += dt;
@@ -148,6 +174,7 @@ GX.plugin(function (ctx) {
       const u = p.age / p.life, env = Math.sin(Math.PI * u);
       p.s.alpha = Math.min(1, env * p.f); p.s.scale.set((p.size / tw) * (0.6 + 0.5 * env) * (0.85 + 0.3 * p.f));
     });
+    if (f.flow) flowTick(f, dt);                                      // b20: the moving gold dust
     // 4-point glints popping at random spots along the band
     f.glintT -= dt;
     if (f.glintT <= 0) { f.glintT = rnd(0.05, 0.16); const gl = f.glints.find((g) => g.age >= g.life);
