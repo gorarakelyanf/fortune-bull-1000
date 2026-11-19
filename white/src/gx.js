@@ -10,6 +10,7 @@ window.GX = (function () {
     plugin(fn) { plugins.push(fn); },
     on(ev, fn) { (h[ev] = h[ev] || []).push(fn); },
     emit(ev, d) { (h[ev] || []).forEach((fn) => safe(fn, d)); },
+    has(ev) { return !!(h[ev] && h[ev].length); },   // is anyone listening (game.js falls back to its own effect when not)
     run(ev, d, cap) {
       const ps = (h[ev] || []).map((fn) => Promise.resolve(safe(fn, d)).catch((e) => console.warn("gx", e)));
       // the cap runs on game time (gsap), so slow motion (?ts), hit-stops and a slow frame rate never cut an effect short

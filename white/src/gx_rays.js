@@ -13,6 +13,9 @@ GX.plugin(function (ctx) {
   const { PIXI, gsap, FX, layers, MOBILE, app } = ctx;
   const fr = ctx.featRays;
   if (!fr || !layers || !layers.bullL) return;
+  // white (user 2026-11-16: "turn off the background effects"): no backlight shafts / smoke / motes behind the bull.
+  // A no-op GXRays stays so gx_feature / gx_halo do not fall back to their own cones. ?bgfx brings it back.
+  if (!(ctx.params && ctx.params.has("bgfx"))) { fr.renderable = false; window.GXRays = { flare() {}, hold() { return () => {}; }, intro() {} }; return; }
   const ADD = PIXI.BLEND_MODES.ADD;
   const safe = (fn) => { try { return fn(); } catch (e) { console.warn("gx rays", e); } };
   const rnd = (a, b) => a + Math.random() * (b - a);

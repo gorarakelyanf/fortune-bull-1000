@@ -56,6 +56,8 @@ GX.plugin(function (ctx) {
     uniform vec4 uS1;     // warp scroll, profile drift, profile evolution, smoke scroll
     uniform vec4 uMisc;   // heat, opacity, smoke amount, top inward reach
     uniform vec4 uWarp;   // warp field scale x, y, warp amount, sway px
+    uniform vec2 uRise;   // side tongues: phase of the two tongue trains climbing the posts (in tongues, wraps at 8)
+    uniform vec2 uEnd;    // posts: y where the side flames end (= the side quads' bottom), fade length px
     float fbm(vec2 uv){
       float v = 0.5 * texture2D(uNoise, uv + vec2(0.0, uS0.x)).r;
       v += 0.25 * texture2D(uNoise, uv * 2.0 + vec2(0.37, uS0.y)).g;
@@ -79,13 +81,12 @@ GX.plugin(function (ctx) {
       float heat = uMisc.x;
       vec4 w4 = texture2D(uNoise, p * uWarp.xy + vec2(0.11, uS1.x));
       vec2 wv = w4.rg - 0.5;
-      // height profiles: slow drift plus tall licks that grow and die as the slice evolves
+      // height profiles: slow drift plus a few taller licks that grow and die as the slice evolves
+      // (fix 2026-11-16: lower, capped licks and a smaller flare boost - the top edge sits right under the bull)
       vec4 pr = texture2D(uNoise, vec2(p.x * 0.000208 + uS1.y, 0.31));
       vec4 pl = texture2D(uNoise, vec2(p.x * 0.000347, uS1.z));
-      vec4 ps = texture2D(uNoise, vec2(0.71 + uS1.y, p.y * 0.000347 + uS1.z * 0.7));
-      float hk = 0.6 + 0.4 * heat;
-      float Lt = uShape.x * max(0.3, 0.62 + 1.2 * (pr.b - 0.5) + 0.9 * smoothstep(0.56, 0.8, pl.r)) * hk;
-      float Wo = uShape.y * max(0.35, 0.75 + 1.0 * (ps.g - 0.5) + 0.6 * smoothstep(0.56, 0.8, ps.a)) * hk;
+      float hk = 0.72 + 0.28 * heat;
+      float Lt = uShape.x * clamp(0.62 + 1.0 * (pr.b - 0.5) + 0.6 * smoothstep(0.58, 0.82, pl.r), 0.3, 1.5) * hk;
       float Lb = uShape.w * max(0.3, 0.7 + 1.1 * (pl.g - 0.5)) * hk;
       float up = uLine.y - p.y;
       // tongues sway with the turbulence, more toward their tips
@@ -94,10 +95,23 @@ GX.plugin(function (ctx) {
       // top edge
       float hT = up >= 0.0 ? up / Lt : -up / uMisc.w;
       if (ox > 0.0) hT = max(hT, ox / 16.0);
-      // side posts (nearest), rounding into the top flames, ending at the bottom bar
-      float dP = p.x < (uLine.x + uLine.z) * 0.5 ? uLine.x - p.x : p.x - uLine.z;
-      float hS = dP >= 0.0 ? dP / Wo : -dP / uShape.z;
-      hS = length(vec2(hS, max(max(up, 0.0) / Lt, max(p.y - uLine.w, 0.0) / 12.0)));
+      // side posts: a thin sheet hugging the post with tongues that CLIMB it (screen up), tapering to their tips.
+      // Two tongue trains of different pitch travel upward (uRise); a slow warp along y keeps their spacing uneven
+      // and each tongue gets its own size. The tongues shape the width ACROSS the post, so the flames rise along
+      // it instead of reaching sideways (the old field was a horizontal band whose reach wobbled in x).
+      float sd = step((uLine.x + uLine.z) * 0.5, p.x);
+      float dP = sd > 0.5 ? p.x - uLine.z : uLine.x - p.x;          // + = outward
+      float wy = texture2D(uNoise, vec2(0.17 + sd * 0.41, p.y * 0.0011 + uS1.z)).b - 0.5;
+      float ph1 = up / 78.0 - uRise.x + wy * 0.9, ph2 = up / 50.0 - uRise.y + 0.5 - wy * 0.7;
+      float s1 = fract(ph1), s2 = fract(ph2);
+      float a1 = 0.45 + 0.8 * texture2D(uNoise, vec2(floor(ph1) * 0.125 + sd * 0.5, 0.77)).r;
+      float a2 = 0.35 + 0.7 * texture2D(uNoise, vec2(floor(ph2) * 0.125 + sd * 0.5 + 0.25, 0.23)).g;
+      float tg = max(a1 * smoothstep(0.0, 0.4, s1) * pow(1.0 - s1, 0.8), a2 * smoothstep(0.0, 0.45, s2) * pow(1.0 - s2, 1.0));   // round base, long tip
+      float along = clamp((p.y - uLine.y) / max(1.0, uEnd.x - uLine.y), 0.0, 1.0);     // 0 at the top, 1 at the end
+      float grow = mix(1.1, 0.75, along) * hk;                                           // fed from below: bigger higher up
+      float dPs = dP - wv.x * 12.0 * tg - 6.0 * s1 * tg;                                 // the tips sway and peel off a little
+      float hS = dPs >= 0.0 ? dPs / (uShape.y * (0.3 + 1.0 * tg) * grow) : -dPs / (uShape.z * (0.55 + 0.7 * tg) * grow);
+      hS = length(vec2(hS, max(up, 0.0) / Lt));
       // bottom bar: low flames
       float ub = uLine.w - p.y;
       float hB = ub >= 0.0 ? ub / Lb : -ub / 10.0;
@@ -105,27 +119,33 @@ GX.plugin(function (ctx) {
       float hTB = min(hT, hB);
       float h = min(hTB, hS);
       // side posts and bottom bar burn cooler and more broken than the top edge (no white-hot tube along the frame)
-      float kS = smoothstep(-0.12, 0.12, hTB - hS);
+      // (posts look only below the top line: the corners stay top flames, no seam where the two looks meet)
+      float kS = smoothstep(-0.12, 0.12, hTB - hS) * smoothstep(0.0, 22.0, -up);
       float kB = smoothstep(-0.12, 0.12, hT - hB) * (1.0 - kS);
       float kC = max(kS, kB);
       // flame body: warped fbm rising upward, solid at the base, ragged and detaching toward the tips
-      float n = fbm(vQ + wv * uWarp.z);
-      float nc = (n - 0.5) * mix(2.6, 3.3, kC);
-      float temp = (1.0 - h) * mix(1.15, mix(0.92, 0.7, kS), kC) + nc * (mix(0.3, 0.55, kC) + 0.7 * clamp(h, 0.0, 1.3)) - 0.04;
-      temp = temp * (0.82 + 0.18 * heat) + (pl.b - 0.5) * 0.3;
-      temp *= 1.0 - smoothstep(1.45, 2.05, h);
+      // (posts: noise finer across and longer along, so it streaks up the post instead of blotching it)
+      // (stretched about the post line itself, so the blend into the top flames does not shear the noise into ripples)
+      // (1088 / 1856 px = the noise period in x / y: CX * 32, CY * 32)
+      float n = fbm(vQ + vec2((p.x - mix(uLine.x, uLine.z, sd)) * (0.9 / 1088.0), (p.y - uLine.y) * (-0.2 / 1856.0)) * kS + wv * uWarp.z);
+      float nc = (n - 0.5) * mix(2.6, 3.0, kC);
+      float temp = (1.0 - h) * mix(1.05, mix(0.92, 0.95, kS), kC) + nc * (mix(0.3, mix(0.55, 0.36, kS), kC) + 0.62 * clamp(h, 0.0, 1.3)) - 0.06;
+      temp = temp * (0.82 + 0.18 * heat) + (pl.b - 0.5) * 0.24;
+      temp *= 1.0 - smoothstep(1.25, 1.75, h);
+      // the posts die out softly before the side quads end (was a hard horizontal cut at the quads' bottom edge)
+      temp *= 1.0 - smoothstep(uEnd.x - uEnd.y, uEnd.x, p.y);
       // bottom licks stay low: a hard ceiling so they never climb into the symbols
       temp *= mix(1.0, smoothstep(uLine.w - uShape.w * 1.75, uLine.w - uShape.w * 0.9, p.y), kB);
-      float T = clamp(temp, 0.0, mix(1.35, mix(1.0, 0.86, kS), kC));
+      float T = clamp(temp, 0.0, mix(1.22, mix(1.0, 0.9, kS), kC));
       float cov = smoothstep(0.02, 0.22, T);
       vec3 emit = ramp(T) * cov * (0.5 + 0.62 * T);
       emit += vec3(0.9, 0.26, 0.03) * exp(-h * 2.4) * 0.2 * heat;
-      float occ = 0.3 * smoothstep(0.15, 0.75, T);
+      float occ = mix(0.3, 0.9, kS) * smoothstep(0.12, 0.7, T);     // posts: more body, so they read over the pale reels
       // faint dark smoke above the top flames
       if (uMisc.z > 0.0 && up > 0.0) {
         float hs = up / uShape.x;
         float s = texture2D(uNoise, vQ * 0.3 + wv * 0.03 + vec2(0.4, uS1.w)).g * 0.65 + texture2D(uNoise, vQ * 0.7 + vec2(0.2, uS1.w * 2.0)).r * 0.35;
-        float smk = clamp((s - 0.44) * 3.2, 0.0, 1.0) * smoothstep(0.45, 1.1, hs) * (1.0 - smoothstep(1.45, 2.1, hs));
+        float smk = clamp((s - 0.46) * 3.0, 0.0, 1.0) * smoothstep(0.5, 1.1, hs) * (1.0 - smoothstep(1.35, 1.9, hs));
         smk *= (1.0 - smoothstep(0.0, 24.0, ox)) * uMisc.z * (1.0 - cov * 0.7);
         occ += smk * 0.32;
         emit += vec3(0.05, 0.02, 0.008) * smk;
@@ -155,14 +175,28 @@ GX.plugin(function (ctx) {
     }`;
 
   // warm light cast by the fire, painted once (half resolution) and flickered
+  // white 2026-11-16 (user: "keep the board color consistent, no need to burn it"): OFF - the light washed the reels,
+  // the frame and the tray orange while the board burned. The flames stay; ?firelight brings the light back.
+  const CAST_LIGHT = !!(ctx.params && ctx.params.has("firelight"));
   function lightSprite(box, paint) {
+    if (!CAST_LIGHT) return null;
     const [X0, Y0, X1, Y1] = box, s = 0.5;
     const cv = document.createElement("canvas"); cv.width = Math.ceil((X1 - X0) * s); cv.height = Math.ceil((Y1 - Y0) * s);
     const g = cv.getContext("2d"); g.scale(s, s); g.translate(-X0, -Y0);
-    const lin = (x0, y0, x1, y1, a, rx, ry, rw, rh) => {
-      const gr = g.createLinearGradient(x0, y0, x1, y1);
-      gr.addColorStop(0, `rgba(255,150,60,${a})`); gr.addColorStop(0.45, `rgba(255,110,30,${a * 0.38})`); gr.addColorStop(1, "rgba(255,90,20,0)");
-      g.fillStyle = gr; g.fillRect(rx, ry, rw, rh);
+    // fy: fade the rect's top and bottom ends over fy px (the post lights had hard horizontal ends)
+    const lin = (x0, y0, x1, y1, a, rx, ry, rw, rh, fy) => {
+      const paint = (c, ox, oy) => {
+        const gr = c.createLinearGradient(x0 - ox, y0 - oy, x1 - ox, y1 - oy);
+        gr.addColorStop(0, `rgba(255,150,60,${a})`); gr.addColorStop(0.45, `rgba(255,110,30,${a * 0.38})`); gr.addColorStop(1, "rgba(255,90,20,0)");
+        c.fillStyle = gr; c.fillRect(rx - ox, ry - oy, rw, rh);
+      };
+      if (!fy) { paint(g, 0, 0); return; }
+      const tc = document.createElement("canvas"); tc.width = Math.ceil(rw); tc.height = Math.ceil(rh);
+      const c = tc.getContext("2d"); paint(c, rx, ry);
+      const k = Math.min(0.5, fy / rh), vg = c.createLinearGradient(0, 0, 0, rh);
+      vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(k, "#000"); vg.addColorStop(1 - k, "#000"); vg.addColorStop(1, "rgba(0,0,0,0)");
+      c.globalCompositeOperation = "destination-in"; c.fillStyle = vg; c.fillRect(0, 0, rw, rh);
+      g.drawImage(tc, rx, ry);
     };
     g.globalCompositeOperation = "lighter";
     paint(lin, g);
@@ -181,7 +215,8 @@ GX.plugin(function (ctx) {
   function makeRing(host, o) {
     const shader = PIXI.Shader.from(VERT, FRAG, {
       uNoise: NOISE, uCell: [1 / (CX * 32), 1 / (CY * 32)], uLine: o.line, uShape: o.shape,
-      uS0: [0, 0, 0, 0], uS1: [0, 0, 0, 0], uMisc: [1, 1, o.smoke || 0, o.inTop], uWarp: [1 / (170 * 32), 1 / (240 * 32), 0.05, o.sway || 34] });
+      uS0: [0, 0, 0, 0], uS1: [0, 0, 0, 0], uMisc: [1, 1, o.smoke || 0, o.inTop], uWarp: [1 / (170 * 32), 1 / (240 * 32), 0.05, o.sway || 34],
+      uRise: [0, 0], uEnd: o.end });
     const mesh = new PIXI.Mesh(quadsGeo(o.quads), shader);
     mesh.blendMode = PIXI.BLEND_MODES.NORMAL;
     const root = new PIXI.Container(); root.name = "gxFire";
@@ -218,33 +253,35 @@ GX.plugin(function (ctx) {
 
   // ---------- the board ring ----------
   const [bx0, by0, bx1, by1] = ff.box || [10, 594, 1070, 1288];
-  const LT = 112, YT = by0 + 6, XL = bx0 + 16, XR = bx1 - 15, YB = by1 - 16;
+  const LT = 86, YT = by0 + 6, XL = bx0 + 16, XR = bx1 - 15, YB = by1 - 16;
   const frameLight = lightSprite([0, YT - 260, 1080, YB + 30], (lin) => {
-    lin(0, YT + 4, 0, YT - 230, 0.5, 0, YT - 240, 1080, 246);           // warm light up over the bull and the columns
+    lin(0, YT + 4, 0, YT - 150, 0.3, 0, YT - 160, 1080, 166);           // warm light up over the bull and the columns (lower, fainter)
     lin(0, YT + 2, 0, YT + 54, 0.42, XL, YT, XR - XL, 60);             // inner edges: a thin warm rim on the reels
-    lin(XL, 0, XL + 52, 0, 0.3, XL, YT, 60, YB - YT);
-    lin(XR, 0, XR - 52, 0, 0.3, XR - 60, YT, 60, YB - YT);
+    lin(XL, 0, XL + 52, 0, 0.3, XL, YT, 60, YB - YT, 140);
+    lin(XR, 0, XR - 52, 0, 0.3, XR - 60, YT, 60, YB - YT, 140);
     lin(0, YB, 0, YB - 44, 0.36, XL, YB - 50, XR - XL, 50);
-    lin(XL, 0, XL - 40, 0, 0.28, 0, YT - 10, XL, YB - YT + 20);          // outer sides
-    lin(XR, 0, XR + 40, 0, 0.28, XR, YT - 10, 1080 - XR, YB - YT + 20);
+    lin(XL, 0, XL - 40, 0, 0.28, 0, YT - 10, XL, YB - YT + 20, 160);     // outer sides
+    lin(XR, 0, XR + 40, 0, 0.28, XR, YT - 10, 1080 - XR, YB - YT + 20, 160);
   });
   const board = makeRing(ff, {
-    line: [XL, YT, XR, YB], shape: [LT, 30, 9, 38], inTop: 10, smoke: 1, sway: 38, light: frameLight, lightA: 0.45,
-    quads: [[0, YT - LT * 2.15, 1080, YT + 16], [0, YT + 16, 66, YB - 30], [1014, YT + 16, 1080, YB - 30]],   // white: no bottom bar
+    line: [XL, YT, XR, YB], shape: [LT, 32, 15, 38], inTop: 10, smoke: 0.45, sway: 30, light: frameLight, lightA: 0.45,
+    end: [YB - 32, 150],
+    quads: [[0, YT - LT * 2.9, 1080, YT + 16], [0, YT + 16, 66, YB - 30], [1014, YT + 16, 1080, YB - 30]],   // white: no bottom bar
   });
   const rings = [board];
 
   // ---------- the reel-3 anticipation ring ----------
   if (tz && tz.box) {
-    const [tx0, ty0, tx1, ty1] = tz.box, L2 = 150, tl = tx0 + 6, tr = tx1 - 6, tt = ty0 + 6, tb = ty1 - 6;
+    const [tx0, ty0, tx1, ty1] = tz.box, L2 = 100, tl = tx0 + 6, tr = tx1 - 6, tt = ty0 + 6, tb = ty1 - 6;
     const tLight = lightSprite([tl - 70, tt - 180, tr + 70, tb + 20], (lin) => {
-      lin(0, tt + 4, 0, tt - 170, 0.45, tl - 40, tt - 180, tr - tl + 80, 184);
-      lin(tl, 0, tl - 64, 0, 0.42, tl - 70, tt - 10, 70, tb - tt + 20);
-      lin(tr, 0, tr + 64, 0, 0.42, tr, tt - 10, 70, tb - tt + 20);
+      lin(0, tt + 4, 0, tt - 120, 0.32, tl - 40, tt - 130, tr - tl + 80, 134);
+      lin(tl, 0, tl - 64, 0, 0.42, tl - 70, tt - 10, 70, tb - tt + 20, 140);
+      lin(tr, 0, tr + 64, 0, 0.42, tr, tt - 10, 70, tb - tt + 20, 140);
     });
     rings.push(makeRing(tz, {
-      line: [tl, tt, tr, tb], shape: [L2, 34, 16, 26], inTop: 14, smoke: 0.6, sway: 30, light: tLight, lightA: 0.5,
-      quads: [[tl - 56, tt - L2 * 2.15, tr + 56, tt + 18], [tl - 56, tt + 18, tl + 30, tb - 30], [tr - 30, tt + 18, tr + 56, tb - 30]],
+      line: [tl, tt, tr, tb], shape: [L2, 40, 18, 26], inTop: 14, smoke: 0.3, sway: 26, light: tLight, lightA: 0.5,
+      end: [tb - 32, 130],
+      quads: [[tl - 56, tt - L2 * 2.9, tr + 56, tt + 18], [tl - 56, tt + 18, tl + 30, tb - 30], [tr - 30, tt + 18, tr + 56, tb - 30]],
     }));
   }
 
@@ -305,6 +342,7 @@ GX.plugin(function (ctx) {
         const u = r.shader.uniforms;
         u.uS0[0] = fr(t * 92 / a); u.uS0[1] = fr(t * 130 * 2 / a); u.uS0[2] = fr(t * 185 * 4 / a); u.uS0[3] = fr(t * 250 * 8 / a);
         u.uS1[0] = fr(t * 60 / (240 * 32)); u.uS1[1] = fr(t * 0.004); u.uS1[2] = fr(t * 0.045); u.uS1[3] = fr(t * 42 * 0.3 / a);
+        u.uRise[0] = (t * 130 / 78) % 8; u.uRise[1] = (t * 104 / 50) % 8;     // side tongues climb ~130 / 104 px per t
         // the game's alpha: 0.62 = sustained burn, 1 = flare. Opacity saturates early; the rest drives heat and height.
         const heat = Math.min(1.7, wa / 0.62) * flick;
         u.uMisc[0] = heat * 0.8; u.uMisc[1] = Math.min(1, wa / 0.4) * 0.62;
@@ -328,7 +366,7 @@ GX.plugin(function (ctx) {
         if (!(hazeHost.filters || []).includes(haze)) hazeOn(true);
         pt.set(0, YT - LT * 1.9); const top = ff.toGlobal(pt).y; pt.set(0, YT); const base = ff.toGlobal(pt).y;
         const sc = (base - top) / (LT * 1.9);
-        haze.uniforms.uBand = [top, base, 3.2 * sc * Math.min(1, ff.worldAlpha / 0.5), sc];
+        haze.uniforms.uBand = [top, base, 2.2 * sc * Math.min(1, ff.worldAlpha / 0.5), sc];
         haze.uniforms.uScroll = [fr(t * 0.11), fr(t * 0.23)];
       }
     } catch (e) { console.warn("gx fire", e); }

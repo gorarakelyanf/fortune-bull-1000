@@ -157,14 +157,16 @@
     // white version (user 2026-11-11: "buy bonus should be a chip like the multiplier rectangle chips we have"):
     // the column's own chip art (red magic background + gold rim, 16:9 like the chips there) with BUY in the chip
     // labels' lettering (Georgia black italic, gold). Falls back to the old round button if the chip art is missing.
-    const chipBg = PIXI.Assets.get("assets/Multipliers/chip_bg_1000.webp"), chipRim = PIXI.Assets.get("assets/Multipliers/chip_rim.webp");
-    let disc, labelArt = null;
+    // white 2026-11-17 (user: "behind the buy bonus, change the black with the spin to win transparent red"): the plate is
+    // the SPIN TO WIN bar's 50% crimson in the chip's shape (assets/UI/buy_bg.webp, tools/batch17_art.py), was the black 1000x chip
+    const chipBg = PIXI.Assets.get("assets/UI/buy_bg.webp") || PIXI.Assets.get("assets/Multipliers/chip_bg_1000.webp"), chipRim = PIXI.Assets.get("assets/Multipliers/chip_rim.webp");
+    let disc, labelArt = null, buyHitK = 1;   // b19: buyHitK = the plate's scale (BUY_PLATE_K) for the hit area
     if (chipBg && chipRim) {
       // user 2026-11-11: "make the buy bonus text to be Buy super wild, also make the chip bigger, also remove the effect behind"
       const BK = 1.3;                                        // chip 180 x 101 -> 234 x 131
       disc = new PIXI.Container(); disc.addChild(sprite(chipBg), sprite(chipRim)); disc.scale.set(BK, BK * 0.823);
       gemMask.clear().beginFill(0xffffff).drawRoundedRect(-88 * BK, -49 * BK, 176 * BK, 98 * BK, 16 * BK).endFill();
-      label.text = ["BUY", "SUPER WILD"].join(String.fromCharCode(10));      // two lines
+      label.text = ["BUY", "BONUS"].join(String.fromCharCode(10));      // two lines (user 2026-11-16: "buy super wild should be buy bonus")
       label.style = new PIXI.TextStyle({ fontFamily: "Georgia, serif", fontWeight: "900", fontStyle: "italic", fontSize: 40, align: "center", lineHeight: 42,
         fill: ["#FFF3B8", "#F5C24A", "#C47A16"], fillGradientStops: [0, 0.55, 1], stroke: "#4a2206", strokeThickness: 7,
         dropShadow: true, dropShadowColor: "#1a0800", dropShadowAlpha: 0.6, dropShadowBlur: 2, dropShadowDistance: 2,
@@ -176,12 +178,20 @@
       // lettering (tools/buy_label.py, drawn at 2x); the live text above is only the fallback
       const labTex = PIXI.Assets.get("assets/UI/buy_label.webp");
       if (labTex) { label.visible = false; labelArt = sprite(labTex, 0.5); labelArt.y = 3; fit(labelArt, 216); }
+      // b19 (user 2026-11-19: "buy bonus button should be bigger, just the button, make the text smaller 5%"): the plate
+      // (+ its glint mask, shadow and hit area) BUY_PLATE_K bigger round its centre, the lettering BUY_TEXT_K of before (1 / 1 = old)
+      const BUY_PLATE_K = 1.12, BUY_TEXT_K = 0.95, K = BUY_PLATE_K;
+      disc.scale.set(BK * K, BK * 0.823 * K);
+      gemMask.clear().beginFill(0xffffff).drawRoundedRect(-88 * BK * K, -49 * BK * K, 176 * BK * K, 98 * BK * K, 16 * BK * K).endFill();
+      shadow.scale.set(1.0 * K, 0.55 * K); shadow.y = 14 * K;
+      label.scale.set(label.scale.x * BUY_TEXT_K); if (labelArt) labelArt.scale.set(labelArt.scale.x * BUY_TEXT_K);
+      buyHitK = K;
     } else {
       disc = ART === "assets_v2" && PIXI.Assets.get(`${ART}/UI/buy_button.webp`) ? sprite(T("UI/buy_button")) : sprite(discTex(128));
       if (disc.texture.width > 140) disc.scale.set(132 / disc.texture.width);
     }
     body.addChild(disc, gemMask, glint, label); if (labelArt) body.addChild(labelArt);
-    body.hitArea = chipBg && chipRim ? new PIXI.RoundedRectangle(-124, -72, 248, 144, 24) : new PIXI.Circle(0, 0, 66);
+    body.hitArea = chipBg && chipRim ? new PIXI.RoundedRectangle(-124 * buyHitK, -72 * buyHitK, 248 * buyHitK, 144 * buyHitK, 24 * buyHitK) : new PIXI.Circle(0, 0, 66);   // b19: * buyHitK
     button.addChild(shadow, glow, body);
     gsap.to(glow, { alpha: 0.75, duration: 1.4, ease: "sine.inOut", yoyo: true, repeat: -1 });
     gsap.to(glow.scale, { x: glow.scale.x * 1.14, y: glow.scale.y * 1.14, duration: 1.4, ease: "sine.inOut", yoyo: true, repeat: -1 });

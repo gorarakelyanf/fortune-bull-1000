@@ -9,6 +9,12 @@ GX.plugin(function (ctx) {
   const n = (k) => Math.max(1, Math.round(k * M));
   const rnd = (a, b) => a + Math.random() * (b - a);
   const GOLD = 0xffd060, WARM = 0xffa63a, PALE = 0xfff2c8, FIRE = 0xff7a20;
+  // white 2026-11-16 (user: "keep the board color consistent, no need to burn it"): no additive glows washing the board
+  // (EXTRA BET frame flash / tray band / coin glows / tray dim, idle glows on chips and symbols); ?boardflash = old look
+  const BOARD_GLOW = !!(ctx.params && ctx.params.has("boardflash"));
+  // white 2026-11-16 (user: "remove the glow behind the ex"): no glow / ring / star / sparks at the EX switch when it is
+  // turned on or off (the comets up to the coins stay); ?boardflash brings it back
+  const EX_BURST = BOARD_GLOW;
   const warn = (e) => console.warn("gx intro", e);
   const safe = (fn) => function () { try { return fn.apply(this, arguments); } catch (e) { warn(e); } };
 
@@ -203,7 +209,7 @@ GX.plugin(function (ctx) {
   // one multiplier coin lights up: glow, ring, glint
   function coinLight(k, tint, big) {
     const q = bp(COL_X, coinY(k));
-    pulse(top, FX.tex.glow, q.x, q.y, tint || GOLD, 0.35, big ? 0.95 : 0.7, 0.85, 0.45);
+    if (BOARD_GLOW) pulse(top, FX.tex.glow, q.x, q.y, tint || GOLD, 0.35, big ? 0.95 : 0.7, 0.85, 0.45);   // white: ring + star only
     pulse(top, FX.tex.ring, q.x, q.y, tint || GOLD, 0.28, big ? 0.85 : 0.62, 0.9, 0.4);
     if (big || !MOBILE) star(top, q.x - 20, q.y - 22, big ? 0.6 : 0.38, PALE, 0.4);
   }
@@ -240,16 +246,16 @@ GX.plugin(function (ctx) {
     const objs = [], btn = map(layers.uiL, d.x, d.y), tl = gsap.timeline({ onComplete: () => exClear() });
     const comets = [];
     const own = (o) => { objs.push(o); return o; };
-    // charge: sparks pulled into the button, then the burst
-    for (let i = 0; i < n(14); i++) {
+    // charge: sparks pulled into the button, then the burst (white: only with EX_BURST)
+    for (let i = 0; i < (EX_BURST ? n(14) : 0); i++) {
       const a = Math.random() * Math.PI * 2, r = rnd(90, 150);
       P.emit({ tex: FX.tex.spark, x: btn.x + Math.cos(a) * r, y: btn.y + Math.sin(a) * r, vx: -Math.cos(a) * r * 7, vy: -Math.sin(a) * r * 7,
         life: 0.13, s0: 0.15, s1: 0.4, a0: 0.3, a1: 1, tint: GOLD });
     }
-    const charge = own(spr(top, FX.tex.glow, btn.x, btn.y, GOLD, 0.3, 0.3, 0.5));
+    const charge = own(spr(top, FX.tex.glow, btn.x, btn.y, GOLD, 0.3, 0.3, 0.5)); charge.visible = EX_BURST;
     tl.to(charge.scale, { x: 0.75, y: 0.75, duration: 0.12, ease: "power2.in" }, 0);
     tl.to(charge, { alpha: 1, duration: 0.12 }, 0);
-    tl.add(() => {
+    if (EX_BURST) tl.add(() => {
       pulse(top, FX.tex.ring, btn.x, btn.y, GOLD, 0.3, 1.25, 1, 0.4);
       pulse(top, FX.tex.glow, btn.x, btn.y, PALE, 0.6, 1.4, 0.9, 0.35);
       star(top, btn.x, btn.y, 0.9, PALE, 0.4);
@@ -265,7 +271,7 @@ GX.plugin(function (ctx) {
       cm.head.alpha = cm.core.alpha = 0;
       comets.push(cm);
       const t0 = 0.14 + i * 0.05, dur = 0.34 + i * 0.03;
-      tl.set([cm.head, cm.core], { alpha: 1 }, t0);
+      tl.set([cm.head, cm.core], { alpha: EX_BURST ? 1 : 0 }, t0);   // white: lit by the tick once clear of the switch
       tl.to(cm, { p: 1, duration: dur, ease: "power2.in", onUpdate: () => {
         const q = FX.bezier(btn, c1, to, cm.p); cm.x = q.x; cm.y = q.y;
       } }, t0);
@@ -278,13 +284,16 @@ GX.plugin(function (ctx) {
         if (cm.p > 0 && !cm.done) { cm.hist.push([cm.x, cm.y]); if (cm.hist.length > 12) cm.hist.shift(); }
         else if (cm.done && cm.hist.length) cm.hist.shift();
         cm.head.position.set(cm.x, cm.y); cm.core.position.set(cm.x, cm.y); cm.core.rotation += dt * 8;
+        // white 2026-11-16 (no glow behind EX): the comets light up only as they leave the switch (all 7 heads sat on it)
+        const fa = EX_BURST ? 1 : Math.min(1, Math.max(0, (Math.hypot(cm.x - btn.x, cm.y - btn.y) - 60) / 140));
+        if (!EX_BURST && cm.p > 0 && !cm.done) cm.head.alpha = cm.core.alpha = fa;
         const h = cm.hist;
         for (let j = 1; j < h.length; j++) {
           const u = j / h.length;
-          g.lineStyle(24 * u, WARM, 0.25 * u).moveTo(h[j - 1][0], h[j - 1][1]).lineTo(h[j][0], h[j][1]);
-          g.lineStyle(7 * u, PALE, 0.95 * u).moveTo(h[j - 1][0], h[j - 1][1]).lineTo(h[j][0], h[j][1]);
+          g.lineStyle(24 * u, WARM, 0.25 * u * fa).moveTo(h[j - 1][0], h[j - 1][1]).lineTo(h[j][0], h[j][1]);
+          g.lineStyle(7 * u, PALE, 0.95 * u * fa).moveTo(h[j - 1][0], h[j - 1][1]).lineTo(h[j][0], h[j][1]);
         }
-        if (cm.p > 0 && !cm.done && Math.random() < 0.6 * M + 0.2) P.emit({ tex: FX.tex.spark, x: cm.x, y: cm.y, vx: rnd(-50, 50), vy: rnd(-50, 50),
+        if (cm.p > 0 && !cm.done && fa > 0.5 && Math.random() < 0.6 * M + 0.2) P.emit({ tex: FX.tex.spark, x: cm.x, y: cm.y, vx: rnd(-50, 50), vy: rnd(-50, 50),
           life: 0.3, s0: 0.25, s1: 0, a0: 1, a1: 0, tint: Math.random() < 0.3 ? FIRE : GOLD });
       });
     };
@@ -293,13 +302,17 @@ GX.plugin(function (ctx) {
     const tray = ctx.TRAY, colT = 0.55;
     tl.add(() => {
       const q = bp(COL_X, ctx.COL_CY);
-      const band = spr(boardTop, FX.tex.glow, COL_X, (tray[1] + tray[3]) / 2, GOLD, 1.25, 3.6, 0);
-      own(band);
-      gsap.to(band, { alpha: 0.85, duration: 0.07, yoyo: true, repeat: 1, repeatDelay: 0.05, ease: "power1.out" });
+      // white 2026-11-16 (user: "keep the board color consistent, no need to burn it"): no glow band over the tray, no
+      // warm glow pulse on the centre chip and no double frame flash; the ring, the comets and the coin rings/stars stay
+      if (BOARD_GLOW) {
+        const band = spr(boardTop, FX.tex.glow, COL_X, (tray[1] + tray[3]) / 2, GOLD, 1.25, 3.6, 0);
+        own(band);
+        gsap.to(band, { alpha: 0.85, duration: 0.07, yoyo: true, repeat: 1, repeatDelay: 0.05, ease: "power1.out" });
+        pulse(top, FX.tex.glow, q.x, q.y, WARM, 0.7, 1.6, 0.9, 0.45);
+      }
       pulse(top, FX.tex.ring, q.x, q.y, PALE, 0.4, 1.7, 1, 0.5);
-      pulse(top, FX.tex.glow, q.x, q.y, WARM, 0.7, 1.6, 0.9, 0.45);
     }, colT);
-    const frameTex = T(ctx.GPASS ? "Board/frame_stone" : "Board/frame");
+    const frameTex = BOARD_GLOW && T(ctx.GPASS ? "Board/frame_stone" : "Board/frame");
     if (frameTex) {
       const fl = own(new PIXI.Sprite(frameTex)); fl.position.set(0, 585); fl.blendMode = ADD; fl.tint = 0xffc860; fl.alpha = 0; boardTop.addChild(fl);
       [colT, colT + 0.25].forEach((t, i) => {
@@ -320,10 +333,10 @@ GX.plugin(function (ctx) {
     exClear();
     GXI.tex = gsap.globalTimeline.time();
     const btn = map(layers.uiL, d.x, d.y), objs = [];
-    const r = spr(top, FX.tex.ring, btn.x, btn.y, GOLD, 1.0, 1.0, 0.55); objs.push(r);
+    const r = spr(top, FX.tex.ring, btn.x, btn.y, GOLD, 1.0, 1.0, 0.55); objs.push(r); r.visible = EX_BURST;
     const tray = ctx.TRAY;
     const dim = new PIXI.Graphics().beginFill(0x12040a, 1).drawRoundedRect(tray[0], tray[1], tray[2] - tray[0], tray[3] - tray[1], 30).endFill();
-    dim.alpha = 0; boardTop.addChild(dim); objs.push(dim);
+    dim.alpha = 0; boardTop.addChild(dim); objs.push(dim); dim.visible = BOARD_GLOW;   // white: the tray is not darkened
     const tl = gsap.timeline({ onComplete: () => exClear() });
     tl.to(r.scale, { x: 0.2, y: 0.2, duration: 0.3, ease: "power2.in" }, 0);
     tl.to(r, { alpha: 0, duration: 0.3, ease: "power2.in" }, 0);
@@ -331,7 +344,7 @@ GX.plugin(function (ctx) {
     tl.to(dim, { alpha: 0, duration: 0.3, ease: "power1.out" }, 0.17);
     exGroup = { tl, objs, tick: null };
   }
-  GX.on("ex", (d) => { if (d && d.on) exOn(d); else exOff(d || { x: 848, y: 1540 }); });
+  GX.on("ex", (d) => { if (d && d.calm) { exClear(); return; } if (d && d.on) exOn(d); else exOff(d || { x: 848, y: 1540 }); });
 
   // =============================================================== IDLE LIFE
   let idleCur = null, idleCall = null, idleOn = true;
@@ -349,7 +362,7 @@ GX.plugin(function (ctx) {
     },
     coin() {
       const k = Math.floor(Math.random() * 7), x = COL_X - 22 + rnd(-6, 6), y = coinY(k) - 24;
-      const gl = spr(boardTop, FX.tex.glow, COL_X, coinY(k), GOLD, 0.45, 0.45, 0);
+      const gl = spr(boardTop, FX.tex.glow, COL_X, coinY(k), GOLD, 0.45, 0.45, 0); gl.visible = BOARD_GLOW;   // white: star only
       const st = star(boardTop, x, y, MOBILE ? 0.62 : 0.78, PALE, 0.75);
       gsap.to(gl, { alpha: 0.6, duration: 0.3, yoyo: true, repeat: 1, ease: "sine.inOut", onComplete: () => { kill(gl); idleDone(); } });
       return { stop: () => { kill(gl); kill(st); } };
@@ -364,7 +377,7 @@ GX.plugin(function (ctx) {
       if (!c.length) return null;
       const v = c[Math.floor(Math.random() * c.length)];
       const p = layers.board.toLocal(v.c.getGlobalPosition());
-      const gl = spr(boardTop, FX.tex.glow, p.x, p.y, GOLD, 1.0, 1.0, 0);
+      const gl = spr(boardTop, FX.tex.glow, p.x, p.y, GOLD, 1.0, 1.0, 0); gl.visible = BOARD_GLOW;   // white: stars only
       const st = star(boardTop, p.x + rnd(-70, -40), p.y + rnd(-75, -45), 0.55, PALE, 0.75);
       const st2 = gsap.delayedCall(0.22, safe(() => { if (idleCur) star(boardTop, p.x + rnd(40, 70), p.y + rnd(30, 60), 0.3, PALE, 0.5); }));
       gsap.to(gl, { alpha: 0.28, duration: 0.35, yoyo: true, repeat: 1, ease: "sine.inOut", onComplete: () => { kill(gl); idleDone(); } });
@@ -374,9 +387,10 @@ GX.plugin(function (ctx) {
       let on = true;
       const f = () => {
         if (!on) return;
-        if (Math.random() < 0.55) dustP.emit({ tex: Math.random() < 0.5 ? FX.tex.flake : FX.tex.spark, x: rnd(40, 1040), y: rnd(530, 690),
+        // white 2026-11-16 (user: "remove the flakes on the top board, leave the stars only"): stars only (additive glints), as sparse as before
+        if (Math.random() < 0.35) dustP.emit({ tex: FX.tex.spark, x: rnd(40, 1040), y: rnd(530, 690),
           vx: rnd(14, 40), vy: rnd(-22, 6), ay: 4, life: rnd(1.8, 2.8), s0: rnd(0.35, 0.7), s1: 0.1, a0: 1, a1: 0, fadeIn: 0.5,
-          twinkle: 7, vr: rnd(-1, 1), blend: Math.random() < 0.5 ? ADD : PIXI.BLEND_MODES.NORMAL, tint: Math.random() < 0.5 ? 0xffffff : GOLD });
+          twinkle: 7, vr: rnd(-1, 1), blend: ADD, tint: Math.random() < 0.5 ? 0xffffff : GOLD });
       };
       ticks.add(f);
       const d = gsap.delayedCall(2.4, () => { on = false; ticks.delete(f); });

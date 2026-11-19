@@ -15,14 +15,19 @@
   // stage filters act on this container only (the scene and board); UI, effect overlay and popups stay crisp
   VFX.setWorld = function (w) { world = w; w.filterArea = app.screen; app.stage.filters = null; };
   // design point (1080x1920 space) -> screen px (the stage filter frame is the whole screen)
-  function toScreen(x, y) { const p = root.toGlobal(new PIXI.Point(x, y)); return [p.x, p.y]; }
+  // white 2026-11-17: the board, bull and effect overlay sit VFX.liftY higher (game.js LIFT); their design points move with them
+  function toScreen(x, y) { const p = root.toGlobal(new PIXI.Point(x, y + (VFX.liftY || 0))); return [p.x, p.y]; }
 
   VFX.init = function (o) {
     app = o.app; root = o.root; lite = !!o.lite;
     scaleFn = () => root.scale.x;
     app.stage.filterArea = app.screen;
     const F = PIXI.filters;
-    if (!lite && F.AdvancedBloomFilter) {
+    // white 2026-11-16 (user: "keep the board color consistent, no need to burn it"): no world bloom. It only ever lit the
+    // world behind the UI, and the brightest thing there is the pale parchment board, which it washed out (feature, big-win
+    // popup). VFX.bloom() stays callable and does nothing; ?bloom brings it back.
+    const wantBloom = /[?&]bloom(=|&|$)/.test(location.search);
+    if (!lite && wantBloom && F.AdvancedBloomFilter) {
       bloom = new F.AdvancedBloomFilter({ threshold: 0.74, bloomScale: 0, brightness: 1, blur: 6, quality: 5 });
     }
   };
@@ -36,7 +41,7 @@
     const s = scaleFn();
     const f = new PIXI.filters.ShockwaveFilter(toScreen(x, y), {
       amplitude: (o.amp || 26) * s, wavelength: (o.wave || 150) * s, speed: (o.speed || 1300) * s,
-      brightness: o.bright || 1.12, radius: (o.radius || 900) * s }, 0);
+      brightness: o.bright || 1, radius: (o.radius || 900) * s }, 0);   // white 2026-11-16: 1.12 -> 1, the ring no longer brightens the board
     active.add(f); sync();
     const st = { t: 0, a: f.amplitude };
     gsap.to(st, { t: o.dur || 0.75, duration: o.dur || 0.75, ease: "none", onUpdate: () => {
@@ -147,6 +152,7 @@
     #endif
     varying vec2 vUv;
     uniform float uTime; uniform float uPower; uniform float uSeed; uniform float uAlpha; uniform vec3 uTint;
+    uniform vec3 uCrim; uniform vec3 uRed; uniform vec3 uOrg; uniform vec3 uGold; uniform vec3 uWht; uniform vec3 uRingA; uniform vec3 uRingB;   // balls (c): palette (the hand: ORB_FIRE)
     float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
     float noise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
       return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y); }
@@ -166,14 +172,14 @@
       float comet = exp(-ph * 1.4);
       float line = exp(-d * d / 0.0028) * (0.55 + 0.3 * sin(ang * 7.0 + t * 1.3)) + exp(-d * d / 0.012) * comet * 1.6;
       line *= side * (back > 0.5 ? (1.0 - sphereA) * 0.6 : 1.0);
-      vec3 c = mix(vec3(1.0, 0.62, 0.18), vec3(1.0, 0.96, 0.8), clamp(comet * 1.5, 0.0, 1.0));
+      vec3 c = mix(uRingA, uRingB, clamp(comet * 1.5, 0.0, 1.0));
       return vec4(c * line, clamp(line * 0.7, 0.0, 1.0));
     }
     void main(){
       vec2 p = (vUv - 0.5) * 3.4;
       float r = length(p);
       float t = uTime + uSeed;
-      vec3 crim = vec3(0.26, 0.01, 0.02), red = vec3(0.80, 0.10, 0.02), org = vec3(1.0, 0.44, 0.06), gold = vec3(1.0, 0.80, 0.34), wht = vec3(1.0, 0.97, 0.88);
+      vec3 crim = uCrim, red = uRed, org = uOrg, gold = uGold, wht = uWht;
       float up = 0.5 - 0.5 * p.y / max(r, 1e-3);
 
       // halo + flame corona licking upward
@@ -325,6 +331,92 @@
     VFX.frames.push(f); return f;
   };
   VFX.flames = [];
+  // balls (user 2026-11-19 c): "the halo spheres exactly the same as the one in the hand, that quality". The hand orb's parts
+  // (plasma sphere mesh with ORB_FRAG incl. specular, corona and rings; bloom sprite; 9 rising embers) come from orbParts
+  // and are animated by orbTick, for the hand (magicFlame) and for every halo ball (VFX.ballOrb) alike: they cannot drift apart.
+  // o.ms scales the embers to a ball's size (the hand: 1); o.uA = the mesh alpha (the hand: 1 while visible, as before).
+  // palette = [crim (edge), red (deep), org (body), gold (cracks / hot), wht (core), ring, ring comet]; ORB_FIRE = the hand
+  // orb's own constants (unchanged look). balls (user 2026-11-19 d): "those spheres in multiplier colours, not yellow": each
+  // halo ball takes its multiplier chip's hue (sampled from assets/Multipliers/chip_bg_*: dark / mid / light), lava cracks,
+  // corona and highlight stay bright in that hue; black 500x / 1000x = a smoky sphere with silver-white cracks
+  const ORB_FIRE = [[0.26, 0.01, 0.02], [0.80, 0.10, 0.02], [1.0, 0.44, 0.06], [1.0, 0.80, 0.34], [1.0, 0.97, 0.88], [1.0, 0.62, 0.18], [1.0, 0.96, 0.8]];
+  const BALL_PAL = {
+    1: [[0.20, 0.07, 0.0], [0.55, 0.25, 0.06], [0.85, 0.50, 0.20], [1.0, 0.82, 0.50], [1.0, 0.95, 0.85], [0.95, 0.66, 0.35], [1.0, 0.94, 0.8]],     // bronze
+    2: [[0.12, 0.13, 0.16], [0.38, 0.40, 0.45], [0.64, 0.67, 0.72], [0.92, 0.95, 1.0], [1.0, 1.0, 1.0], [0.82, 0.85, 0.9], [1.0, 1.0, 1.0]],      // silver
+    3: [[0.0, 0.12, 0.03], [0.02, 0.40, 0.12], [0.10, 0.70, 0.30], [0.60, 1.0, 0.65], [0.92, 1.0, 0.94], [0.35, 0.9, 0.5], [0.88, 1.0, 0.9]],     // green
+    5: [[0.0, 0.08, 0.25], [0.03, 0.30, 0.65], [0.12, 0.55, 0.95], [0.55, 0.88, 1.0], [0.90, 0.97, 1.0], [0.35, 0.72, 1.0], [0.88, 0.96, 1.0]],    // blue
+    10: [[0.0, 0.01, 0.15], [0.03, 0.10, 0.50], [0.12, 0.25, 0.85], [0.50, 0.65, 1.0], [0.88, 0.92, 1.0], [0.32, 0.45, 1.0], [0.85, 0.9, 1.0]],   // royal blue
+    15: [[0.06, 0.0, 0.20], [0.25, 0.04, 0.55], [0.45, 0.15, 0.85], [0.78, 0.55, 1.0], [0.96, 0.90, 1.0], [0.62, 0.36, 1.0], [0.94, 0.88, 1.0]],  // violet
+    20: [[0.20, 0.05, 0.0], [0.60, 0.20, 0.0], [0.95, 0.42, 0.05], [1.0, 0.72, 0.40], [1.0, 0.95, 0.85], [1.0, 0.58, 0.22], [1.0, 0.94, 0.8]],    // orange
+    25: [[0.22, 0.0, 0.10], [0.62, 0.05, 0.33], [0.90, 0.20, 0.60], [1.0, 0.60, 0.85], [1.0, 0.92, 0.97], [1.0, 0.42, 0.75], [1.0, 0.9, 0.96]],    // magenta
+    50: [[0.22, 0.08, 0.0], [0.60, 0.32, 0.03], [0.90, 0.62, 0.10], [1.0, 0.86, 0.40], [1.0, 0.97, 0.85], [1.0, 0.76, 0.28], [1.0, 0.96, 0.8]],    // gold
+    100: [[0.18, 0.0, 0.0], [0.55, 0.02, 0.02], [0.85, 0.08, 0.06], [1.0, 0.45, 0.40], [1.0, 0.88, 0.85], [1.0, 0.3, 0.26], [1.0, 0.86, 0.82]],    // red
+    200: [[0.22, 0.03, 0.0], [0.60, 0.16, 0.02], [0.85, 0.32, 0.06], [1.0, 0.65, 0.38], [1.0, 0.93, 0.85], [1.0, 0.5, 0.25], [1.0, 0.92, 0.8]],    // copper
+    500: [[0.01, 0.01, 0.012], [0.04, 0.04, 0.05], [0.10, 0.10, 0.12], [0.85, 0.88, 0.95], [0.35, 0.36, 0.40], [0.7, 0.72, 0.8], [1.0, 1.0, 1.0]], // black, silver cracks
+  };
+  BALL_PAL[1000] = BALL_PAL[500];
+  VFX.ballPal = (v) => BALL_PAL[v] || ORB_FIRE;
+  function orbParts(R, oy, pal) {
+    const T = window.FX.tex, Q = R * 1.7, P = pal || ORB_FIRE;
+    const og = new PIXI.Geometry()
+      .addAttribute("aVertexPosition", [-Q, -Q, Q, -Q, Q, Q, -Q, Q], 2)
+      .addAttribute("aUvs", [0, 0, 1, 0, 1, 1, 0, 1], 2)
+      .addIndex([0, 1, 2, 0, 2, 3]);
+    const osh = PIXI.Shader.from(VERT, lite ? ORB_FRAG.replace("k < 4", "k < 3") : ORB_FRAG, {   // phones: 3 noise octaves
+      uTime: 0, uPower: 1, uSeed: Math.random() * 40, uAlpha: 1, uTint: [1, 1, 1],
+      uCrim: P[0].slice(), uRed: P[1].slice(), uOrg: P[2].slice(), uGold: P[3].slice(), uWht: P[4].slice(), uRingA: P[5].slice(), uRingB: P[6].slice() });
+    const orbM = new PIXI.Mesh(og, osh); orbM.position.set(0, oy);
+    const bloom = new PIXI.Sprite(T.glow); bloom.anchor.set(0.5); bloom.position.set(0, oy); bloom.blendMode = PIXI.BLEND_MODES.ADD;
+    bloom.tint = 0xff6418; bloom.baseS = (R * 3.2) / 128;
+    const motes = [];
+    for (let k = 0; k < 9; k++) { const sp = new PIXI.Sprite(k % 4 ? T.dot : T.star8); sp.anchor.set(0.5); sp.blendMode = PIXI.BLEND_MODES.ADD;
+      sp.tint = k % 2 ? 0xffe9a0 : 0xffa030; sp.k = k; sp.life = 1.5 + (k % 3) * 0.45; sp.x0 = ((k * 0.618) % 1 - 0.5) * R * 1.3; motes.push(sp); }   // rising embers
+    if (pal) {                                                        // balls (d): bloom and embers in the ball's hue (the hand keeps its own)
+      const hx = (c, k) => (Math.round(Math.min(1, c[0] * k) * 255) << 16) | (Math.round(Math.min(1, c[1] * k) * 255) << 8) | Math.round(Math.min(1, c[2] * k) * 255);
+      bloom.tint = hx(P[5], 0.85); motes.forEach((sp) => { sp.tint = sp.k % 2 ? hx(P[6], 1) : hx(P[3], 1); });
+    }
+    return { orbM, osh, bloom, motes, oy, R };
+  }
+  function orbTick(o, time, pw, f1, lx, uA) {
+    const ou = o.osh.uniforms, ms = o.ms || 1;
+    ou.uTime = time % 600; ou.uPower = pw; ou.uAlpha = uA;
+    o.orbM.x = lx; o.orbM.scale.set((0.92 + 0.08 * Math.min(1.5, pw)) * (1 + 0.02 * f1));
+    o.bloom.x = lx; o.bloom.scale.set(o.bloom.baseS * (0.9 + 0.1 * pw) * (1 + 0.04 * f1)); o.bloom.alpha = Math.min(0.4, 0.16 + 0.1 * pw);
+    o.motes.forEach((sp) => {                                       // embers drift up off the orb and fade
+      const ph = ((time + sp.k * 0.53 * sp.life) / sp.life) % 1;
+      sp.position.set(lx + sp.x0 * (1 - 0.4 * ph) + Math.sin(ph * 5 + sp.k * 1.7) * o.R * 0.18, o.oy - o.R * (0.55 + 2.1 * ph));
+      sp.alpha = Math.sin(Math.PI * Math.min(1, ph * 1.4)) * 0.9;
+      sp.scale.set((0.085 - 0.05 * ph) * Math.min(1.4, 0.75 + 0.25 * pw) * ms);
+    });
+  }
+  // a halo ball: the hand orb's parts round (0,0), sphere radius R (local px). b.dimRef (a container whose alpha the wheel
+  // tweens 0..0.55) darkens it in its own hue through the shader's own uTint (as the hand's event tints do) and dims
+  // b.dimLabel; the mesh alpha follows the ball's world alpha (fades with the wheel)
+  VFX.balls = [];
+  VFX.ballOrb = function (R, v) {
+    const b = new PIXI.Container(), o = orbParts(R, 0, BALL_PAL[v] || ORB_FIRE);
+    o.ms = R / (200 * 0.255);                                        // embers sized like the hand's (magicFlame w 200)
+    b.addChild(o.bloom, o.orbM, ...o.motes);
+    b.orb = o; b.sd = Math.random() * 40;
+    VFX.balls.push(b);
+    return b;
+  };
+  const BALL_DIM = [0.42, 0.42, 0.42], LABEL_DIM = [0x78, 0x6c, 0x64];   // dim = darker in its own hue (d)
+  function ballsTick(time) {
+    for (let i = VFX.balls.length - 1; i >= 0; i--) {
+      const b = VFX.balls[i];
+      if (b.destroyed || b.orb.orbM.destroyed) { VFX.balls.splice(i, 1); continue; }
+      if (!b.worldVisible) { b.orb.osh.uniforms.uAlpha = 0; continue; }
+      const o = b.orb, dk = b.dimRef ? Math.min(1, Math.max(0, b.dimRef.alpha / 0.55)) : 0;
+      orbTick(o, time, 1, nz(time * 2.3, b.sd), 0, b.worldAlpha);
+      o.osh.uniforms.uTint = [1 - (1 - BALL_DIM[0]) * dk, 1 - (1 - BALL_DIM[1]) * dk, 1 - (1 - BALL_DIM[2]) * dk];
+      if (dk > 0) { o.bloom.alpha *= 1 - 0.7 * dk; o.motes.forEach((sp) => { sp.alpha *= 1 - 0.7 * dk; }); }
+      if (b.dimLabel && !b.dimLabel.destroyed) {
+        const ch = (k) => Math.round(255 - (255 - LABEL_DIM[k]) * dk);
+        b.dimLabel.tint = (ch(0) << 16) | (ch(1) << 8) | ch(2);
+      }
+    }
+  }
   // a flame quad w x h whose palm (base) sits at (0,0) of the returned container
   VFX.ORB = true;                    // white version: the hand holds a magic orb instead of a flame
   VFX.magicFlame = function (parent, w, h, rim) {
@@ -345,19 +437,8 @@
     // WHITE VERSION (user 2026-11-11): "the hand should have a magical spherical glow form with particles, not fire":
     // a magic orb above the palm - pulsing white-cyan core, blue-violet shell, two tilted energy rings, orbiting motes
     if (VFX.ORB) {
-      const T = window.FX.tex, oy = -h * 0.285, R = w * 0.255, Q = R * 1.7;
-      const og = new PIXI.Geometry()
-        .addAttribute("aVertexPosition", [-Q, -Q, Q, -Q, Q, Q, -Q, Q], 2)
-        .addAttribute("aUvs", [0, 0, 1, 0, 1, 1, 0, 1], 2)
-        .addIndex([0, 1, 2, 0, 2, 3]);
-      const osh = PIXI.Shader.from(VERT, lite ? ORB_FRAG.replace("k < 4", "k < 3") : ORB_FRAG, {   // phones: 3 noise octaves
-        uTime: 0, uPower: 1, uSeed: Math.random() * 40, uAlpha: 1, uTint: [1, 1, 1] });
-      const orbM = new PIXI.Mesh(og, osh); orbM.position.set(0, oy);
-      const bloom = new PIXI.Sprite(T.glow); bloom.anchor.set(0.5); bloom.position.set(0, oy); bloom.blendMode = PIXI.BLEND_MODES.ADD;
-      bloom.tint = 0xff6418; bloom.baseS = (R * 3.2) / 128;
-      const motes = [];
-      for (let k = 0; k < 9; k++) { const sp = new PIXI.Sprite(k % 4 ? T.dot : T.star8); sp.anchor.set(0.5); sp.blendMode = PIXI.BLEND_MODES.ADD;
-        sp.tint = k % 2 ? 0xffe9a0 : 0xffa030; sp.k = k; sp.life = 1.5 + (k % 3) * 0.45; sp.x0 = ((k * 0.618) % 1 - 0.5) * R * 1.3; motes.push(sp); }   // rising embers
+      const oy = -h * 0.285, R = w * 0.255;
+      const { orbM, osh, bloom, motes } = orbParts(R, oy);          // balls (user 2026-11-19 c): one builder for the hand orb and the halo balls
       c.addChild(bloom, orbM, ...motes);
       glow.visible = false; aura.tint = 0xff4010; aura.position.set(0, oy); m.visible = false; ring.visible = false;
       c.orb = { orbM, osh, bloom, motes, oy, R };
@@ -397,6 +478,7 @@
   let lastT = 0;
   VFX.update = function (time) {
     const dt = Math.min(0.05, Math.max(0.001, time - lastT)); lastT = time;
+    if (VFX.balls.length) ballsTick(time);                          // balls (user 2026-11-19 c): the halo balls, same as the hand orb
     for (let i = VFX.frames.length - 1; i >= 0; i--) {             // white: the molten centre frame
       const f = VFX.frames[i], u = f.sh.uniforms;
       if (f.mesh.destroyed) { VFX.frames.splice(i, 1); continue; }
@@ -435,17 +517,8 @@
         c.glow.rotation = c.lean * 0.6; c.aura.rotation = c.lean * 0.4;
       }
       if (c.orb) {                                   // white: the plasma orb churns, breathes, sparks orbit it in 3D
-        const o = c.orb, pw = Math.min(2.2, c.power), f1 = nz(time * 2.3, sd);
-        const lx = c.lean * c.fh * 0.25, ou = o.osh.uniforms;
-        ou.uTime = time % 600; ou.uPower = pw; ou.uAlpha = c.worldVisible ? 1 : 0;
-        o.orbM.x = lx; o.orbM.scale.set((0.92 + 0.08 * Math.min(1.5, pw)) * (1 + 0.02 * f1));
-        o.bloom.x = lx; o.bloom.scale.set(o.bloom.baseS * (0.9 + 0.1 * pw) * (1 + 0.04 * f1)); o.bloom.alpha = Math.min(0.4, 0.16 + 0.1 * pw);
-        o.motes.forEach((sp) => {                                       // embers drift up off the orb and fade
-          const ph = ((time + sp.k * 0.53 * sp.life) / sp.life) % 1;
-          sp.position.set(lx + sp.x0 * (1 - 0.4 * ph) + Math.sin(ph * 5 + sp.k * 1.7) * o.R * 0.18, o.oy - o.R * (0.55 + 2.1 * ph));
-          sp.alpha = Math.sin(Math.PI * Math.min(1, ph * 1.4)) * 0.9;
-          sp.scale.set((0.085 - 0.05 * ph) * Math.min(1.4, 0.75 + 0.25 * pw));
-        });
+        const pw = Math.min(2.2, c.power), f1 = nz(time * 2.3, sd);
+        orbTick(c.orb, time, pw, f1, c.lean * c.fh * 0.25, c.worldVisible ? 1 : 0);   // balls (user 2026-11-19 c): shared with the halo balls
         c.aura.alpha = (0.1 + 0.04 * f1) * Math.min(1.4, pw);
       }
       if (!c.fb && !c.orb) {                         // the painted flame sets its own (lower) glow above

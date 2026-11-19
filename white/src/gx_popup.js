@@ -206,7 +206,7 @@ GX.plugin(function (ctx) {
     // the game's title tween lands after 0.16 s (first) or 0.26 s (tier-up): hit on the landing
     const land = first ? 0.14 : 0.23;
     // anticipation: speed lines rush in from the screen edges towards the title
-    const nIn = Math.round((22 + 8 * i) * MK);
+    const nIn = POP_BURST ? Math.round((22 + 8 * i) * MK) : 0;   // b19: the inrushing speed lines go with the burst
     for (let j = 0; j < nIn; j++) {
       const a = rnd(0, 6.28), R = rnd(760, 1000), r = 170, v = (R - r) / land;
       frontP.emit({ tex: lineTex, x: CX + Math.cos(a) * R, y: TITLE_Y + Math.sin(a) * R * 0.9, vx: -Math.cos(a) * v, vy: -Math.sin(a) * v * 0.9,
@@ -215,8 +215,22 @@ GX.plugin(function (ctx) {
     track(gsap.delayedCall(land, () => impact(tName, i, c, k)));
   }
 
+  // b19 (user 2026-11-19: "During super win, we have 2 explosion that should not be there"): the title impact's
+  // screen flash, glow core, shock rings, radial lines and sparks are off (?popburst = back). Coins, shake, mood stay.
+  const POP_BURST = /[?&]popburst\b/.test(location.search);
   function impact(tName, i, c, k) {
     col = c; tier = tName; applyTint();
+    if (!POP_BURST) {
+      const nCoin = Math.round((8 + 5 * i) * MK);
+      for (let j = 0; j < nCoin; j++) {
+        const a = rnd(-Math.PI, 0), v = rnd(700, 1400);
+        fallP.emit({ frames: FX.tex.coinFrames, fps: rnd(18, 32), x: CX + rnd(-80, 80), y: 748 + rnd(-30, 30), vx: Math.cos(a) * v, vy: Math.sin(a) * v - 300, ay: 2400,
+          s0: rnd(0.45, 0.75), s1: 0.55, a0: 1, a1: 1, life: 1.6, vr: rnd(-3, 3), blend: NORMAL });
+      }
+      if (ctx.shake) ctx.shake(4 + 3 * i, 0.22);
+      track(gsap.to(m, Object.assign({ duration: 0.5, ease: "power2.out" }, moodFor(i))));
+      return;
+    }
     // screen flash in the tier colour + white core
     const fl = temp(new PIXI.Graphics().beginFill(0xffffff).drawRect(-200, -200, W + 400, H + 400).endFill());
     fl.blendMode = ADD; fl.tint = c.hi; fl.alpha = Math.min(0.4, 0.18 + 0.05 * i); front.addChildAt(fl, 0);

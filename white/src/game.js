@@ -111,6 +111,13 @@
   const loadTxt = new PIXI.Text("LOADING", FX.gold(36));
   loadTxt.anchor.set(0.5); loadTxt.position.set(540, 1200);
   loadC.addChild(loadTitle, load1000, barBg, bar, loadTxt);
+  // white 2026-11-17 (user: "put this as a loading screen"): the user's FORTUNE BULL 1000 logo (tools/batch17_art.py ->
+  // assets/UI/logo.webp, its black keyed out) replaces the two text lines; they stay as the fallback if it fails to load
+  try {
+    const lt = await PIXI.Assets.load("assets/UI/logo.webp");
+    const logo = new PIXI.Sprite(lt); logo.anchor.set(0.5); logo.position.set(540, 860); logo.scale.set(980 / lt.width);
+    loadC.addChildAt(logo, 0); loadTitle.visible = false; load1000.visible = false;
+  } catch (e) { console.warn("logo", e); }
 
   const layout = await (await fetch("assets/layout.json")).json();
   const fxPts = await (await fetch("assets/fx_points.json")).json();
@@ -185,7 +192,7 @@
   if (V2ART) { add("Multipliers/chip_bg_nudge5"); add("UI/buy_button"); }
   ["title_big", "title_mega", "title_super", "title_epic", "title_max", "wp_medallion_gold", "wp_medallion_tint", "wp_banner_gold", "wp_banner_tint", "wp_tablet_gold", "wp_tablet_tint"].forEach((n) => files.push(`assets/Popup/${n}.webp`));
   ["chip_coat", "chip_glints", "chip_rim", "chip_shadow"].forEach((n) => add("Multipliers/" + n));
-  ["Multipliers/centre_frame", "UI/nudge_box", "UI/total_box", "UI/counter_screen", "UI/total_plate", "UI/cf_arrow", "vfx/winline", "vfx/winline_rest", "UI/exp_panel", "UI/exp_card_red", "UI/exp_card_amber", "UI/exp_card_purple", "UI/exp_confirm", "UI/buy_label", "UI/ex_plate", "UI/charge_badge", "UI/charge_window", "UI/charge_chev", "UI/charge_digit_0", "UI/charge_digit_1", "UI/charge_digit_2", "UI/charge_digit_3", "UI/charge_digit_4", "UI/charge_digit_5", "UI/charge_digit_6", "UI/charge_digit_7", "UI/charge_digit_8", "UI/charge_digit_9", "UI/charge_digit_slash", "UI/total_x", "UI/charge_rect", "UI/charge_rect_window", "UI/ex_switch_off", "UI/ex_switch_on"].forEach((p) => files.push(`assets/${p}.webp`));   // every art set uses these
+  ["Multipliers/centre_frame", "UI/nudge_box", "UI/total_box", "UI/counter_screen", "UI/counter_board", "UI/counter_board_red", "UI/counter_board_open", "UI/buy_bg", "UI/total_plate", "UI/cf_arrow", "vfx/winline", "vfx/winline_rest", "UI/exp_panel", "UI/exp_card_red", "UI/exp_card_amber", "UI/exp_card_purple", "UI/exp_confirm", "UI/buy_label", "UI/ex_plate", "UI/charge_badge", "UI/charge_window", "UI/charge_chev", "UI/charge_digit_0", "UI/charge_digit_1", "UI/charge_digit_2", "UI/charge_digit_3", "UI/charge_digit_4", "UI/charge_digit_5", "UI/charge_digit_6", "UI/charge_digit_7", "UI/charge_digit_8", "UI/charge_digit_9", "UI/charge_digit_slash", "UI/total_x", "UI/charge_rect", "UI/charge_rect_window", "UI/ex_switch_off", "UI/ex_switch_on"].forEach((p) => files.push(`assets/${p}.webp`));   // every art set uses these
   if (GPASS) ["Board/panel_dark", "Board/tile_low", "Board/tile_low_blur", "Board/tray_dark", "Board/plinth_slim", "Board/plinth_fade", "Board/frame_stone"].forEach((p) => files.push(`assets/${p}.webp`));
   if (COINS) { Engine.MULT_VALUES.forEach((v) => files.push(`assets/Multipliers/coin_${v}.webp`)); ["coin_shadow", "coin_rim", "centre_frame_thin"].forEach((n) => files.push(`assets/Multipliers/${n}.webp`)); }
   ["autoplay", "autoplay_shadow", "balance_bar_border", "balance_bar_fill", "bet_window_border", "bet_window_fill",
@@ -291,6 +298,14 @@
   // stage post-FX act on the world (scene + board) only: the UI, effect overlay and popups stay crisp
   const world = new PIXI.Container(); root.addChildAt(world, root.getChildIndex(bgL));
   [bgL, ambBack, bullL, ambFront, boardL].forEach((l) => world.addChild(l));
+  // white 2026-11-17 (user: "move the board, character and spin to win bit upper, we have some space"): the bull, the board
+  // (with its SPIN TO WIN bar) and the effect overlay sit LIFT higher; the background and the buttons stay. Wrappers, so
+  // the board's own drop / recoil tweens (boardL.y back to 0) and the bull's intro keep working; post-FX follow (VFX.liftY)
+  const LIFT = -50;
+  const liftL = new PIXI.Container(); liftL.y = LIFT; world.addChildAt(liftL, world.getChildIndex(bullL));
+  [bullL, ambFront, boardL].forEach((l) => liftL.addChild(l));
+  const liftTop = new PIXI.Container(); liftTop.y = LIFT; root.addChildAt(liftTop, root.getChildIndex(fxTop)); liftTop.addChild(fxTop);
+  VFX.liftY = LIFT;
   VFX.setWorld(world);
   // emission per second, independent of the frame rate
   const nEmit = (rate) => { const x = rate * (MOBILE ? 0.6 : 1) * Math.min(0.05, app.ticker.deltaMS / 1000) * gsap.globalTimeline.timeScale(); return Math.floor(x) + (Math.random() < x % 1 ? 1 : 0); };
@@ -388,6 +403,7 @@
   sunGlow.anchor.set(0.5); sunGlow.position.set(540, 266); sunGlow.scale.set(0.2);
   sunGlow.blendMode = PIXI.BLEND_MODES.ADD; sunGlow.alpha = 0.35;
   ambBack.addChild(sunGlow);
+  if (!params.has("bgfx")) { rays.forEach((r) => (r.renderable = false)); sunGlow.renderable = false; }   // white 2026-11-16: background effects off
   const flames = fxPts.flames.map((f) => {
     const c = new PIXI.Container(); c.position.set(f.x, f.y);
     const glow = new PIXI.Sprite(FX.tex.glow); glow.anchor.set(0.5); glow.scale.set(1.6, 1.8);
@@ -407,14 +423,18 @@
   const dust = new FX.Particles(ambFront);
 
   // board
-  const winBar = new PIXI.Sprite(T("UI/win_bar")); winBar.position.set(L("win_bar").x, L("win_bar").y);
+  // b19 (user 2026-11-19: "distance between spin to win board and main board needs to be 2x less"): the whole win bar
+  // (panel, divider, both rows, message, plaque, everything keyed to WB_Y1 / WB_Y2) sits WB_DY higher; gap 17 -> 9 px (0 = old)
+  const WB_DY = -8;
+  const winBar = new PIXI.Sprite(T("UI/win_bar")); winBar.position.set(L("win_bar").x, L("win_bar").y + WB_DY);
   if (GPASS) { winBar.texture = T("Board/plinth_fade"); winBar.position.set((W - winBar.texture.width) / 2, 1295); }   // slim win ledge whose ends fade into the stairs     // bronze win ledge under the board (gap #6)
   const panel = new PIXI.Sprite(T(GPASS ? "Board/panel_dark" : "Board/panel_reels")); panel.position.set(L("panel_reels").x, L("panel_reels").y);
   const tray = new PIXI.Sprite(T(COINS ? "Board/tray_dark" : "Board/mult_tray")); tray.position.set(L("mult_tray").x, L("mult_tray").y);
   const colBack = new PIXI.Container(), cellFxBack = new PIXI.Container(), frameL = new PIXI.Container(),
     reelsL = new PIXI.Container(), colFront = new PIXI.Container(), boardFx = new PIXI.Container(), plaqueL = new PIXI.Container();
+  const colFrontCB = new PIXI.Container();             // white 2026-11-17: the centre CHARGE badges (ChipView.fc), over the chip numbers
   const board = new PIXI.Container();
-  board.addChild(winBar, panel, tray, colBack, cellFxBack, frameL, reelsL, colFront, boardFx, plaqueL);
+  board.addChild(winBar, panel, tray, colBack, cellFxBack, frameL, reelsL, colFront, colFrontCB, boardFx, plaqueL);
   boardL.addChild(board);
   const frame = new PIXI.Sprite(T(GPASS ? "Board/frame_stone" : VFRAME ? "Board/frame_vec" : "Board/frame")); frame.position.set(0, 585);   // stone: no rails between the reels
   frameL.addChild(frame);
@@ -455,7 +475,7 @@
   const cfFx = VFX.moltenFrame(frameL, { x: COL_CX, y: COL_CY, w: 195, h: 117, r: 15, band: 13, ri: 7 });
   cfArrows.forEach((a) => frameL.addChildAt(a, frameL.getChildIndex(cfFx.mesh)));   // white: under the frame, only the point shows
   app.ticker.add(() => {                                  // hotter while the column teases; flashes when the arrows knock
-    cfFx.power = 1 + (colTease.visible ? 1.2 * colTease.heat : 0);
+    cfFx.power = 1;
     if (Math.abs(cfArrows[0].x - cfArrows[0].x0) > 2) cfFx.flash = Math.max(cfFx.flash, 0.8); });
   // frame light sweep, masked by the frame's own alpha
   const frameMask = new PIXI.Sprite(frame.texture); frameMask.position.set(0, 585);
@@ -510,7 +530,7 @@
       parent.addChild(this.c);
     }
     set(id, blur) {
-      this.id = id; this.blur = blur; this.fire.visible = id === "super_wild" && blur;
+      this.id = id; this.blur = blur; this.fire.visible = false;   // white 2026-11-16: no orange fire glow / embers on a spinning SUPER WILD
       this.inner.scale.set(1); this.inner.rotation = 0;
       if (HIGH.has(id)) {
         if (blur) { this.a.texture = T(`Symbols/${id}_tile_blur`); this.b.visible = false; }
@@ -598,6 +618,7 @@
       this.hot = new PIXI.Sprite(hotTex().glow); this.hotRim = new PIXI.Sprite(hotTex().rim);
       [this.hot, this.hotRim].forEach((s) => { s.anchor.set(0.5); s.blendMode = PIXI.BLEND_MODES.ADD; s.visible = false; });
       this.b.addChildAt(this.hot, 1); this.b.addChild(this.hotRim); hotChips.push(this);
+      this.hot.renderable = false;   // white 2026-11-16 ("keep the board color consistent"): the soft fire glow burnt the tray round 25x+ chips; the hot rim on the chip stays
       this.magic = new PIXI.Filter(undefined, MAGIC_FRAG, { uTime: 0, uSeed: Math.random() * 10, uAmp: 1 });
       this.bg.filters = [this.magic]; magicFilters.push(this.magic);
       this.inner = new PIXI.Container();
@@ -605,7 +626,10 @@
       this.inner.addChild(this.label); this.f.addChild(this.inner, this.coat);
       this.gl.visible = false; this.coat.visible = false;      // 2026-11-10: no white gloss/glints on the chips (flash on hits stays)
       this.fb = new PIXI.Container(); this.fb.x = COL_CX;    // white: off-centre CHARGE badge holder, under the centre frame
-      colBack.addChild(this.b, this.fb); colFront.addChild(this.f);
+      // white 2026-11-17: the centre CHARGE badge's holder, over the frame in its own layer (colFrontCB, never cut by the
+      // frame-bar mask the numbers get while the column moves); fcIn copies inner's transform every frame (pulses)
+      this.fc = new PIXI.Container(); this.fc.x = COL_CX; this.fcIn = new PIXI.Container(); this.fc.addChild(this.fcIn);
+      colBack.addChild(this.b, this.fb); colFront.addChild(this.f); colFrontCB.addChild(this.fc);
       this.chargeBuild();
     }
     set(idx) { this.idx = idx; this.v = Engine.STRIP[idx]; this.bg.texture = chipBgTex(this.v);
@@ -648,7 +672,7 @@
       let x = -sps.reduce((a, s) => a + step(s), 0) / 2;
       sps.forEach((s) => { s.x = x + step(s) / 2; x += step(s); this.cbNum.addChild(s); });
     }
-    // white (user 2026-11-13): the count spins like a reel and stops on n (the old count-up is revealOld)
+    // white (user 2026-11-13): the count spins like a reel and stops on n
     reveal(n) {
       if (!this.cb.visible) return Promise.resolve();
       this.cbWin.visible = true; this.cbChev.y = 0; this.cbChev.alpha = 1;
@@ -675,32 +699,19 @@
           .to({}, { duration: 0.3 });
       });
     }
-    revealOld(n) {
-      if (!this.cb.visible) return Promise.resolve();
-      this.cbWin.visible = true; this.cbChev.y = 0; this.cbChev.alpha = 1;
-      this.chargeDigits(1); this.cbNum.y = CB.wh; this.cbNum.scale.set(1);
-      const cnt = { v: 1 }; let shown = 1;
-      return new Promise((res) => {
-        gsap.timeline({ onComplete: res })
-          .to(this.cbChev, { y: -CB.wh, alpha: 0.6, duration: 0.26, ease: "power2.in" })                   // chevrons fly up
-          .fromTo(this.cbGlow, { alpha: 0.9 }, { alpha: 0, duration: 0.5 }, 0)
-          .to(this.cbNum, { y: 0, duration: 0.34, ease: "back.out(2)" }, 0.12)                              // the count rolls in
-          .to(cnt, { v: n, duration: Math.min(1.4, 0.12 * Math.max(0, n - 1)), ease: "none", onUpdate: () => {
-            const k = Math.round(cnt.v); if (k !== shown) { shown = k; this.chargeDigits(k); gsap.fromTo(this.cbNum.scale, { x: 1.25, y: 1.25 }, { x: 1, y: 1, duration: 0.11 }); }
-          } }, 0.4)
-          .fromTo(this.cbNum.scale, { x: 1.6, y: 1.6 }, { x: 1, y: 1, duration: 0.32, ease: "back.out(3)" })
-          .fromTo(this.cbGlow, { alpha: 0.75 }, { alpha: 0, duration: 0.45 }, "<");
-      });
-    }
-    setY(y) { this.b.y = this.f.y = this.fb.y = y;
-      const s = chipFit(Math.abs(y - COL_CY) / COL_P); this.b.scale.set(s.bx, s.by); this.f.scale.set(s.l); this.fb.scale.set(s.l);
-      const want = Math.abs(y - COL_CY) < COL_P / 2 ? this.inner : this.fb;   // white: centre = over the frame, else under it
+    setY(y) { this.b.y = this.f.y = this.fb.y = this.fc.y = y;
+      // white 2026-11-17 (user: "smooth reel rotation"): while the column rolls (colGrow.k 0) every chip has the same small
+      // size, a plain strip; the centre chip grows into the frame as it lands (colGrow.k -> 1). Nudges keep the grow.
+      const d = Math.min(1, Math.abs(y - COL_CY) / COL_P), s = chipFit(1 - (1 - d) * colGrow.k);
+      this.b.scale.set(s.bx, s.by); this.f.scale.set(s.l); this.fb.scale.set(s.l); this.fc.scale.set(s.l);
+      const want = Math.abs(y - COL_CY) < COL_P / 2 ? this.fcIn : this.fb;   // white: centre = over the frame, else under it
       if (this.cb && this.cb.parent !== want) want.addChild(this.cb);
       if (colDimK > 0) this.dim(Math.abs(y - COL_CY) < COL_P / 2 ? 0 : colDimK); }   // white: the spotlight follows the centre
     dim(k) { const g = Math.round(255 * (1 - 0.55 * k)); const t = (g << 16) | (g << 8) | g;
       [this.bg, this.rim, this.label, this.gl].forEach((s) => (s.tint = t)); if (this.cbBadge) this.cbBadge.tint = t; this.hotK = 1 - 0.75 * k; }
-    set visible(v) { this.b.visible = this.f.visible = this.fb.visible = v; }
+    set visible(v) { this.b.visible = this.f.visible = this.fb.visible = this.fc.visible = v; }
   }
+  const colGrow = { k: 1 };                             // white 2026-11-17: 0 = a rolling strip (one chip size), 1 = the centre chip grown
 
   // white version: off-centre chips are small 16:9, a chip grows into the centre frame (d = distance in pitches)
   const CHIP_BIG = { bx: 1, by: 0.823, l: 0.9 }, CHIP_SMALL = { bx: 0.833, by: 0.686, l: 0.74 };
@@ -711,6 +722,12 @@
   }
   function chipBgTex(v) { return COINS && v > 0 ? T(`Multipliers/coin_${v}`) : T(`Multipliers/chip_bg_${v < 0 ? (V2ART && v === -5 ? "nudge5" : "nudge") : v}`); }
   function chipLabelTex(v) { return T(`Multipliers/label_${v < 0 ? "nudge" + (v === -3 ? 3 : 5) : v + "x"}`); }
+  // white 2026-11-17 (right-side debug): a label for any value; one with no label art (a capped max-win value) is drawn as
+  // text instead of a blank sprite
+  function labelSprite(v) {
+    if (v < 0 || Engine.MULT_VALUES.includes(v)) return new PIXI.Sprite(chipLabelTex(v));
+    const t = new PIXI.Text(Math.round(v) + "x", FX.gold(64)); return t;
+  }
 
   // ---------- procedural fire (GPU): flames licking up around a rounded rect ----------
   const FIRE_VERT = `
@@ -840,8 +857,13 @@
     // turbo 0.42 cell in 0.05 s), then a linear loop at full speed, then a decelerating stop on Porco's customStopNormal
     // curve (small overshoot, settle). The stop starts at loop speed, so there is no jolt.
     start(delay, turbo) {
-      this.showAll();
+      // white 2026-11-17 (right-side debug): a new spin owns the strip. A stop still settling from the last spin is dropped
+      // here; it used to finish ON TOP of the new spin (state idle, speed 0, rest(): the column froze, then rolled with two
+      // empty slots, outside its tray and over the frame bars) when the next spin came within ~0.3 s (autoplay, a quick tap)
+      this.gen = (this.gen || 0) + 1;
+      if (this.tween) { this.tween.kill(); this.tween = null; }
       this.queue = null; this.state = "lift"; this.turbo = !!turbo;
+      this.showAll();                                      // white 2026-11-17: after the state is set (the column picks its mask by it)
       this.vmax = turbo ? this.vTurbo : this.vNormal;
       const go = () => { if (this.state === "lift") { this.state = "spin"; this.speed = this.vmax; } };   // white (Garuda): no lift, full speed at once
       if (this.spinDim) this.views.forEach((v) => v.dim(this.spinDim));
@@ -865,94 +887,86 @@
       if (this.spinDim) v.dim(this.spinDim);                // white (Garuda): a spinning reel is darker
       if (this.queue && this.queue.length === 0) this.queue = null;
     }
+    // white 2026-11-17 (right-side debug): the frame-by-frame part shared by every stop. Calls step(p) with the distance
+    // rolled (cells); lands (onLand, blur off) at D (early: resolve there too) and finishes in done(). Both do nothing once
+    // a newer spin owns the strip (this.gen).
+    _stepper(D, res, early) {
+      const me = this, gen = this.gen, base = this.offset;
+      let shifts = 0, landed = false, lastP = 0, lastT = gsap.globalTimeline.time();
+      const mine = () => me.gen === gen;
+      const land = () => {
+        landed = true; if (me.spinDim) me.views.forEach((v) => v.dim(0));
+        me.views.forEach((v, i) => { if (v.blur) v.set(me.syms[i], false); }); if (me.onLand) me.onLand();
+        if (early) res();
+      };
+      return {
+        step(p) {
+          if (!mine()) return;
+          const pos = base + p;
+          while (pos - shifts >= 1 && me.queue && me.queue.length) { me.offset -= 1; me.shift(); shifts++; }
+          me.offset = Math.max(-0.5, Math.min(0.999, pos - shifts));
+          me.layout();
+          const now = gsap.globalTimeline.time(), dtt = Math.max(1e-3, now - lastT);
+          if (me.onSpeed) me.onSpeed(Math.abs(p - lastP) / dtt);
+          lastP = p; lastT = now;
+          if (!landed && !me.queue && p >= (early ? D - 0.02 : D * 0.97)) land();
+        },
+        done() {
+          if (!mine()) return;
+          me.offset = 0; me.layout(); me.state = "idle"; me.speed = 0; me.tween = null;
+          if (me.onSpeed) me.onSpeed(0);
+          if (!landed) land();
+          me.rest(); res();
+        } };
+    }
     // decelerating stop: the final symbols are queued and scroll in over exactly queue.length - offset cells
     stop(final, fast) {
       return new Promise((res) => {
-        this._res = res;
         if (this.state === "lift") { gsap.killTweensOf(this); if (this.offset < 0) this.offset = 0; }
         this.queue = final.slice().reverse().concat([this.above ? this.above(final[0]) : this.rand()]);
-        this.state = "decel"; this._dropped = false;
-        const dur = fast ? this.stopFast : this.stopDur, D = this.queue.length - this.offset;
-        const base = this.offset, tr = { p: 0 };
-        let shifts = 0, landed = false, lastP = 0, lastT = gsap.globalTimeline.time();
+        this.state = "decel";
+        const D = this.queue.length - this.offset, tr = { p: 0 }, sp = this._stepper(D, res, false);
         // white (Garuda): at full speed onto the target, on 1/8 cell (0.086 s), back (0.19 s); turbo a little tighter
         const v0 = Math.max(6, this.speed || this.vmax), OV = fast ? 0.09 : 0.125, TL = D / v0, T1 = fast ? 0.06 : 0.086, T2 = fast ? 0.13 : 0.19, TT = TL + T1 + T2;
         const gEase = (x) => { const t = x * TT; return (t < TL ? v0 * t : t < TL + T1 ? D + OV * (t - TL) / T1 : D + OV * Math.max(0, 1 - (t - TL - T1) / T2)) / D; };
-        gsap.to(tr, { p: D, duration: TT, ease: gEase, onUpdate: () => {
-          const pos = base + tr.p;
-          while (pos - shifts >= 1 && this.queue && this.queue.length) { this.offset -= 1; this.shift(); shifts++; }
-          this.offset = Math.max(-0.5, Math.min(0.999, pos - shifts));
-          this.layout();
-          const now = gsap.globalTimeline.time(), dtt = Math.max(1e-3, now - lastT);
-          if (this.onSpeed) this.onSpeed(Math.abs(tr.p - lastP) / dtt);
-          lastP = tr.p; lastT = now;
-          if (!landed && !this.queue && tr.p >= D * 0.97) { landed = true; if (this.spinDim) this.views.forEach((v) => v.dim(0)); this.views.forEach((v, i) => { if (v.blur) v.set(this.syms[i], false); }); if (this.onLand) this.onLand(); }
-        }, onComplete: () => {
-          this.offset = 0; this.layout(); this.state = "idle"; this.speed = 0;
-          if (this.onSpeed) this.onSpeed(0);
-          if (!landed && this.onLand) this.onLand();
-          this.rest(); const r = this._res; this._res = null; r && r();
-        } });
+        this.tween = gsap.to(tr, { p: D, duration: TT, ease: gEase, onUpdate: () => sp.step(tr.p), onComplete: () => sp.done() });
       });
     }
-    // long tease stop (multiplier column): the fast roll eases down to a slow tick past the centre, holds there, then
-    // the target creeps in with a small overshoot. Velocity profile in cells/s, integrated into an ease; the number of
-    // extra (in-order) cells is picked so the roll covers its natural distance. o: { vSlow, tau, t1, t2, over, extra(n), onTick }
-    teaseStop(final, o) {
+    // white 2026-11-17 (user: "the multiplier part should stop after the 3rd reel equally timing", "it should be smooth reel
+    // rotation and stop"): the column's one stop for every round. The roll keeps its speed, then eases out over o.td s to
+    // o.over cells past the target and settles back (0.2 s); it reaches the target o.T s after the call (the caller times
+    // it to land one reel-gap after the third reel). The cells it rolls are the final window plus o.extra(n) in-order chips,
+    // n picked so the speed stays the roll's own (no jolt, no hang). Resolves on the landing (the settle runs on).
+    glideStop(final, o) {
       return new Promise((res) => {
-        this._res = res;
         if (this.state === "lift") { gsap.killTweensOf(this); if (this.offset < 0) this.offset = 0; }
-        const v0 = Math.max(this.speed, this.vmax * 0.8), vS = o.vSlow, T = o.t1 + o.t2, N = 400;
-        const vEnd1 = vS + (v0 - vS) * Math.exp(-o.t1 / o.tau);
-        const vel = (t) => t < o.t1 ? vS + (v0 - vS) * Math.exp(-t / o.tau) : vEnd1 * Math.pow(1 - (t - o.t1) / o.t2, 2);
-        const cum = [0]; for (let i = 1; i <= N; i++) cum.push(cum[i - 1] + vel((i - 0.5) * T / N) * T / N);
-        const dist = cum[N];
-        const nExtra = Math.max(0, Math.round(dist + this.offset - final.length - 1));
+        const v0 = Math.max(2, this.speed || this.vmax), over = o.over || 0, td = o.td;
+        const need = final.length + 1 - this.offset;                         // the final window + the chip above must scroll in
+        const T = Math.max(o.T, (need + over) / v0 + td / 2);                   // never faster than the roll itself
+        const nExtra = Math.max(0, Math.round(v0 * (T - td / 2) - over - need));
         this.queue = o.extra(nExtra).concat(final.slice().reverse(), [this.above ? this.above(final[0]) : this.rand()]);
         this.state = "decel";
-        const D = this.queue.length - this.offset, over = o.over || 0, base = this.offset, tr = { p: 0 };
-        const ease = (x) => { const f = x * N, i = Math.min(N - 1, Math.floor(f)); return (cum[i] + (cum[i + 1] - cum[i]) * (f - i)) / dist; };
-        let shifts = 0, landed = false, lastP = 0, lastT = gsap.globalTimeline.time();
-        const step = () => {
-          const pos = base + tr.p;
-          while (pos - shifts >= 1 && this.queue && this.queue.length) {
-            this.offset -= 1; this.shift(); shifts++;
-            if (o.onTick) o.onTick(this.queue ? this.queue.length : 0, Math.abs(tr.p - lastP) / Math.max(1e-3, gsap.globalTimeline.time() - lastT));
-          }
-          this.offset = Math.max(-0.5, Math.min(0.999, pos - shifts));
-          this.layout();
-          const now = gsap.globalTimeline.time(), dtt = Math.max(1e-3, now - lastT);
-          if (this.onSpeed) this.onSpeed(Math.abs(tr.p - lastP) / dtt);
-          lastP = tr.p; lastT = now;
-          if (!landed && !this.queue && tr.p >= D - 0.02) {
-            landed = true; this.views.forEach((v, i) => { if (v.blur) v.set(this.syms[i], false); }); if (this.onLand) this.onLand();
-            const r = this._res; this._res = null; r && r();        // the round goes on from the landing
-          }
-        };
-        const done = () => {
-          this.offset = 0; this.layout(); this.state = "idle"; this.speed = 0; this.tween = null;
-          if (this.onSpeed) this.onSpeed(0);
-          if (!landed && this.onLand) this.onLand();
-          this.rest(); const r = this._res; this._res = null; r && r();
-        };
-        this.tween = gsap.timeline({ onComplete: done })
-          .to(tr, { p: D + over, duration: T, ease, onUpdate: step })
-          .to(tr, { p: D, duration: 0.14, ease: "power2.inOut", onUpdate: step });
+        const D = this.queue.length - this.offset, P = D + over, v = P / (T - td / 2), tc = T - td, tr = { p: 0 }, sp = this._stepper(D, res, true);
+        // constant v, then the speed falls linearly to 0 over td (reaches P at T)
+        const ease = (x) => { const t = x * T; return (t <= tc ? v * t : v * tc + v * (t - tc) - (v * (t - tc) * (t - tc)) / (2 * td)) / P; };
+        this.tween = gsap.timeline({ onComplete: () => sp.done() })
+          .to(tr, { p: P, duration: T, ease, onUpdate: () => sp.step(tr.p) })
+          .to(tr, { p: D, duration: over ? 0.2 : 0.001, ease: "power2.inOut", onUpdate: () => sp.step(tr.p) });
       });
     }
-    // Porco's per-symbol "drop": a small landing squash on the visible symbols
-    dropSquash() {
-      for (let i = 1; i < this.n - 1; i++) {
-        const v = this.views[i];
-        if (v.inner) gsap.fromTo(v.inner.scale, { y: 0.93 }, { y: 1, duration: 0.28, ease: "back.out(3)" });
-      }
-    }
-    nudge(dur) {
+    nudge(dur, up) {
       this.showAll();
+      if (up) {     // white 2026-11-16 (user: a CHARGE takes the multipliers top to bottom): the strip steps UP, the chip below the centre slides in
+        const id = this.below ? this.below(this.syms[this.n - 1]) : this.rand();
+        this.syms.shift(); const v = this.views.shift();
+        this.syms.push(id); this.views.push(v); v.set(id, false);
+        this.offset = 1; this.layout();
+      } else {
       const id = this.above(this.syms[0]);
       this.syms.pop(); const v = this.views.pop();
       this.syms.unshift(id); this.views.unshift(v); v.set(id, false);
       this.offset = -1; this.layout();
+      }
       return FX.tween(this, { offset: 0, duration: dur || 0.46, ease: dur ? "back.out(1.5)" : "back.out(1.9)", onUpdate: () => this.layout() })
         .then(() => this.rest());
     }
@@ -967,24 +981,78 @@
       make: () => new SymView(c, REEL_CX[r]),
       // white (user 2026-11-13): a stopped SUPER WILD in the top row is lifted over the frame (whole horns); back on the next spin
       // (user 2026-11-13 "bull should be in front"): any stopped SUPER WILD is raised over its neighbours in the reel
-      topLift: function (on) { this.views.forEach((v, i) => { const sw = on && v.id === "super_wild", p = sw && i === 1 ? swTopL : c; if (v.c.parent !== p || sw) p.addChild(v.c); }); },
+      // white 2026-11-17 (user: "layering issue"): EVERY stopped SUPER WILD goes into swTopL, top row first, so a lower one draws in
+      // front of the one above it (its horns over the upper plate), the same order as everywhere else; was: only the top row
+      // there, so a top-row SUPER WILD's plate covered the horns of a SUPER WILD under it
+      topLift: function (on) { this.views.forEach((v) => { const sw = on && v.id === "super_wild", p = sw ? swTopL : c; if (v.c.parent !== p || sw) p.addChild(v.c); }); },
       rand: () => { const s = Engine.SYMBOLS; const w = Engine.WEIGHTS; let t = 0; const fw = (k) => w[k] + (k === "charge" || k === "super_wild" ? 0 : 2); for (const k of s) t += fw(k); let x = Math.random() * t; for (const k of s) { x -= fw(k); if (x < 0) return k; } return "J"; } });
   });
   const colQ = [];                                   // white (spec): chips queued to slide in next (colPlan)
   const colBlur = new PIXI.BlurFilter(0, MOBILE ? 2 : 4); colBlur.blurX = 0; colBlur.blurY = 0;
-  const colReel = new Reel({ rows: 7, pitch: COL_P, y0: COL_Y0, vmax: 30, vNormal: 30, vTurbo: 52, accel: 400, stopDur: 0.62, stopFast: 0.22,
-    masks: [[colBack, maskRect(TRAY[0], TRAY[1], TRAY[2], TRAY[3])], [colFront, maskRect(TRAY[0] - 30, TRAY[1], TRAY[2] + 30, TRAY[3])]],
+  // white 2026-11-16 (user: "slow the multiplier reel, so it will be somehow visible what numbers are rolling"): 9 chips/s (was 30, turbo 52)
+  // white 2026-11-17 (user: "position problem on the board vs numbers"): while the column moves (spin, stop, nudge) a chip's
+  // number passes UNDER the centre frame's top and bottom bars (cfFx: box 195 x 117, band 13) instead of being drawn over
+  // them (colReel's colFront mask); the chip backs were under the frame already. At rest the numbers are unmasked (the 1000x label spans the frame).
+  // Five rects, no overlaps: above the top bar, the bar's rows beside the frame, the opening, the same below.
+  const colBarsMask = (() => {
+    const x0 = TRAY[0] - 30, x1 = TRAY[2] + 30, y0 = TRAY[1], y1 = TRAY[3], hb = 117 / 2, ib = hb - 13, fl = COL_CX - 195 / 2, fr = COL_CX + 195 / 2;
+    const g = new PIXI.Graphics().beginFill(0xffffff);
+    g.drawRect(x0, y0, x1 - x0, COL_CY - hb - y0);
+    for (const yb of [COL_CY - hb, COL_CY + ib]) { g.drawRect(x0, yb, fl - x0, hb - ib); g.drawRect(fr, yb, x1 - fr, hb - ib); }
+    g.drawRect(x0, COL_CY - ib, x1 - x0, 2 * ib);
+    g.drawRect(x0, COL_CY + hb, x1 - x0, y1 - COL_CY - hb);
+    g.endFill(); g.renderable = false; board.addChild(g); return g;
+  })();
+  // b19 (user 2026-11-19, items 7-8: "we need an animation in the multiplier frame", "check if the multiplier fast rotation is
+  // present, if not, make sure we will have it"): yesterday's gold-dust demo (src/gx_coldust.js) runs in every real spin: the
+  // column rolls at 32 chips/s (normal and turbo; was 9 / 26) with the demo's light blur cap, and the gold-dust frame glitters
+  // on the window while it rolls (colHotOn / colHotOff below). ?nocolhot = the old 9 chips/s column without the frame.
+  const COL_HOT = !params.has("nocolhot"), COL_HOT_V = 32, COL_HOT_BLUR = 10 + 1.5 / 0.6;
+  const colReel = new Reel({ rows: 7, pitch: COL_P, y0: COL_Y0, vmax: 9, vNormal: 9, vTurbo: 26, accel: 400, stopDur: 0.62, stopFast: 0.22,
+    masks: [[colBack, maskRect(TRAY[0], TRAY[1], TRAY[2], TRAY[3])], [colFront, colBarsMask], [colFrontCB, maskRect(TRAY[0] - 30, TRAY[1], TRAY[2] + 30, TRAY[3])]],
     make: () => new ChipView(), rand: () => colShowPick(),          // white: Garuda's show strip while spinning
     above: (i) => (colQ.length ? colQ.shift() : (i + 1) % Engine.STRIP.length),
-    onSpeed: (s) => { const b = Math.max(0, (s - 6) * 0.6); colBlur.blurY = b; colBack.filters = colFront.filters = b > 0.5 ? [colBlur] : null; } });
+    onSpeed: (s) => { const b = Math.max(0, ((COL_HOT ? Math.min(s, COL_HOT_BLUR) : s) - 10) * 0.6); colBlur.blurY = b; colBack.filters = colFront.filters = colFrontCB.filters = b > 0.5 ? [colBlur] : null; } });   // b19: blur capped at 1.5 px (COL_HOT)
   const stripAt = (c, k) => (c + k + Engine.STRIP.length * 4) % Engine.STRIP.length;
   const colIds = (c) => [4, 3, 2, 1, 0, -1, -2, -3, -4].map((k) => stripAt(c, k));
+  colReel.below = (i) => (colQ.length ? colQ.shift() : (i - 1 + Engine.STRIP.length) % Engine.STRIP.length);   // white 2026-11-16: a CHARGE run steps the strip up (Reel.nudge(dur, true))
+  // the centre CHARGE badge's holder follows its chip's inner transform (reveal pops, hit pulses)
+  app.ticker.add(() => colReel.views.forEach((v) => { v.fcIn.position.copyFrom(v.inner.position); v.fcIn.scale.copyFrom(v.inner.scale); v.fcIn.rotation = v.inner.rotation; }));
+  function colGrowTo(k, dur) { gsap.killTweensOf(colGrow); gsap.to(colGrow, { k, duration: dur, ease: "power2.out", onUpdate: () => colReel.layout() }); }
+  // b19: the round's gold-dust frame (look only: never touches the strip, result, balance or state). On with the column's
+  // start in spin(); off COL_HOT_HOLD s after its landing, or (a plain win with a multiplier > 1) right before the number
+  // leaves the column for the win board (present()). Idle = frame off, always: a watchdog drops a frame left on after
+  // 0.8 s of idle (errors, a slam stop, EX toggle, Buy Bonus overlay). The demo's own play (key "d") is never touched.
+  const COL_HOT_A = 0.65, COL_HOT_HOLD = 0.45;   // in-round peak alpha (the demo's 1.0 read too heavy on every spin: a finer glitter)
+  let colHot = null;
+  function colHotOn() {
+    if (!COL_HOT || !window.COLDUST) return;
+    colHotOff(0); colHot = { timer: null, idleT: 0 };
+    try { COLDUST.frame(true, COL_HOT_A); } catch (e) { console.warn("colHot", e); }
+  }
+  function colHotOff(delay) {
+    const h = colHot; if (!h) return;
+    if (h.timer) { h.timer.kill(); h.timer = null; }
+    if (delay) { h.timer = gsap.delayedCall(delay, () => { if (colHot === h) colHotOff(0); }); return; }
+    colHot = null;
+    try { if (window.COLDUST && !COLDUST.playing()) COLDUST.frame(false); } catch (e) { console.warn("colHot", e); }
+  }
+  app.ticker.add(() => { if (!colHot) return; if (S.state !== "idle") { colHot.idleT = 0; return; }
+    if ((colHot.idleT += app.ticker.deltaMS / 1000) > 0.8) colHotOff(0); });
 
   // start position: the approved board's grid and a 1000x in the middle of the column
   const START = [["hourglass", "J", "wild"], ["super_wild", "sun", "Q"], ["K", "chest", "A"]];
   reels.forEach((rl, r) => rl.setSyms([rl.rand(), ...START[r], rl.rand()]));
   let colC = Engine.STRIP.indexOf(1000);
   colReel.setSyms(colIds(colC));
+  // white 2026-11-16 (user: "when we have the 1000x on the multiplier tab, we need the arrow to be hidden"): the wide labels
+  // fill the centre frame, the arrow tips poked out beside the digits
+  const CF_ARROW_HIDE = new Set([1000, 500]);
+  app.ticker.add(() => {
+    const cv = colReel.views[4], rest = colReel.state === "idle";
+    const want = rest && cv && CF_ARROW_HIDE.has(cv.v) ? 0 : 1;
+    cfArrows.forEach((a) => { a.alpha += (want - a.alpha) * 0.25; a.renderable = a.alpha > 0.02; });
+  });
 
   // ---------- UI ----------
   const ui = {};
@@ -1023,6 +1091,7 @@
   spinFlash.blendMode = PIXI.BLEND_MODES.ADD; spinFlash.alpha = 0; spinFlash.tint = 0xffc860;
   spinBody.addChild(spinBase, spinArrows, spinFlash);
   spinC.addChild(spinSh, spinGlow, spinBody);
+  const SPIN_BURST = false;                             // white 2026-11-16: no ring / dot swirl from the SPIN button (press + idle call)
   spinBody.eventMode = "static"; spinBody.cursor = "pointer";
   spinBody.hitArea = new PIXI.Circle(0, 0, 120);
   spinBody.on("pointerdown", () => { SFX.unlock(); gsap.to(spinBody.scale, { x: 0.92, y: 0.92, duration: 0.07 }); });
@@ -1051,6 +1120,7 @@
   addAura(ui.turbo, 0x7fd0ff, 1.0); addAura(ui.ex, 0xffd060, 1.05); addAura(ui.autoplay, 0xffd060, 1.0);
   const exRing = new PIXI.Sprite(FX.tex.burst); exRing.anchor.set(0.5); exRing.scale.set(0.2); exRing.alpha = 0;
   exRing.blendMode = PIXI.BLEND_MODES.ADD; ui.ex.addChildAt(exRing, 1);
+  ui.ex.aura.renderable = false; exRing.renderable = false;   // white 2026-11-16 (user): no glow / ray burst behind the EX switch when ON
   const exTag = new PIXI.Text("x1.5 BET", FX.gold(22)); exTag.anchor.set(0.5); exTag.position.set(0, -86); exTag.alpha = 0; ui.ex.addChild(exTag); exTag.renderable = false;   // white: no x8 BET tag
   const autoBadge = new PIXI.Container(); autoBadge.position.set(48, -48); autoBadge.visible = false;
   autoBadge.addChild(new PIXI.Graphics().lineStyle(3, 0xffd36b).beginFill(0x8a0e1e).drawCircle(0, 0, 26).endFill());
@@ -1114,20 +1184,30 @@
   board.setChildIndex(plaqueL, board.children.length - 1);   // win digits draw above the win-bar text
   const wbTotal = new PIXI.Container(); wb.addChild(wbTotal);
   const sep = new PIXI.Graphics(); wb.addChild(sep);
-  for (const [y, half] of [[1344, 250], [1402, 300]]) {
+  // white 2026-11-16 (user): the bar is the red/gold panel (assets/UI/win_bar.webp, tools/win_panel.py); one divider across
+  // its middle (drawn only while the two rows show); every text on it in one simple flat gold, the amounts gold too
+  // white 2026-11-16 (user: the panel shorter, ~0.7 of its height): its two text rows sit closer together, inside the
+  // shorter face (panel 1298-1395): line row WB_Y1, total row WB_Y2 (were 1318 / 1374), the divider between them
+  const WB_Y1 = 1326 + WB_DY, WB_Y2 = 1368 + WB_DY;   // b19: + WB_DY (the whole bar moved up)
+  const WB_SEP_UP = 6;   // b19 (user 2026-11-19: "move the total win divider bit higher"): divider 6 px above the rows' middle (0 = old)
+  for (const [y, half] of [[(WB_Y1 + WB_Y2) / 2 - WB_SEP_UP, 330]]) {
     for (let k = 0; k < 20; k++) {
       const t0 = k / 20, t1 = (k + 1) / 20;
-      const a = 0.43 * (1 - t0 * t0);
-      sep.beginFill(0xffdc96, a).drawRect(540 + t0 * half, y, (t1 - t0) * half, 2).drawRect(540 - t1 * half, y, (t1 - t0) * half, 2).endFill();
+      const a = 0.6 * (1 - t0 * t0);
+      sep.beginFill(0xffd27a, a).drawRect(540 + t0 * half, y, (t1 - t0) * half, 2).drawRect(540 - t1 * half, y, (t1 - t0) * half, 2).endFill();
     }
   }
-  const lineLab = new PIXI.Text("", FX.plain(25, "#FFC438")); lineLab.anchor.set(0, 0.5);
-  const lineVal = new PIXI.Text("", FX.plain(27, "#ffffff")); lineVal.anchor.set(0, 0.5);
+  function wbGold(size) {
+    return FX.plain(size, ["#FFF1B2", "#FFCF4A", "#E7A11E"], { fillGradientStops: [0, 0.55, 1], stroke: "#3a0c04",
+      strokeThickness: Math.max(2, Math.round(size / 11)), lineJoin: "round", dropShadowAlpha: 0.4, dropShadowBlur: 2 });
+  }
+  const lineLab = new PIXI.Text("", wbGold(25)); lineLab.anchor.set(0, 0.5);
+  const lineVal = new PIXI.Text("", wbGold(27)); lineVal.anchor.set(0, 0.5);
   const lineIcons = new PIXI.Container();
   wbLine.addChild(lineLab, lineIcons, lineVal);
-  const totLab = new PIXI.Text("TOTAL WIN:", FX.plain(33, "#FFC438")); totLab.anchor.set(0, 0.5);
-  const totVal = new PIXI.Text("", FX.plain(42, "#ffffff")); totVal.anchor.set(0, 0.5);
-  const msgTxt = new PIXI.Text("", FX.gold(38)); msgTxt.anchor.set(0.5); msgTxt.position.set(540, 1346);
+  const totLab = new PIXI.Text("TOTAL WIN:", wbGold(33)); totLab.anchor.set(0, 0.5);
+  const totVal = new PIXI.Text("", wbGold(44)); totVal.anchor.set(0, 0.5);
+  const msgTxt = new PIXI.Text("", wbGold(36)); msgTxt.anchor.set(0.5); msgTxt.position.set(540, 1346 + WB_DY);   // b19: + WB_DY
   wbTotal.addChild(totLab, totVal); wb.addChild(msgTxt);
   if (GPASS) { wb.y = 10; sep.alpha = 0; }              // text sits in the plinth's face, clear of its meander border; the plinth replaces the rules
   const totShown = { v: 0 };
@@ -1135,14 +1215,14 @@
   function drawTotal() {
     totVal.text = FX.money(totShown.v);
     const w = totLab.width + 14 + totVal.width;
-    totLab.position.set(540 - w / 2, 1374); totVal.position.set(540 - w / 2 + totLab.width + 14, 1374);
+    totLab.position.set(540 - w / 2, WB_Y2); totVal.position.set(540 - w / 2 + totLab.width + 14, WB_Y2);
     // stone pass: the row (total + its "xN" tag) shrinks to fit the narrow win ledge
-    const tagW = multTag && !multTag.destroyed && wbTotal.visible ? multTag.width / (multTag.scale.x || 1) + 22 : 0;
+    const tagW = multTag && !multTag.destroyed && multTag.renderable && wbTotal.visible ? multTag.width / (multTag.scale.x || 1) + 22 : 0;
     const k = GPASS ? Math.min(1, WB_FIT / (w + tagW)) : 1;
     const shift = GPASS ? -(tagW * k) / 2 : 0;             // total + tag are centred as one group on the ledge
-    wbTotal.pivot.set(540, 1374); wbTotal.position.set(540 + shift, 1374); wbTotal.scale.set(k);
+    wbTotal.pivot.set(540, WB_Y2); wbTotal.position.set(540 + shift, WB_Y2); wbTotal.scale.set(k);
     // the round's "xN" tag sits right after the total, whatever its length
-    if (tagW) { multTag.scale.set(k); multTag.position.set(540 + shift + (w / 2) * k + 22 * k + multTag.width / 2, 1374 + (GPASS ? wb.y : 0)); }
+    if (tagW) { multTag.scale.set(k); multTag.position.set(540 + shift + (w / 2) * k + 22 * k + multTag.width / 2, WB_Y2 + (GPASS ? wb.y : 0)); }
   }
   let multTag = null;
   // stone pass: the "xN" tag never hangs off the slim win ledge (x 280..800), whichever code path placed it
@@ -1163,10 +1243,12 @@
       const s = new PIXI.Sprite(T(`Symbols/${HIGH.has(id) ? id + "_tile" : id}`)); s.anchor.set(0, 0.5);
       s.scale.set(0.17); s.x = x - 6; x += 47; lineIcons.addChild(s);
     });
-    const w = lineLab.width + 16 + x + 10 + lineVal.width;
+    // white 2026-11-16 (user: "remove this 12.66"): the line row shows LINE n: + its symbols only, no amount
+    lineVal.visible = false;
+    const w = lineLab.width + 16 + x;   // the last icon ends about at x
     const x0 = 540 - w / 2;
-    lineLab.position.set(x0, 1318); lineIcons.position.set(x0 + lineLab.width + 16, 1318); lineVal.position.set(x0 + lineLab.width + 16 + x + 10, 1318);
-    const k = GPASS ? Math.min(1, WB_FIT / w) : 1; wbLine.pivot.set(540, 1318); wbLine.position.set(540, 1318); wbLine.scale.set(k);
+    lineLab.position.set(x0, WB_Y1); lineIcons.position.set(x0 + lineLab.width + 16, WB_Y1); lineVal.position.set(x0 + lineLab.width + 16 + x + 10, WB_Y1);
+    const k = GPASS ? Math.min(1, WB_FIT / w) : 1; wbLine.pivot.set(540, WB_Y1); wbLine.position.set(540, WB_Y1); wbLine.scale.set(k);
   }
   const drawTotalT = throttled(() => drawTotal(), TXT_DT);
   function showTotal(v, dur) {
@@ -1191,14 +1273,29 @@
     drawBet();
     gsap.fromTo(betTxt.scale, { x: 1.25, y: 1.25 }, { x: 1, y: 1, duration: 0.35, ease: "back.out(3)" });
   }
+  // white 2026-11-18 EX switch-on show (plan fortune_bull_ex_show_plan_2026-11-18): OFF -> ON plays window.EXSHOW
+  // (src/gx_exshow.js: SUPER WILDs fly in, the column's multipliers count up to the mode's pool); without it, with
+  // ?noexshow, autoplay or a hidden tab the column swaps calmly. Any spin / toggle cancels the show in the same frame.
+  const EX_SHOW = !params.has("noexshow");
+  const EX_SHOW_REPEAT = "short";                       // first show in a session full, later ones at turbo speed
+  const EX_CF_KNOCK = true;                             // the Fortune Choice arrows knock when the centre chip settles
+  let exShownOnce = false, exPlan = null, exColTl = null, exColRes = null;
+  const exShowCancel = (why) => { if (window.COLDUST && (COLDUST.playing ? COLDUST.playing() : COLDUST.active())) COLDUST.stop(why);   // b19 (lead): only the demo play; the round's own frame (colHotOn) is not cut (it flickered on quick re-spins)   // white 2026-11-18: the gold-dust column demo (src/gx_coldust.js) ends in the same frame (spin / EX toggle / mode change)
+    if (window.EXSHOW && EXSHOW.active()) EXSHOW.cancel(why); if (exColTl || exPlan) exColFinish(); };
   function toggleEx() {
     if (S.state !== "idle") return;
-    S.ex = !S.ex; drawBet(); exSwitchDraw(); exModeSync();
-    gsap.to(ui.ex.aura, { alpha: S.ex ? 0.55 : 0, duration: 0.3 });
-    gsap.to(exRing, { alpha: S.ex ? 0.5 : 0, duration: 0.3 });
-    gsap.to(exTag, { alpha: S.ex ? 1 : 0, duration: 0.3 });
-    if (S.ex) { burstAt(ui.ex.x, ui.ex.y, 0xffd060, 16); SFX.wildLand(); }
-    GX.emit("ex", { on: S.ex, x: ui.ex.x, y: ui.ex.y });
+    exShowCancel("toggle");
+    S.ex = !S.ex; drawBet(); exSwitchDraw();
+    const show = S.ex && EX_SHOW && !(S.auto > 0) && !document.hidden && !!window.EXSHOW;
+    if (show) {
+      exModePrep();
+      EXSHOW.play({ mode: S.exMode || 1, turbo: !!S.turbo || (EX_SHOW_REPEAT === "short" && exShownOnce) });
+      exShownOnce = true;
+    } else {
+      exModeSync();
+      if (S.ex) { if (EX_SHOW) SFX.click(); else SFX.wildLand(); }
+    }
+    GX.emit("ex", { on: S.ex, x: ui.ex.x, y: ui.ex.y, calm: EX_SHOW });
   }
   // WHITE VERSION: EX is an ON/OFF SWITCH and pressing it (while OFF) opens the EXTRA BET popup (user 2026-11-11: two
   // reference popups, "generate our version ... ex is a switcher that will show on or off"; then: "remove the flags,
@@ -1217,22 +1314,26 @@
     { cost: MC(3), art: "purple", live: true, rows: [[50, "Multipliers are 50x or higher"], ["charge", "CHARGE counts are 10 or higher"], [null, "Wins are paid on the base bet"]] },
   ];
   // ---- the switch (replaces the round EX button's art): a pill with a name plate fused on top, "EX" written in the plate ----
-  const EX_SW = 196 / 176;                                             // art is 176 x 95: plate centre y 15, pill centre y 59
-  ui.ex.spr.texture = T("UI/ex_switch_off"); ui.ex.spr.scale.set(EX_SW); ui.ex.spr.y = (47.5 - 59) * EX_SW;   // the pill stays on the button's centre
+  // white 2026-11-16 (user): the user's pill without its glow (tools/ex_switch_user.py; 2x art 394 x 151 = just the pill,
+  // knob left red / right green) and "EX" in a CIRCLE plate (assets/UI/ex_plate.webp, round) sitting on the pill's top rim
+  const EX_SW = 0.5;
+  ui.ex.spr.texture = T("UI/ex_switch_off"); ui.ex.spr.scale.set(EX_SW); ui.ex.spr.y = 0;   // the pill on the button's centre
   ui.ex.children[0].visible = false;                                   // the round button's shadow
-  ui.ex.body.hitArea = new PIXI.RoundedRectangle(-104, -80, 208, 126, 40);
-  // user 2026-11-11: "the ex should be bigger": the name plate cut out of the switch art (assets/UI/ex_plate.webp, 2x)
-  // drawn 1.45x over the small one, its neck on the pill's top rim; "EX" bigger in it
-  const EX_PK = 1.45, exPlate = new PIXI.Sprite(T("UI/ex_plate")); exPlate.anchor.set(0.5, 1);
-  exPlate.scale.set(0.5 * EX_SW * EX_PK); exPlate.position.set(0, -40); ui.ex.body.addChild(exPlate);
-  const exLabel = new PIXI.Text("EX", FX.gold(30, { strokeThickness: 5, dropShadowDistance: 1, dropShadowBlur: 1 })); exLabel.anchor.set(0.5);
-  exLabel.position.set(0, -40 - exPlate.height * 0.56); ui.ex.body.addChild(exLabel);
-  exTag.y = -40 - exPlate.height - 16;                              // the x1.5 BET tag sits above the bigger plate
-  const exState = new PIXI.Text("OFF", FX.plain(22, "#ffe9c0", { stroke: "#2a0606", strokeThickness: 4, dropShadowDistance: 1 })); exState.anchor.set(0.5); ui.ex.body.addChild(exState);
+  ui.ex.body.hitArea = new PIXI.RoundedRectangle(-100, -126, 200, 166, 36);   // white 2026-11-16: taller for the bigger EX circle
+  const EX_PY = -32, exPlate = new PIXI.Sprite(T("UI/ex_plate")); exPlate.anchor.set(0.5, 1);
+  exPlate.scale.set(0.57 * 1.25); exPlate.position.set(0, EX_PY); ui.ex.body.addChild(exPlate);   // ~90 px circle (user 2026-11-16: 25% bigger), its foot on the top meander
+  const exLabel = new PIXI.Text("EX", FX.gold(32, { strokeThickness: 5, dropShadowDistance: 1, dropShadowBlur: 1 })); exLabel.anchor.set(0.5);
+  exLabel.position.set(0, EX_PY - exPlate.height / 2 + 1); ui.ex.body.addChild(exLabel);
+  exTag.y = EX_PY - exPlate.height - 16;                            // the x1.5 BET tag sits above the plate
+  const exState = new PIXI.Text("OFF", FX.plain(24, "#ffe9c0", { stroke: "#2a0606", strokeThickness: 4, dropShadowDistance: 1 })); exState.anchor.set(0.5); ui.ex.body.addChild(exState);
+  // white 2026-11-17 (user: "the ex button should be equal to buy bonus size"): the whole switch scaled so the pill is the
+  // BUY BONUS chip's width (234 px; pill 197 -> 234), its bottom level with the chip's (on the container: the body's
+  // press tween owns body.scale)
+  const EX_K = 234 / 197; ui.ex.scale.set(EX_K); ui.ex.y += 20;
   function exSwitchDraw() {
     ui.ex.spr.texture = T(S.ex ? "UI/ex_switch_on" : "UI/ex_switch_off");
     exTag.text = "x" + MC(S.exMode || 1) + " BET";                  // the chosen mode's debit
-    exState.text = S.ex ? "ON" : "OFF"; exState.position.set(S.ex ? -34 : 36, 1); exState.style.fill = S.ex ? "#ffffff" : "#ffe9c0";
+    exState.text = S.ex ? "ON" : "OFF"; exState.position.set(S.ex ? -42 : 44, 1); exState.style.fill = S.ex ? "#ffffff" : "#ffe9c0";
     gsap.fromTo(ui.ex.spr.scale, { x: EX_SW * 1.1, y: EX_SW * 0.92 }, { x: EX_SW, y: EX_SW, duration: 0.3, ease: "back.out(3)" });
   }
   exSwitchDraw();
@@ -1250,11 +1351,89 @@
   // the engine's mode (and the column's chips) follow the switch: 0 off, else the chosen Extra Bet mode
   function exModeSync(flash) {
     const m = S.ex ? (S.exMode || 1) : 0;
+    exShowCancel("toggle");                              // white 2026-11-18: a running EX show / column grow ends first (its plan is for its own mode)
     if (Engine.mode() === m && !flash) return;
     Engine.setMode(m);
     colC = Math.floor(Math.random() * Engine.STRIP.length); colReel.setSyms(colIds(colC));
+    if (EX_SHOW) {                                       // white 2026-11-18: a calm swap, the column fades in place (no ring, no flashes)
+      gsap.fromTo([colBack, colFront, colFrontCB], { alpha: 0.35 }, { alpha: 1, duration: 0.15, overwrite: true });
+      return;
+    }
     colReel.views.forEach((v) => { if (v.flash) gsap.fromTo(v.flash, { alpha: 0.8 }, { alpha: 0, duration: 0.45 }); });
     ringAt(COL_CX, COL_CY, 0xffd060, 1.6, 0.35);
+  }
+  // ---- EX show, the column part: "multipliers grow" (plan 2.6). exModePrep switches the engine's mode and decides each
+  // chip's target at once (colReel.syms valid for the new strip at every moment); the faces keep the old values until
+  // exColGrow counts them up the real ladder, bottom to top, the centre last; exColFinish snaps to the plan (idempotent).
+  function exModePrep() {
+    exColFinish();
+    const m = S.ex ? (S.exMode || 1) : 0, cmin = [0, 2, 5, 10][m];
+    const old = colReel.views.map((v) => v.v);
+    Engine.setMode(m);
+    const strip = Engine.STRIP, md = Engine.MODES[m];
+    const draw = () => md.mt.draw(Math.random);
+    const vals = old.map((v) => {
+      if (v < 0) { const t = -Math.max(-v, cmin); return strip.includes(t) ? t : strip.includes(-cmin) ? -cmin : draw(); }
+      const t = Math.max(v || 1, draw()); return strip.includes(t) ? t : draw();
+    });
+    const ids = vals.map((t) => { const i = strip.indexOf(t); return i < 0 ? 0 : i; });
+    colReel.syms = ids.slice(); colC = ids[4];
+    [0, 8].forEach((i) => colReel.views[i].set(ids[i]));          // the hidden ends at once
+    exPlan = { m, old, ids, vals };
+    return exPlan;
+  }
+  // the column is at rest: idle, or its last ~0.2 s position settle after a round (landed, nothing queued; game already idle)
+  const colLanded = () => colReel.state === "idle" || (colReel.state === "decel" && !colReel.queue);
+  // dur: a chip's count, longer for a longer ladder (dur + durStep per step, capped) so every step stays readable
+  const EXG = { gap: 0.11, centreAt: 0.70, dur: 0.45, durStep: 0.045, durMax: 0.62, durC: 0.55, setK: 1.12, setD: 0.22, setKC: 1.2, setDC: 0.3, tickMs: 50 };
+  function exColGrow(o) {
+    const p = exPlan; if (!p || !colLanded()) return Promise.resolve("none");
+    if (exColTl) { exColTl.kill(); exColTl = null; }
+    const speed = (o && o.speed) || 1, turbo = speed > 1.01;
+    let lastTick = 0;
+    return new Promise((res) => {
+      exColRes = res;
+      const tl = gsap.timeline({ paused: true, onComplete: () => { if (exColTl === tl) exColTl = null; const r = exColRes; exColRes = null; if (r) r("done"); } });
+      [7, 6, 5, 3, 2, 1, 4].forEach((i, k) => {
+        const v = colReel.views[i], centre = i === 4, at = centre ? EXG.centreAt : EXG.gap * k;
+        const from = p.old[i], to = p.vals[i];
+        if (to < 0 || !(from > 0)) { tl.add(() => v.set(p.ids[i]), at); return; }          // CHARGE: looks the same
+        const path = Engine.MULT_VALUES.filter((x) => x > from && x <= to);
+        const dur = centre ? EXG.durC : Math.min(EXG.durMax, Math.max(EXG.dur, 0.36 + EXG.durStep * path.length));
+        if (!path.length && !centre) {                                                       // already there: a small confirm
+          tl.add(() => v.set(p.ids[i]), at);
+          tl.fromTo(v.inner.scale, { x: 1, y: 1 }, { x: 1.05, y: 1.05, duration: 0.1, yoyo: true, repeat: 1, ease: "sine.inOut", immediateRender: false }, at);
+          return;
+        }
+        const st = { p: 0 }; let shown = 0;
+        if (path.length) tl.to(st, { p: 1, duration: dur, ease: "power2.inOut", onUpdate: () => {
+          const n = Math.min(path.length, Math.ceil(st.p * path.length)); if (n === shown || n < 1) return;
+          shown = n; const x = path[n - 1];
+          v.bg.texture = chipBgTex(x); v.label.texture = chipLabelTex(x); v.v = x; v.hotSet();
+          gsap.fromTo(v.label, { y: 9, alpha: 0.55 }, { y: 0, alpha: 1, duration: 0.07, overwrite: true });
+          const now = performance.now(); if (!turbo && now - lastTick >= EXG.tickMs) { lastTick = now; SFX.colTick(n / path.length); }
+        } }, at);
+        tl.add(() => {
+          gsap.killTweensOf(v.label); v.set(p.ids[i]); v.label.y = 0; v.label.alpha = 1;
+          if (!turbo || centre) SFX.rise(0.5 + k / 12);
+          if (centre && EX_CF_KNOCK) cfKnock(5);
+        }, at + dur);
+        // the settle never pushes the label past the chip's face (wide 500x / 1000x labels already fill it)
+        const want = centre ? EXG.setKC : EXG.setK, lw = chipLabelTex(to).width * v.label.scale.x * v.f.scale.x;
+        const room = chipBgTex(to).width * v.bg.scale.x * v.b.scale.x * 0.9, sk = Math.max(1.03, Math.min(want, room / Math.max(1, lw)));
+        tl.fromTo(v.inner.scale, { x: sk, y: sk },
+          { x: 1, y: 1, duration: centre ? EXG.setDC : EXG.setD, ease: centre ? "back.out(2)" : "power2.out", immediateRender: false }, at + dur);
+      });
+      exColTl = tl; tl.timeScale(speed).play(0);
+    });
+  }
+  function exColFinish() {
+    const tl = exColTl; exColTl = null;
+    if (tl) tl.kill();
+    colReel.views.forEach((v) => { gsap.killTweensOf(v.label); gsap.killTweensOf(v.inner.scale); v.label.y = 0; v.label.alpha = 1; v.inner.scale.set(1); });
+    const p = exPlan; exPlan = null;
+    if (p && colLanded() && Engine.mode() === p.m) colReel.setSyms(p.ids);
+    const r = exColRes; exColRes = null; if (r) r("cancel");
   }
   // ---- the popup ----
   const exBet = (() => {
@@ -1432,7 +1611,12 @@
         tint: 0xf2dcc0, vr: (Math.random() - 0.5) * 1.5, blend: PIXI.BLEND_MODES.NORMAL });
     }
   }
-  function flashAt(x, y, tint, s, life) { topP.emit({ tex: FX.tex.glow, x, y, s0: s, s1: s * 1.3, life: life || 0.35, tint, a0: 0.9, a1: 0 }); }
+  // white 2026-11-16 (user: "keep the board color consistent, no need to burn it"): no additive glow puff on or right at the
+  // board (frame box 10,594 - 1070,1288, widened by half the puff's radius): it burnt the parchment, the tray and the frame
+  // white / orange for a moment. Rings, sparks, star glints and impact flipbooks at the same points stay.
+  // ?boardflash brings the puffs (and flashScreen) back.
+  const BOARD_FLASH = params.has("boardflash"), onBoard = (x, y, s) => { const r = 64 * (s || 1); return x > 10 - r && x < 1070 + r && y > 594 - r && y < 1288 + r; };
+  function flashAt(x, y, tint, s, life) { if (!BOARD_FLASH && onBoard(x, y, s)) return; topP.emit({ tex: FX.tex.glow, x, y, s0: s, s1: s * 1.3, life: life || 0.35, tint, a0: 0.9, a1: 0 }); }
   let shakeT = 0, shakeA = 0;
   // hit-stop: the whole game holds for a few frames on a heavy impact (real time), then carries on; and a phone buzz
   let hitStopOn = false;
@@ -1566,6 +1750,7 @@
     reels.forEach((rl) => rl.views.forEach((v) => { gsap.killTweensOf(v.inner.scale); gsap.killTweensOf(v.b.scale); v.inner.scale.set(1); v.b.scale.set(1); v.dim(0); }));
     colDimK = 0; colReel.views.forEach((v) => { gsap.killTweensOf(v.inner.scale); v.inner.scale.set(1); v.dim(0); });
     plaque.visible = false; accum.visible = false; cntBox.visible = false; plaqueBig.visible = false; centreMark.visible = false;
+    gsap.killTweensOf(cscreen); cscreen.visible = false; cscreen.y = CS_HIDE; cscreen.one = false; accum.y = ACC_Y;   // white 2026-11-16: a new spin never inherits the screen
     lineGfx.length = 0; for (const k of Object.keys(winCells)) delete winCells[k];
     feature(false);
     winEmitters.length = 0;
@@ -1588,7 +1773,7 @@
         w.veil = new PIXI.Graphics().beginFill(0x000000).drawRoundedRect(...winHole(reel, row)).endFill();
         w.veil.alpha = 0; cellFxBack.addChild(w.veil); winObjs.push(w.veil);
       }
-      if (w && w.veil && !w.veil.destroyed) gsap.to(w.veil, { alpha: on ? 0 : 0.42, duration: 0.14, overwrite: true });
+      if (w && w.veil && !w.veil.destroyed) gsap.to(w.veil, { alpha: on ? 0 : 0.42 * WIN_VEIL / 0.65, duration: 0.14, overwrite: true });
       const v = reels[reel].view(row); if (v && v.dim) v.dim(on ? 0 : 0.5);
     }
   }
@@ -1661,6 +1846,12 @@
   }
   // white: the light part of a winning cell = a rounded box inset in the cell (x, y, w, h, radius)
   const WIN_IN = 0, WIN_R = 12;                        // user 2026-11-12: "remove the corner fillet a lot"
+  // white 2026-11-16 (user: "keep the board color consistent, no need to burn it"): the parchment is never darkened or
+  // lit during a win, only the losing SYMBOLS dim (SymView.dim). Was: a black veil 0.65 over the losing cells (0.42 over
+  // the other lines' cells, 0.6 over the reels in the Buy round) and a breathing warm light in the winning cells.
+  // 2026-11-16 (user: "need to darken the background of the letters as well"): the losing cells darken again, as much as
+  // their symbols (SymView.dim: 0.35 brightness = a 0.65 black veil); the winning cells keep no light (WIN_LIGHT)
+  const WIN_VEIL = 0.65, WIN_LIGHT = false;
   function winHole(reel, row) { const x0 = REEL_X[reel][0], x1 = REEL_X[reel][1];
     return [x0 + WIN_IN, rowY(row) - CELL_H / 2 + WIN_IN, x1 - x0 - 2 * WIN_IN, CELL_H - 2 * WIN_IN, WIN_R]; }
   // white (user 2026-11-11: "during the win animation, the animation should loop"): a cell's symbol win move again
@@ -1682,7 +1873,7 @@
     const w = REEL_X[reel][1] - REEL_X[reel][0] - 10, h = CELL_H - 10;
     // white: no gold frame and no running lights; a soft warm light fills the cell's rounded hole and breathes
     const hb = winHole(reel, row), light = new PIXI.Graphics().beginFill(0xfff4dc).drawRoundedRect(hb[0] - cx, hb[1] - cy, hb[2], hb[3], hb[4]).endFill();
-    light.alpha = 0.1; fr.addChild(light);
+    light.alpha = 0.1; light.visible = WIN_LIGHT; fr.addChild(light);
     fr._tw = [gsap.to(light, { alpha: 0.22, duration: 1.2, ease: "sine.inOut", yoyo: true, repeat: -1 })];
     fr.alpha = 0; gsap.to(fr, { alpha: 1, duration: 0.2 });
     cellFxBack.addChild(fr); winObjs.push(fr);      // white: the light sits under the symbol
@@ -1704,15 +1895,18 @@
   }
   // ---------- base-win plaque (board centre, as Garuda); becomes big gold digits after the multiplier ----------
   const PLAQUE_S = 0.62;     // the result rail: BASE WIN -> xMULT -> WIN on the win bar, below the grid (no cell is covered)
-  const plaque = new PIXI.Container(); plaque.position.set(540, 1372); plaque.visible = false; plaqueL.addChild(plaque);
+  const plaque = new PIXI.Container(); plaque.position.set(540, WB_Y2); plaque.visible = false; plaqueL.addChild(plaque);
   const plaqueBg = new PIXI.Graphics();
   plaqueBg.beginFill(0x2a0508, 0.65).drawRoundedRect(-176, -58, 352, 124, 30).endFill();
   plaqueBg.beginFill(0x5a0000).lineStyle(5, 0xffd36b).drawRoundedRect(-170, -54, 340, 108, 26).endFill();
   plaqueBg.beginFill(0xa01a28, 0.55).lineStyle(0).drawRoundedRect(-160, -46, 320, 44, 20).endFill();
   const plaqueGlow = new PIXI.Sprite(FX.tex.glow); plaqueGlow.anchor.set(0.5); plaqueGlow.scale.set(2.6, 1.3);
   plaqueGlow.tint = 0xffaa00; plaqueGlow.blendMode = PIXI.BLEND_MODES.ADD; plaqueGlow.alpha = 0.6;
-  const plaqueTxt = new PIXI.Text("", FX.gold(64, { fill: ["#FFF6A9", "#F7C640", "#E69C00"] })); plaqueTxt.anchor.set(0.5);
-  const plaqueBig = new PIXI.BitmapText("0", { fontName: "gold_digits", fontSize: 193 }); plaqueBig.anchor.set(0.5); plaqueBig.visible = false;
+  // white 2026-11-16 (user): the counts sit straight on the red panel (no red box / glow of their own) in the bar's simple
+  // flat gold; the "big" count after the multiplier is the same text (was the 3D gold_digits bitmap font)
+  plaqueBg.renderable = false; plaqueGlow.renderable = false;
+  const plaqueTxt = new PIXI.Text("", wbGold(70)); plaqueTxt.anchor.set(0.5);
+  const plaqueBig = new PIXI.Text("0", wbGold(70)); plaqueBig.anchor.set(0.5); plaqueBig.visible = false;
   plaque.addChild(plaqueGlow, plaqueBg, plaqueTxt, plaqueBig);
   const plaqueShown = { v: 0 };
   const syncTotal = () => { totShown.v = plaqueShown.v; drawTotalT(); };   // every copy shows one value (white: throttled redraw)
@@ -1720,8 +1914,10 @@
   const drawPlaqueTxtT = throttled(drawPlaqueTxt, TXT_DT);
   const drawPlaque = () => { drawPlaqueTxt(); syncTotal(); };
   const drawPlaqueRoll = () => { if (!MOBILE) drawPlaqueTxtT(); syncTotal(); };   // white: while it rolls (phones: no roll, see below)
+  // the big count's fit: at most 300 px wide on the panel (its unscaled width = the text's own width)
+  const bigFit = () => Math.min(1, 300 / Math.max(1, plaqueBig.width / (plaqueBig.scale.x || 1)));
   const drawBig = () => {
-    plaqueBig.text = FX.money(plaqueShown.v); plaqueBig.scale.set(Math.min(0.62, 700 / Math.max(1, plaqueBig.textWidth))); syncTotal();
+    plaqueBig.text = FX.money(plaqueShown.v); plaqueBig.scale.set(bigFit()); syncTotal();
     if (multTag && !multTag.destroyed && plaqueBig.visible) multTag.position.set(plaque.x + (plaqueBig.width * plaque.scale.x) / 2 + multTag.width / 2 + 18, plaque.y + 8);
   };
 
@@ -1772,17 +1968,30 @@
     cntTxt.style = FX.gold(38); accTxt.style = FX.gold(48); accGlow.tint = 0xff6a3c;
   }
   // white version: NUDGES LEFT + TOTAL in one gold-framed screen that rises out of the board frame's top edge
-  const CS_X = 944, CS_HIDE = 200;
+  // white 2026-11-17 (user: "instead of one board with 2 lines, create 2 boards one on top of each other"): two closed
+  // one-row boards (assets/UI/counter_board.webp, tools/batch17_art.py), CHARGES (A) stacked on TOTAL (B); B sits on the
+  // board frame's top edge, A 6 px above it. Both rise from behind the frame together; a plain multiplier shows B alone.
+  // white 2026-11-18 b18 (user: "the multiplier top frame should be its bottom frame, and same way the second level popup, the
+  // top of the level one should be the base of the second one"): one tower of OPEN boards (no bottom band, tools/
+  // counter_board_b18.py): level 1 = TOTAL (UI/counter_board_red, the 100x chip's red face) stands on the column frame's top
+  // bar (y 590) and rises out of it; level 2 = CHARGES (UI/counter_board_open, parchment) stands on level 1's top band and
+  // rises out of it (cscreenA, hidden behind level 1 at CS_A_HIDE). Art bottoms (anchor 0.5, 1): level 1 at the bar's top
+  // edge, level 2 in the middle of level 1's top band (505.5..526).
+  const CS_X = 944, CS_HIDE = 100, CS_A_HIDE = 86, CB_BAR = 591, CB_A = 516;
+  const CNT_Y = 473, ACC_Y = 558;                       // row centres: level 2 face 440..505, level 1 face 526..591
   const cscreen = new PIXI.Container(); cscreen.visible = false; plaqueL.addChild(cscreen);
-  const cscreenBg = new PIXI.Sprite(T("UI/counter_screen")); cscreenBg.anchor.set(0.5, 0); cscreenBg.position.set(CS_X, 420);
-  const cscreenMask = new PIXI.Graphics().beginFill(0xffffff).drawRect(760, 280, 380, 312).endFill(); plaqueL.addChild(cscreenMask); cscreen.mask = cscreenMask;
-  cscreen.addChild(cscreenBg); [cntBox, accum].forEach((b) => { plaqueL.removeChild(b); cscreen.addChild(b); });
+  const cscreenA = new PIXI.Container(); cscreenA.y = CS_A_HIDE;   // level 2 (board + count), moves with level 1
+  const cscreenBg = new PIXI.Sprite(T("UI/counter_board_red")); cscreenBg.anchor.set(0.5, 1); cscreenBg.position.set(CS_X, CB_BAR);
+  const cscreenBgA = new PIXI.Sprite(T("UI/counter_board_open")); cscreenBgA.anchor.set(0.5, 1); cscreenBgA.position.set(CS_X, CB_A);
+  const cscreenMask = new PIXI.Graphics().beginFill(0xffffff).drawRect(760, 280, 380, CB_BAR - 280).endFill(); plaqueL.addChild(cscreenMask); cscreen.mask = cscreenMask;
+  cscreen.addChild(cscreenA, cscreenBg); cscreenA.addChild(cscreenBgA);
+  [cntBox, accum].forEach((b) => { plaqueL.removeChild(b); (b === cntBox ? cscreenA : cscreen).addChild(b); });
   cntBg.visible = false; accBg.visible = false; accGlow.visible = false;
   cntBox.position.set(CS_X, 478); cntLab.y = -18; cntTxt.y = 8; accum.position.set(CS_X, 548); accLab.y = -20; accTxt.y = 10;
-  cntLab.visible = false; accLab.visible = false; cntBox.position.set(CS_X, 481); cntTxt.y = 0; accum.position.set(CS_X, 556); accTxt.y = 0;
+  cntLab.visible = false; accLab.visible = false; cntBox.position.set(CS_X, CNT_Y); cntTxt.y = 0; accum.position.set(CS_X, ACC_Y); accTxt.y = 0;
   cntTxt.style = FX.gold(44, Object.assign({}, PLATE_NUM, { letterSpacing: 7 }));   // white: spaced (user 2026-11-13)
   accTxt.style = new PIXI.TextStyle({ fontFamily: "Georgia, serif", fontWeight: "900", fontStyle: "italic", fontSize: 50, fill: ["#FFF3B8", "#F5C24A", "#C47A16"], fillGradientStops: [0, 0.55, 1], stroke: "#4a2206", strokeThickness: 6, dropShadow: true, dropShadowColor: "#1a0800", dropShadowAlpha: 0.6, dropShadowBlur: 2, dropShadowDistance: 2, dropShadowAngle: Math.PI / 2, padding: 10 });   // = the chip labels
-  const accPlate = new PIXI.Sprite(T("UI/total_plate")); accPlate.anchor.set(0.5); accPlate.position.set(CS_X, 556); cscreen.addChildAt(accPlate, 1);   // fixed: only the number pops
+  const accPlate = new PIXI.Sprite(T("UI/total_plate")); accPlate.anchor.set(0.5); accPlate.position.set(CS_X, ACC_Y); cscreen.addChildAt(accPlate, 1);   // fixed: only the number pops
   accPlate.visible = false; accTxt.style = FX.gold(50, PLATE_NUM);   // white: parchment, like the count above it
   // white (user 2026-11-13: "use the lower x font for the upper one"): the TOTAL's "x" is the chip labels' own x
   // (assets/UI/total_x.webp, cut from label_1x by tools/total_x.py); the number stays bold gold.
@@ -1794,15 +2003,58 @@
       v = String(v); const hx = v.charAt(0) === "x"; pd.set.call(this, hx ? v.slice(1) : v); accX.visible = hx;
       const dw = this.width / (this.scale.x || 1), xw = hx ? accX.width : 0, gap = hx ? -2 : 0, x0 = -(xw + gap + dw) / 2;
       accX.position.set(x0 + xw, this.y - 2); this.x = x0 + xw + gap + dw / 2;
-      if (accBT) { accBT.text = v; accBT.position.set(0, this.y + 2); } } }); }
+      if (accNum) accNum.set(v);                         // white 2026-11-18 b18: the outlined gold number (goldNum)
+      if (accBT) { accBT.text = v; accBT.position.set(0, this.y + 2); accBT.scale.set(Math.min(1, 176 / Math.max(1, accBT.textWidth))); } } }); }   // white 2026-11-17: "x1000" fits its board
   // white (user 2026-11-13: "make the 9 bigger and same font as X"): the TOTAL in the chips' own lettering
   const accBT = new PIXI.BitmapText("x0", { fontName: "gold_digits", fontSize: 62 }); accBT.anchor.set(0.5); accTxt.parent.addChild(accBT);
   accTxt.renderable = false; accX.renderable = false;   // white: parchment, like the count above it
-  function screenUp(on) {
-    gsap.killTweensOf(cscreen);
-    if (on) { cscreen.visible = true; cscreen.y = CS_HIDE; accum.visible = true; accum.alpha = 1; accum.scale.set(1); accTxt.text = "x0";
-      gsap.to(cscreen, { y: 0, duration: 0.5, ease: "back.out(1.2)" }); }
-    else gsap.to(cscreen, { y: CS_HIDE, duration: 0.35, delay: 0.15, ease: "power2.in", onComplete: () => (cscreen.visible = false) });
+  // white 2026-11-18 b18 (user: "make the charge counter more beautiful, better letters and fonts"): BOTH board numbers in the
+  // chips' own 3D gold lettering (gold_digits; its missing "/" is drawn here in the same gold), each with a dark outline and a
+  // soft drop shadow (tinted copies, no filters) so they read on the red face and on the parchment. n.set("3/5") / n.set("x48")
+  const NUM_SLASH = (() => { const c = document.createElement("canvas"); c.width = 92; c.height = 224; const g = c.getContext("2d");
+    const gr = g.createLinearGradient(0, 12, 0, 212); gr.addColorStop(0, "#FFF4C2"); gr.addColorStop(0.3, "#FFD24E"); gr.addColorStop(0.72, "#F2A222"); gr.addColorStop(1, "#C2620C");
+    g.beginPath(); g.moveTo(62, 12); g.lineTo(86, 12); g.lineTo(30, 212); g.lineTo(6, 212); g.closePath();
+    g.lineJoin = "round"; g.lineWidth = 9; g.strokeStyle = "#9A4206"; g.stroke(); g.fillStyle = gr; g.fill();
+    return PIXI.Texture.from(c); })();
+  function goldNum(size, fit) {
+    const c = new PIXI.Container(), L = [[0, 5, 0.55], [-2.5, 0, 0.95], [2.5, 0, 0.95], [0, -2.5, 0.95], [0, 2.5, 0.95], [0, 0, 1]];   // shadow, outline x4, face
+    const rows = L.map(([x, y, a], i) => {
+      const r = new PIXI.Container(); r.position.set(x, y); r.alpha = a;
+      r.a = new PIXI.BitmapText("", { fontName: "gold_digits", fontSize: size }); r.b = new PIXI.BitmapText("", { fontName: "gold_digits", fontSize: size });
+      r.s = new PIXI.Sprite(NUM_SLASH); r.s.scale.set((size / 224) * 0.92);
+      [r.a, r.s, r.b].forEach((o) => { o.anchor.set(0.5); if (i < L.length - 1) o.tint = 0x1c0500; r.addChild(o); });
+      c.addChild(r); return r; });
+    c.set = (v) => {
+      v = String(v); const k = v.indexOf("/"), A = k < 0 ? v : v.slice(0, k), B = k < 0 ? "" : v.slice(k + 1), gap = -size * 0.02;
+      let tw = 0;
+      rows.forEach((r) => { r.a.text = A; r.b.text = B; r.s.visible = r.b.visible = k >= 0;
+        const wa = A ? r.a.width : 0, ws = r.s.width, wb = B ? r.b.width : 0;
+        tw = k < 0 ? wa : wa + ws + wb + 2 * gap; const x0 = -tw / 2;
+        r.a.position.set(x0 + wa / 2, size * 0.04); r.s.position.set(x0 + wa + gap + ws / 2, size * 0.02); r.b.position.set(x0 + wa + ws + 2 * gap + wb / 2, size * 0.04); });
+      c.scale.set(Math.min(1, fit / Math.max(1, tw)));
+    };
+    return c;
+  }
+  const accNum = goldNum(56, 176); accTxt.parent.addChild(accNum); accBT.renderable = false; accNum.set("");
+  // b19 (user 2026-11-19: "change the second popup text size according to the blue box"): the CHARGES count ("2/8") drawn
+  // CNT_K of its old size (same lettering + outline, in a scaled holder), widest CNT_FIT px (the blue box, ~61% of the face).
+  // cbPk(cntNum) still measures the unscaled number, so a pop peaks at most CNT_K x the old clamp (never back to the old size).
+  // CNT_K = 1, CNT_FIT = 176 = old.
+  const CNT_K = 0.65, CNT_FIT = 116;
+  const cntNumW = new PIXI.Container(); cntNumW.scale.set(CNT_K); cntBox.addChild(cntNumW);
+  const cntNum = goldNum(56, CNT_FIT / CNT_K); cntNumW.addChild(cntNum); cntTxt.renderable = false;
+  // one (white 2026-11-16, user: "a one line popup above the multiplier"): only the TOTAL board (B), no CHARGES board
+  function screenUp(on, one) {
+    gsap.killTweensOf(cscreen); gsap.killTweensOf(cscreenA); if (on) cscreen.alpha = 1;
+    if (on && one) { cscreen.visible = true; cscreen.y = CS_HIDE; cntBox.visible = false; cscreenA.visible = false; cscreenA.y = CS_A_HIDE; accum.visible = true; accum.alpha = 1; accum.scale.set(1);
+      accum.y = ACC_Y; accTxt.text = ""; gsap.to(cscreen, { y: 0, duration: 0.35, ease: "back.out(1.2)" }); cscreen.one = true; }
+    else if (on) { cscreen.visible = true; cscreen.y = CS_HIDE; cscreenA.visible = true; cscreenA.y = CS_A_HIDE; accum.visible = true; accum.alpha = 1; accum.scale.set(1); accum.y = ACC_Y; cscreen.one = false; accTxt.text = "x0";
+      // b18: level 1 rises out of the column's top bar, then level 2 rises out of level 1's top band
+      gsap.to(cscreen, { y: 0, duration: 0.4, ease: "back.out(1.2)" }); gsap.to(cscreenA, { y: 0, duration: 0.36, ease: "back.out(1.2)", delay: 0.26 }); }
+    // white 2026-11-17 (right-side debug: the boards slid down EMPTY for ~0.35 s after their numbers had gone): they now fade
+    // out as they sink, starting at once, in step with the numbers. b18: level 2 sinks into level 1, level 1 into the bar
+    else { gsap.to(cscreenA, { y: CS_A_HIDE, duration: 0.16, ease: "power2.in" });
+      gsap.to(cscreen, { y: CS_HIDE * 0.6, alpha: 0, duration: 0.26, delay: 0.08, ease: "power2.in", onComplete: () => { cscreen.visible = false; cscreen.alpha = 1; cscreen.y = CS_HIDE; cscreenA.y = CS_A_HIDE; accum.y = ACC_Y; cscreen.one = false; } }); }
   }
 
   // feature state: fire around the whole board, rays behind the bull, darker sky
@@ -1837,20 +2089,22 @@
     featRays.texture = PIXI.Texture.from(cv); featRays.scale.set(1.25); featRays.tint = 0xffffff;
   }
   const sky = { k: 0 };
-  const drawSky = () => { const g = Math.round(255 * (1 - 0.38 * sky.k)); const r = Math.round(g * (1 - 0.05 * sky.k)); bg.tint = (r << 16) | (Math.round(g * 0.93) << 8) | Math.round(g * 0.9); };
+  const drawSky = () => { bg.tint = 0xffffff; };   // white 2026-11-16 (user: "don't darken it"): the hall keeps its colour in the feature (was 38% darker)
   let featureOn = false;
-  function feature(on) {
+  // calm (white 2026-11-18 b18, user: "we have 4 shakes of the board at the beginning of the G nudge chip demo, they should
+  // not be there"): a CHARGE round's feature starts without the board shake / shockwave here and in gx_feature's intro beats
+  function feature(on, calm) {
     if (on === featureOn) return;
     featureOn = on;
-    GX.emit("feature", { on });
+    GX.emit("feature", { on, calm: !!calm });
     gsap.killTweensOf(fireFrame); gsap.killTweensOf(featRays); gsap.killTweensOf(sky);
     if (on) {
       fireFrame.visible = true; fireFrame.alpha = 0;           // ignite bright, then settle to a sustained heat
       gsap.timeline().to(fireFrame, { alpha: 1, duration: 0.3, ease: "power2.out" }).to(fireFrame, { alpha: 0.62, duration: 0.45, ease: "power1.inOut" });
       gsap.to(featRays, { alpha: 0.55, duration: 0.5 });
       gsap.to(sky, { k: 1, duration: 0.6, onUpdate: drawSky });
-      SFX.rumble(0.8); shake(8, 0.3); VFX.bloom(true, 0.25); SFX.music("feature"); SFX.fire(true);
-      VFX.shockwave(540, 940, { amp: 22, radius: 1300, dur: 0.8 });
+      SFX.rumble(0.8); if (!calm) shake(8, 0.3); VFX.bloom(true, 0.25); SFX.music("feature"); SFX.fire(true);
+      if (!calm) VFX.shockwave(540, 940, { amp: 22, radius: 1300, dur: 0.8 });
     } else {
       gsap.to(fireFrame, { alpha: 0, duration: 0.3, onComplete: () => (fireFrame.visible = false) });
       gsap.to(featRays, { alpha: 0, duration: 0.3 });
@@ -1872,12 +2126,12 @@
     g.strokeStyle = "rgba(40,14,2,0.8)"; g.lineWidth = 2; g.stroke();
     return PIXI.Texture.from(c);
   })();
-  function heavyHit(P, k, tint) {
+  function heavyHit(P, k, tint, noShapes) {        // noShapes (white 2026-11-16, the fist slam): no streak star, streaking dots, rings or hexagon chunks
     k = Math.max(0, Math.min(1, k)); tint = tint || 0xffc860;
     hitStop(50 + 70 * k); buzz(25 + 35 * k);
     shake(12 + 16 * k, 0.3 + 0.15 * k);
     flashScreen(0xfff0d0, 0.07 + 0.1 * k, 0.12);
-    const lines = new PIXI.Container(); lines.position.set(P.x, P.y); fxTop.addChild(lines);
+    const lines = new PIXI.Container(); lines.position.set(P.x, P.y); fxTop.addChild(lines); lines.renderable = !noShapes;
     const nL = MOBILE ? 10 : 16;
     for (let i = 0; i < nL; i++) {
       const r = new PIXI.Sprite(FX.tex.ray); r.anchor.set(0.5, 1); r.blendMode = PIXI.BLEND_MODES.ADD; r.tint = i % 2 ? 0xffffff : tint;
@@ -1887,19 +2141,23 @@
     gsap.to(lines.scale, { x: 1.35, y: 1.35, duration: 0.26, ease: "power2.out" });
     gsap.to(lines, { alpha: 0, duration: 0.2, delay: 0.06, ease: "power2.in", onComplete: () => lines.destroy({ children: true }) });
     const nD = Math.round((MOBILE ? 8 : 16) * (0.5 + k));
-    for (let i = 0; i < nD; i++) {
+    for (let i = 0; i < (noShapes ? 0 : nD); i++) {             // flat gold hexagon chunks (none with noShapes)
       const a = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.5, sp = 500 + Math.random() * 900 * (0.6 + k);
       topP.emit({ tex: chunkTex, x: P.x + (Math.random() - 0.5) * 40, y: P.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, ay: 2400, drag: 0.4,
         s0: 0.6 + Math.random() * 0.9, s1: 0.4, life: 0.7 + Math.random() * 0.4, a0: 1, a1: 0.6, vr: (Math.random() - 0.5) * 18, blend: PIXI.BLEND_MODES.NORMAL });
     }
-    for (let i = 0; i < nD; i++) {
-      const a = Math.random() * Math.PI * 2, sp = 700 + Math.random() * 900;
-      topP.emit({ tex: FX.tex.dot, x: P.x, y: P.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, drag: 3.2, s0: 0.3, s1: 0, life: 0.35, stretch: 500, tint: Math.random() < 0.5 ? 0xffffff : tint });
+    if (!noShapes) {
+      for (let i = 0; i < nD; i++) {
+        const a = Math.random() * Math.PI * 2, sp = 700 + Math.random() * 900;
+        topP.emit({ tex: FX.tex.dot, x: P.x, y: P.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, drag: 3.2, s0: 0.3, s1: 0, life: 0.35, stretch: 500, tint: Math.random() < 0.5 ? 0xffffff : tint });
+      }
+      ringAt(P.x, P.y, 0xffffff, 1.6 + 1.6 * k, 0.22); ringAt(P.x, P.y, tint, 2.6 + 2.4 * k, 0.4);
     }
-    ringAt(P.x, P.y, 0xffffff, 1.6 + 1.6 * k, 0.22); ringAt(P.x, P.y, tint, 2.6 + 2.4 * k, 0.4);
     const dx = P.x < 540 ? -1 : 1, kick = 8 + 14 * k;               // the board recoils away from the blow, then springs back
-    gsap.killTweensOf(boardL, "x,y"); boardL.position.set(0, 0);
-    if (dropWorthy()) gsap.timeline().to(boardL, { x: dx * kick * 0.4, y: kick, duration: 0.035, ease: "power2.in" })
+    const yNow = boardL.y;                                           // b19 (lead): a b19 hit-drop may still be springing back: no snap to 0
+    gsap.killTweensOf(boardL, "x,y"); boardL.x = 0;
+    if (!dropWorthy()) { if (yNow) gsap.to(boardL, { y: 0, duration: 0.25, ease: "power2.out" }); }
+    else gsap.timeline().to(boardL, { x: dx * kick * 0.4, y: Math.max(kick, yNow), duration: 0.035, ease: "power2.in" })
       .to(boardL, { x: -dx * kick * 0.15, y: -kick * 0.3, duration: 0.09, ease: "power2.out" })
       .to(boardL, { x: 0, y: 0, duration: 0.28, ease: "elastic.out(1, 0.4)" });
   }
@@ -1914,41 +2172,94 @@
     const d = Math.max(boardL.y, 10 + 14 * k);                    // strong (user 2026-11-12)
     gsap.timeline().to(boardL, { y: d, duration: 0.08, ease: "power2.in" }).to(boardL, { y: 0, duration: 0.55, ease: "back.out(1.7)" });
   }
+  // b19 (user 2026-11-19: "a strong drop of the board, if we have a simple win with a multiplier bigger than 1x, and charge"):
+  // the hit of a multiplier into a total board (win bar / TOTAL) drops the board ~2x the strongest old drop (WILD 1.4 = 30 px):
+  // 2x = 48 px ... 100x+ = 60 px, a slightly longer fall and a softer spring back; overlapping hits never jump (max of the current y)
+  const DROP_HIT = true;                                           // false = the old per-step / no hit drop
+  function boardDropHit(v) {
+    const k = Math.min(1, Math.log10(Math.max(2, Math.abs(v) || 2)) / 2);   // 2x = 0.15 ... 100x+ = 1
+    gsap.killTweensOf(boardL, "y");
+    const d = Math.max(boardL.y, 46 + 14 * k);
+    gsap.timeline().to(boardL, { y: d, duration: 0.09, ease: "power2.in" }).to(boardL, { y: 0, duration: 0.65, ease: "back.out(1.5)" });
+  }
   function flashScreen(tint, a, dur) {
+    if (!BOARD_FLASH) return;                         // white 2026-11-16: no full-screen additive flash (it washed the whole board)
     gsap.killTweensOf(screenFlash); screenFlash.tint = tint; screenFlash.visible = true;
     gsap.fromTo(screenFlash, { alpha: a }, { alpha: 0, duration: dur, ease: "power2.out", onComplete: () => (screenFlash.visible = false) });
   }
   function impactAt(p, v) {
     VFX.shockwave(p.x, p.y, { amp: v >= 10 ? 30 : 18, radius: v >= 10 ? 900 : 600 });
-    starFlash(p.x, p.y, v >= 10 ? 1.2 : 0.8, 0xfff0c0);
-    ringAt(p.x, p.y, 0xffee88, 2.0, 0.25); flashAt(p.x, p.y, 0xfff0c0, 1.1, 0.08);
-    burstAt(p.x, p.y, 0xffd060, 12);
-    SFX.impact(v >= 10); heavyHit(p, v >= 100 ? 0.9 : v >= 10 ? 0.65 : 0.4, multTint(v));
+    // white 2026-11-16 (calm look, review of the 13-change batch): no star flash, ring, spark burst or ray/chunk shapes;
+    // the weight stays (shockwave, hit-stop, shake, board recoil, sound)
+    flashAt(p.x, p.y, 0xfff0c0, 1.1, 0.08);
+    SFX.impact(v >= 10); heavyHit(p, v >= 100 ? 0.9 : v >= 10 ? 0.65 : 0.4, multTint(v), true);
   }
   function pulseChip(big) {
     const v = colReel.views[4];
     gsap.fromTo(v.inner.scale, { x: big ? 1.45 : 1.3, y: big ? 1.45 : 1.3 }, { x: 1, y: 1, duration: 0.5, ease: "back.out(2)" });
-    gsap.fromTo(v.flash, { alpha: 1 }, { alpha: 0, duration: 0.6 });
-    ringAt(COL_CX, COL_CY, 0xffd060, 1.3, 0.45);
+    gsap.fromTo(v.flash, { alpha: 1 }, { alpha: 0, duration: 0.6 });   // white 2026-11-16: no ring (calm look)
+  }
+  // white 2026-11-16 (user: "a one line popup above the multiplier ... in a case we don't have a charge we show only one number")
+  async function multShow(v, quick) {
+    screenUp(true, true);
+    await FX.wait(quick || S.turbo ? 0.1 : 0.15);       // white 2026-11-17: the number streaks in while the board still rises (it sat empty ~0.4 s)
+    pulseChip(false);
+    if (!quick) await streakToBadge(v);
+    accSet(v, 1.4, 0.5); SFX.impact(false);
+    await FX.wait(quick || S.turbo ? 0.12 : 0.3);
+  }
+  // white 2026-11-16 (user: "during the multiplier bigger than 1, we need to hit the total win board"): the bar, its text
+  // and the count drop and spring back + one light sweep across the panel; no rings, dots or stars
+  const WBH_REST = [[winBar, winBar.y], [wb, wb.y], [plaque, WB_Y2]];   // rest y, captured once (hits can overlap)
+  function winBarHit(v) {
+    const k = Math.min(1, Math.log10(Math.max(2, v)) / 2);          // 2x = 0.15 ... 100x+ = 1
+    for (const [o, y0] of WBH_REST) {
+      gsap.killTweensOf(o, "y");
+      gsap.timeline().to(o, { y: y0 + 6 + 8 * k, duration: 0.07, ease: "power2.in" }).to(o, { y: y0, duration: 0.45, ease: "back.out(2.2)" });
+    }
+    // b19: the sweep's panel rect follows the bar (WB_Y1 - 26 = the old 1300, + 20 = the old 1346) since the bar moved up
+    const m = new PIXI.Graphics().beginFill(0xffffff).drawRect(170, WB_Y1 - 26, 740, 93).endFill();
+    const sw = new PIXI.Sprite(FX.tex.shine); sw.anchor.set(0.5); sw.blendMode = PIXI.BLEND_MODES.ADD; sw.alpha = 0.35 + 0.25 * k;
+    sw.rotation = 0.35; sw.scale.set(1.2, 6); sw.position.set(200, WB_Y1 + 20); sw.mask = m; plaqueL.addChild(m, sw);
+    gsap.to(sw, { x: 880, duration: 0.35, ease: "power1.inOut", onComplete: () => { sw.destroy(); m.destroy(); } });
+    shake(3 + 5 * k, 0.15); buzz(15);
   }
   // Garuda multiplier hit: 0.5 s charge in place (1.6x, hot glow), 0.3 s flight, 0.2 s impact, 0.2 s absorb
-  async function multHit(v, struck) {
-    const chip = colReel.views[4], from = { x: COL_CX, y: COL_CY }, to = { x: plaque.x, y: plaque.y };
-    const glow = new PIXI.Sprite(FX.tex.glow); glow.anchor.set(0.5); glow.position.set(from.x, from.y);
-    glow.tint = 0xfff275; glow.blendMode = PIXI.BLEND_MODES.ADD; glow.alpha = 0; glow.scale.set(0.6); fxTop.addChild(glow);
-    const cd = struck ? 0.16 : S.turbo ? 0.25 : 0.5;    // already struck by the bull's fireball: no second wind-up
-    if (!struck) SFX.tease(cd);
-    gsap.to(glow, { alpha: 0.5, duration: cd }); gsap.to(glow.scale, { x: 1.5, y: 1.15, duration: cd, ease: "power2.out" });
-    await FX.tween(chip.inner.scale, { x: 1.6, y: 1.6, duration: cd, ease: "power2.out" });
-    const c = new PIXI.Container(); c.position.set(from.x, from.y); c.scale.set(1.6);
+  // fromScreen (white 2026-11-16): the number leaves the one-row screen (multShow) instead of the chip
+  // b19 (user 2026-11-19: "the multiplier hits directly to the total win board, without coming forward and scaling"; "coins at
+  // that second, not after"; "a strong drop of the board"): MH_WINDUP false = no chip scale-up / glow / wait, the number leaves
+  // at its size in the chip and keeps it, a nearly straight accelerating line onto the bar, no pop on landing; the landing frame
+  // also fires the board's strong drop (boardDropHit) and, with coinK > 0, the win-board coin burst (winBoardCoins)
+  const MH_WINDUP = false;                                         // true = the b18 wind-up / 1.6 scale / arc / landing pop
+  async function multHit(v, struck, fromScreen, coinK) {
+    const chip = colReel.views[4], to = { x: plaque.x, y: plaque.y };
+    let from = { x: COL_CX, y: COL_CY }, glow = null, k0 = 1;
+    if (fromScreen) {                                  // a quick pop of the screen number, no wind-up on the chip
+      gsap.killTweensOf(accum.scale);
+      if (MH_WINDUP) { const k = cbPk(accNum, 1.3); await FX.tween(accum.scale, { startAt: { x: k, y: k }, x: 1, y: 1, duration: 0.15 }); }   // b18b: clamped to the board
+      else { accum.scale.set(1); k0 = Math.abs(accNum.worldTransform.a / fxTop.worldTransform.a) || 1; }   // b19: no pre-pop, its own size
+      from = fxTop.toLocal(accum.getGlobalPosition());
+    } else if (!MH_WINDUP) {                           // b19: straight off the chip, the size its number has there
+      gsap.killTweensOf(chip.inner.scale); chip.inner.scale.set(1);
+      k0 = (chip.label && Math.abs(chip.label.worldTransform.a / fxTop.worldTransform.a)) || 1;
+    } else {
+      glow = new PIXI.Sprite(FX.tex.glow); glow.anchor.set(0.5); glow.position.set(from.x, from.y);
+      glow.tint = 0xfff275; glow.blendMode = PIXI.BLEND_MODES.ADD; glow.alpha = 0; glow.scale.set(0.6); fxTop.addChild(glow);
+      const cd = struck ? 0.16 : S.turbo ? 0.25 : 0.5;    // already struck by the bull's fireball: no second wind-up
+      if (!struck) SFX.tease(cd);
+      gsap.to(glow, { alpha: 0.5, duration: cd }); gsap.to(glow.scale, { x: 1.5, y: 1.15, duration: cd, ease: "power2.out" });
+      await FX.tween(chip.inner.scale, { x: 1.6, y: 1.6, duration: cd, ease: "power2.out" });
+    }
+    const c = new PIXI.Container(); c.position.set(from.x, from.y); c.scale.set(MH_WINDUP ? (fromScreen ? 1.2 : 1.6) : k0);
     const g2 = new PIXI.Sprite(FX.tex.glow); g2.anchor.set(0.5); g2.scale.set(1.2, 0.8); g2.tint = 0xffc84a; g2.blendMode = PIXI.BLEND_MODES.ADD; g2.alpha = 0.55;
-    const s = new PIXI.Sprite(chipLabelTex(v)); s.anchor.set(0.5);
+    const s = labelSprite(v); s.anchor.set(0.5);
     c.addChild(g2, s); fxTop.addChild(c);
-    chip.inner.scale.set(1);
-    gsap.to(glow, { alpha: 0, duration: 0.2, onComplete: () => glow.destroy() });
+    if (glow) { chip.inner.scale.set(1); gsap.to(glow, { alpha: 0, duration: 0.2, onComplete: () => glow.destroy() }); }
+    if (fromScreen) { screenUp(false); gsap.to(accum, { alpha: 0, duration: 0.15, onComplete: () => { accum.visible = false; accum.alpha = 1; } }); }
     SFX.fly();
-    const mid = { x: (from.x + to.x) / 2, y: Math.min(from.y, to.y) - 70 }, p = { t: 0 };
-    await FX.tween(p, { t: 1, duration: 0.2, ease: "power3.in", onUpdate: () => {
+    // b19: a nearly straight line (the midpoint 10 px above the straight one; was 70 px above the higher end)
+    const mid = MH_WINDUP ? { x: (from.x + to.x) / 2, y: Math.min(from.y, to.y) - 70 } : { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 - 10 }, p = { t: 0 };
+    await FX.tween(p, { t: 1, duration: S.turbo ? 0.2 : 0.3, ease: fromScreen && MH_WINDUP ? "power2.in" : "power3.in", onUpdate: () => {   // b18: the direct chip hit flies 0.3 s too
       const q = FX.bezier(from, mid, to, p.t); c.position.set(q.x, q.y);
       if (nEmit(40)) topP.emit({ tex: FX.tex.spark, x: q.x, y: q.y, vx: (Math.random() - 0.5) * 90, vy: (Math.random() - 0.5) * 90, s0: 0.35, s1: 0, life: 0.2, tint: 0xffd700 });
     } });
@@ -1958,20 +2269,35 @@
     gsap.killTweensOf(plaque.scale);
     gsap.fromTo(plaque.scale, { x: PLAQUE_S * (1.18 + 0.22 * hitK), y: PLAQUE_S * (1.18 + 0.22 * hitK) }, { x: PLAQUE_S, y: PLAQUE_S, duration: 0.35, ease: "back.out(2.2)" });
     if (v >= 10) { flameKick(1.3); bullReact("tease"); } else if (v >= 5) { flameKick(0.8); bullReact("win"); } else flameKick(0.4);
+    winBarHit(v);                                      // white 2026-11-16: the total-win board takes the hit
+    winBoardImpact(v);                                 // white 2026-11-17: with an impact (user)
+    if (DROP_HIT) boardDropHit(v);                     // b19: the strong board drop, in the landing frame
+    if (coinK > 0) winBoardCoins(coinK, true);         // b19: the coins burst out of the bar in the landing frame (was before + after)
+    if (!MH_WINDUP) {                                  // b19: no landing pop: the number melts into the bar at its size
+      gsap.to(c, { alpha: 0, duration: 0.12, ease: "power1.in", onComplete: () => c.destroy({ children: true }) });
+      await FX.wait(S.turbo ? 0.15 : 0.25);            // the hit reads before the count goes on (was the 0.4 s pop)
+      return;
+    }
     await FX.tween(c.scale, { x: 1.8, y: 1.8, duration: 0.07 });
     await FX.tween(c.scale, { x: 1.4, y: 1.4, duration: 0.13 });
     gsap.to(c, { alpha: 0, duration: 0.2, ease: "power2.in" });
     await FX.tween(c.scale, { x: 0, y: 0, duration: 0.2, ease: "power2.in" });
     c.destroy({ children: true });
   }
-  // a value streaks straight up from the column centre into the pink badge (0.12 s)
-  async function streakToBadge(v) {
+  // a value streaks straight up from the column centre into the screen's TOTAL (0.12 s; dur: optional, white 2026-11-16)
+  // white 2026-11-18 b18 (user: "the animation of multipliers hitting the top multiplier box is too fast"): every flight into
+  // the TOTAL board 1.5x longer (default 0.18 s; callers' durations x1.5) with a gentle acceleration; the hit's pop on the
+  // board (accSet) settles 1.5x slower too
+  async function streakToBadge(v, dur) {
     const c = new PIXI.Container(); c.position.set(COL_CX, COL_CY);
     const g = new PIXI.Sprite(FX.tex.glow); g.anchor.set(0.5); g.scale.set(0.9, 1.4); g.tint = 0xff8adf; g.blendMode = PIXI.BLEND_MODES.ADD;
-    const s = new PIXI.Sprite(chipLabelTex(v)); s.anchor.set(0.5); s.scale.set(0.7);
+    const s = labelSprite(v); s.anchor.set(0.5); s.scale.set(0.7);
     c.addChild(g, s); fxTop.addChild(c);
     SFX.fly();
-    await FX.tween(c, { y: accum.y, duration: 0.12, ease: "none", onUpdate: () => {
+    // white 2026-11-16: to the badge's real place (the screen may still be rising, or sit one row high); was accum.y
+    const y0 = c.y, p = { t: 0 };
+    await FX.tween(p, { t: 1, duration: dur || 0.18, ease: "sine.in", onUpdate: () => {
+      c.y = y0 + (fxTop.toLocal(accum.getGlobalPosition()).y - y0) * p.t;
       for (let k = 0, n = nEmit(80); k < n; k++) topP.emit({ tex: FX.tex.dot, x: c.x + (Math.random() - 0.5) * 30, y: c.y + 20, vy: 60, s0: 0.5, s1: 0, life: 0.3, tint: k % 2 ? 0xffd060 : 0xff6ad0 });
     } });
     c.destroy({ children: true });
@@ -1990,14 +2316,14 @@
   }
   // the running total fires a cyan-white laser into the plaque, then slams in (Garuda 01:01.7)
   async function laserApply(acc) {
-    const from = { x: accum.x, y: accum.y }, to = { x: plaque.x, y: plaque.y };
+    const from = fxTop.toLocal(accum.getGlobalPosition()), to = { x: plaque.x, y: plaque.y };   // white 2026-11-16: the badge's real place
     const g = new PIXI.Container(); fxTop.addChild(g);
     const L = Math.hypot(to.x - from.x, to.y - from.y), ang = Math.atan2(to.y - from.y, to.x - from.x);
     g.position.set(from.x, from.y); g.rotation = ang;
     const beam = (tex, sy, tint, a) => { const b = new PIXI.Sprite(tex); b.anchor.set(0, 0.5); b.blendMode = PIXI.BLEND_MODES.ADD;
       b.tint = tint; b.alpha = a; b.scale.y = sy; g.addChild(b); return b; };
     const outer = beam(FX.tex.shine, 2.6, 0xff6a1a, 0.45), mid = beam(FX.tex.shine, 1.3, 0xffc860, 0.9), core = beam(FX.tex.shine, 0.5, 0xfff4dc, 1);
-    const bolt = FX.tex.bolts ? new PIXI.Sprite(FX.tex.bolts[0]) : null;
+    const bolt = null;   // white (lightning fix): the painted bolt (128x512 cell) was squashed to 0.45 wide, stretched to the laser's length, swapped every 3 ticks and covered only its middle 60% -> a blurry detached squiggle; the beam alone
     if (bolt) { bolt.anchor.set(0.5, 0); bolt.rotation = -Math.PI / 2; bolt.blendMode = PIXI.BLEND_MODES.ADD; bolt.tint = 0xffd890; bolt.alpha = 0.7; g.addChild(bolt); }
     const head = new PIXI.Sprite(FX.tex.star8); head.anchor.set(0.5); head.blendMode = PIXI.BLEND_MODES.ADD; head.tint = 0xffe8b0; head.scale.set(0.55); g.addChild(head);
     const p = { t: 0 };
@@ -2012,14 +2338,17 @@
     gsap.ticker.add(live); g.on("destroyed", () => gsap.ticker.remove(live));
     SFX.laser();
     await FX.tween(p, { t: 1, duration: 0.15, ease: "none", onUpdate: draw });
-    const lab = new PIXI.Text("x" + acc, FX.gold(64)); lab.anchor.set(0.5); lab.position.set(from.x, from.y); lab.scale.set(1.5); fxTop.addChild(lab);
+    // b19 (lead, user item 9 "the multiplier to hit directly to total win board, without coming forward and scaling"): the
+    // CHARGE / Fortune Choice total flies at one size, no 1.5 -> 0.8 scale, no boom flipbook at the bar (MH_WINDUP = old)
+    const lab = new PIXI.Text("x" + fmtX(acc), FX.gold(64)); lab.anchor.set(0.5); lab.position.set(from.x, from.y); lab.scale.set(MH_WINDUP ? 1.5 : 1); fxTop.addChild(lab);
     gsap.to(accum, { alpha: 0, duration: 0.2, onComplete: () => { accum.visible = false; accum.alpha = 1; } });
     gsap.to(cntBox, { alpha: 0, duration: 0.2, onComplete: () => { cntBox.visible = false; cntBox.alpha = 1; } }); screenUp(false);
-    gsap.to(lab.scale, { x: 0.8, y: 0.8, duration: 0.2, ease: "back.in(2)" });
+    if (MH_WINDUP) gsap.to(lab.scale, { x: 0.8, y: 0.8, duration: 0.2, ease: "back.in(2)" });
     await FX.tween(lab, { x: to.x, y: to.y, duration: 0.2, ease: "power2.in" });
     gsap.to(g, { alpha: 0, duration: 0.25, onComplete: () => g.destroy({ children: true }) });
-    boom(to.x, to.y, 1.0, 0xffe0b0);
-    impactAt(to, acc);
+    if (MH_WINDUP) boom(to.x, to.y, 1.0, 0xffe0b0);
+    impactAt(to, acc); winBarHit(acc);
+    if (DROP_HIT) boardDropHit(acc);                   // b19 (lead, user item 6 "and charge"): the CHARGE total's hit drops the board too                 // white 2026-11-16: the total-win board takes the hit
     gsap.to(lab, { alpha: 0, duration: 0.15, onComplete: () => lab.destroy() });
   }
   // WHITE VERSION: the SUPER WILD's count lives on the symbol's own ruby plate (SymView.cnt). Garuda logic (user
@@ -2032,36 +2361,24 @@
     n = n || Engine.NUDGES;
     let left = n;
     if (t) { t.text = `${left}/${n}`; gsap.fromTo(t.scale, { x: 1.6, y: 1.6 }, { x: 1, y: 1, duration: 0.32, ease: "back.out(2.5)" }); }
-    return { x, y, n, dec() {
+    // white 2026-11-16 (SUPER WILD sequence): plate() = the count plate's live centre in fxTop px (the number shoots from it)
+    const plate = () => { try { if (t && !t.destroyed) return fxTop.toLocal(t.getGlobalPosition()); } catch (e) { /* view gone */ } return { x: x + SW_PLATE.x, y: y + SW_PLATE.y }; };
+    return { x, y, n, plate, dec() {
       left = Math.max(0, left - 1);
       if (t && !t.destroyed) { t.text = `${left}/${n}`; gsap.fromTo(t.scale, { x: 1.45, y: 1.45 }, { x: 1, y: 1, duration: 0.22, ease: "back.out(2)" }); }
-      flashAt(x, y, 0xff8800, 1.4, 0.25);
+      // white 2026-11-16: no orange flash on the SUPER WILD (user: no colour animation on it apart from the eyes glow)
     } };
   }
   // WHITE VERSION (Garuda logic): the coins of the super wild halo - every value its charges will pick, then decoys from the
   // top of the strip, shuffled (gx_halo.js superHaloOpen / superHaloPick). Spliced in by tools/port_from_stone.py.
-  function haloVals(r) {
-    const picks = [...new Set(r.nudges.slice(0, r.superSteps))].slice(0, 7);
-    const decoys = [1000, 500, 100, 50, 25, 20, 15, 10].filter((v) => !picks.includes(v));
-    const vals = picks.concat(decoys).slice(0, 7);
-    for (let i = vals.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [vals[i], vals[j]] = [vals[j], vals[i]]; }
-    return vals;
-  }
+
   // the column jumps to where the engine's strip walk stands (the super wild charges were picked in the halo, not nudged)
   function colJump(c) {
     colReel.setSyms(colIds(c));
     colReel.views.forEach((v) => { if (v.flash) gsap.fromTo(v.flash, { alpha: 0.7 }, { alpha: 0, duration: 0.4 }); });
     ringAt(COL_CX, COL_CY, 0xffd060, 1.6, 0.35); flashAt(COL_CX, COL_CY, 0xfff0c0, 1.0, 0.2);
   }
-  // "+N CHARGES" from the total badge to the counter (a CHARGE coin picked in the halo)
-  function chargeFly(n) {
-    const t = new PIXI.Text(`+${n} CHARGES`, FX.gold(40, { fill: ["#F8E8FF", "#D9A0FF", "#7A2FB0"] }));
-    t.anchor.set(0.5); const at = fxTop.toLocal(accum.getGlobalPosition()); t.position.set(at.x - 60, at.y + 40); fxTop.addChild(t);
-    const to = fxTop.toLocal(cntBox.getGlobalPosition());
-    gsap.timeline({ onComplete: () => t.destroy() }).fromTo(t.scale, { x: 0.4, y: 0.4 }, { x: 1, y: 1, duration: 0.3, ease: "back.out(3)" })
-      .to(t, { x: to.x, y: to.y, alpha: 0.2, duration: 0.45, ease: "power2.in", delay: 0.3 });
-    SFX.nudgeActivate();
-  }
+
   // Garuda nudge step: counter flip -> 0.12 s -> nudge (0.18 s) -> streak up -> badge pop; steps ~1.75 s apart
   // ===== WHITE VERSION: CHARGE runs and FORTUNE CHOICE (product spec "Fortune Guardian 1000 - Buy Bonus and Extra Bet"
   // v1.0; engine tools/white_engine.js). Spliced over nudgePhase() by tools/white_spec_game.py.
@@ -2098,19 +2415,35 @@
     return [3, 2, 1, 0, -1, -2, -3].map((k) => (k === 0 ? fixed[0] : out[k]));
   }
   const colIdxOf = (v) => { const i = Engine.STRIP.indexOf(v); return i < 0 ? 0 : i; };
-  function colPlan(vals, flash) {                       // next values into views[3], [2], [1], [0]; the rest queue up
+  // fade (b18b, QA "the column contents swap in one frame" on a Fortune Choice CHARGE landing): a changed chip dips out
+  // (0.05 s) and back in (0.08 s) with its new face instead of switching in one frame
+  function colPlan(vals, flash, fade) {                 // white 2026-11-16: next values into views[5], [6], [7], [8] (below the centre: a run walks DOWN); the rest queue up
     for (let j = 0; j < 4 && j < vals.length; j++) {
-      const vi = 3 - j, id = colIdxOf(vals[j]);
+      const vi = 5 + j, id = colIdxOf(vals[j]);
       if (colReel.syms[vi] === id) continue;
-      colReel.syms[vi] = id; colReel.views[vi].set(id, false);
+      colReel.syms[vi] = id;
       const v = colReel.views[vi];
-      if (flash && vi > 0 && v.flash) gsap.fromTo(v.flash, { alpha: 0.9 }, { alpha: 0, duration: 0.45 });
+      if (fade) { const parts = [v.b, v.f, v.fb, v.fc].filter(Boolean);
+        gsap.to(parts, { alpha: 0, duration: 0.05, overwrite: true, onComplete: () => {
+          if (colReel.views[vi] === v && colReel.syms[vi] === id) v.set(id, false);
+          gsap.to(parts, { alpha: 1, duration: 0.08 }); } });
+        continue; }
+      v.set(id, false);
+      if (flash && vi < 8 && v.flash) gsap.fromTo(v.flash, { alpha: 0.9 }, { alpha: 0, duration: 0.45 });
     }
     colQ.length = 0; vals.slice(4).forEach((v) => colQ.push(colIdxOf(v)));
   }
+  const CB_FIT = 176;                                   // white 2026-11-17: widest number on a counter board (its face is ~190 px)
+  // b18b (QA: "when the total bumps, the number scales beyond the board and covers the frame/posts"): a board number's pop
+  // is clamped so the popped number stays inside its board (face ~190 x 65 px; the number itself is ~66 px tall with its
+  // outline): width <= CB_POP_W, height <= CB_POP_H. cbPk(num, pk) = the allowed peak scale (>= 1)
+  const CB_POP_W = 184, CB_POP_H = 74;
+  const cbPk = (num, pk) => Math.max(1, Math.min(pk, CB_POP_W / Math.max(1, num.width), CB_POP_H / Math.max(1, num.height)));
   const cntShow = (o, pop) => {                         // the counter screen: done / total
     cntTxt.text = Math.min(o.done, o.tot) + "/" + o.tot;
-    if (pop) gsap.fromTo(cntBox.scale, { x: 1.2, y: 1.2 }, { x: 1, y: 1, duration: 0.1 });
+    cntTxt.scale.set(Math.min(1, CB_FIT / Math.max(1, cntTxt.width / (cntTxt.scale.x || 1))));
+    cntNum.set(cntTxt.text);                            // white 2026-11-18 b18: the outlined gold count (goldNum)
+    if (pop) { const k = cbPk(cntNum, 1.2); gsap.fromTo(cntBox.scale, { x: k, y: k }, { x: 1, y: 1, duration: 0.1 }); }
   };
   const counter = (tot) => { const o = { done: 0, tot }; o.draw = (pop) => cntShow(o, pop); return o; };
   function badgeIn() {
@@ -2119,9 +2452,11 @@
     gsap.to(accum.scale, { x: 1, y: 1, duration: 0.25, ease: "back.out(2)" });   // white: no ring on the board
   }
   const accDraw = throttled(() => { accTxt.text = "x" + Math.round(accShown.v); }, TXT_DT), accShown = { v: 0 };
+  const fmtX = (v) => (Number.isInteger(v) ? String(v) : String(Math.round(v)));   // white 2026-11-17: a capped total is fractional
   function accSet(v, pk, esc) {
-    accShown.v = v; accTxt.text = "x" + v;
-    gsap.fromTo(accum.scale, { x: pk || 1.4, y: pk || 1.4 }, { x: 1, y: 1, duration: 0.2 + 0.15 * (esc || 0), ease: "back.out(2)" });
+    accShown.v = v; accTxt.text = "x" + fmtX(v);
+    pk = cbPk(accNum, pk || 1.4);                       // b18b: the pop stays inside the TOTAL board
+    gsap.fromTo(accum.scale, { x: pk, y: pk }, { x: 1, y: 1, duration: (0.3 + 0.22 * (esc || 0)) * (S.turbo ? 0.67 : 1), ease: "back.out(2)" });   // b18: x1.5 (was 0.2 + 0.15 esc)
   }
   // "+2 CHOICES" from the wheel to the counter screen
   function choiceFly(n) {
@@ -2139,9 +2474,10 @@
     const t = new PIXI.Text(`CHARGE ${n}`, FX.gold(44, { fill: ["#F8E8FF", "#D9A0FF", "#7A2FB0"] })); t.anchor.set(0.5); t.position.set(p.x - 150, p.y); fxTop.addChild(t);
     gsap.timeline({ onComplete: () => t.destroy() }).fromTo(t.scale, { x: 0.3, y: 0.3 }, { x: 1, y: 1, duration: 0.3, ease: "back.out(3)" })
       .to(t, { alpha: 0, y: p.y - 60, duration: 0.4, delay: 0.5 });
-    flashAt(p.x, p.y, 0xd9a0ff, 1.4, 0.3); ringAt(p.x, p.y, 0xc070ff, 2.0, 0.4); SFX.nudgeActivate(); boardDrop(1.2);   // strong drop
+    SFX.nudgeActivate(); if (!DROP_HIT) boardDrop(1.2);   // b19 (lead): with DROP_HIT only the hits into TOTAL drop the board. Old: strong drop; white 2026-11-16: no flash / ring, the yellow bolt from the orb lights the CHARGE
+    chargeStrike({ x: COL_CX, y: COL_CY });
   }
-  // one CHARGE run: every action nudges the column one chip in. Runs speed up after 6 actions; past 24 the rest rolls
+  // one CHARGE run: every action nudges the column one chip in. Runs speed up after 8 actions; past 24 the rest rolls
   // in at once (the column jumps to its last chips, the total counts up).
   async function runActions(vals, acc, ctr) {
     const n = vals.length, FAST = 24;
@@ -2149,32 +2485,37 @@
       if (k === FAST && n - k > 6) {
         const rest = vals.slice(k), add = rest.reduce((a, v) => a + (v > 0 ? v : 0), 0), more = rest.reduce((a, v) => a + (v < 0 ? -v : 0), 0);
         const last = colIdxOf(rest[rest.length - 1]), ids = [];
-        for (let i = 0; i < 9; i++) { const b = i - 4; ids.push(b >= 0 && b < rest.length ? colIdxOf(rest[rest.length - 1 - b]) : stripAt(last, -b)); }
-        colReel.setSyms(ids); colReel.views.forEach((v) => { if (v.flash) gsap.fromTo(v.flash, { alpha: 0.8 }, { alpha: 0, duration: 0.5 }); });
+        for (let i = 0; i < 9; i++) { const b = 4 - i; ids.push(b >= 0 && b < rest.length ? colIdxOf(rest[rest.length - 1 - b]) : stripAt(last, b)); }   // white 2026-11-16: collected chips above the centre, strip below
+        colQ.length = 0; colReel.setSyms(ids); colReel.views.forEach((v) => { if (v.flash) gsap.fromTo(v.flash, { alpha: 0.8 }, { alpha: 0, duration: 0.5 }); });
         SFX.tease(0.6); shake(8, 0.5); flashAt(COL_CX, COL_CY, 0xfff0c0, 1.6, 0.3);
         ctr.tot += more; ctr.done = ctr.tot; ctr.draw(true);
         accShown.v = acc;
-        await FX.tween(accShown, { v: acc + add, duration: S.turbo ? 0.6 : 1.4, ease: "power1.in", onUpdate: () => { accDraw(); if (Math.random() < 0.3) SFX.tick(); } });
+        await FX.tween(accShown, { v: acc + add, duration: S.turbo ? 0.8 : 1.8, ease: "power1.in", onUpdate: () => { accDraw(); if (Math.random() < 0.3) SFX.tick(); } });
         acc = capAdd(acc, add); accSet(acc, 1.6, 1); SFX.impact(true); flashScreen(multTint(Math.min(1000, add)), 0.16, 0.35);
+        if (DROP_HIT) boardDropHit(add);                 // b19: the rolled-in rest hits TOTAL: the same strong drop
         return acc;
       }
-      const v = vals[k], f = k < 6 ? 1 : Math.max(0.32, Math.pow(0.86, k - 5));
-      const STEP = ((S.turbo ? 0.5 : k === 0 ? 1.0 : 0.68) + (v < 0 ? 0.35 : 0)) * f;
+      // white 2026-11-16 (user: "charge collect should be slower"): 1.5 / 1.25 s steps (were 1.0 / 0.68), gentler speed-up from the 9th
+      const v = vals[k], f = k < 8 ? 1 : Math.max(0.45, Math.pow(0.9, k - 7));
+      const STEP = ((S.turbo ? 0.6 : k === 0 ? 1.5 : 1.25) + (v < 0 ? 0.35 : 0)) * f;
       const t0 = gsap.globalTimeline.time();
       await FX.wait(0.06 * f);
       const esc = n > 1 ? k / (n - 1) : 1, lastN = k === n - 1 && n > 1 && !S.turbo && n <= FAST;
       if (lastN) { SFX.tease(0.5); gsap.to(vignette, { alpha: 0.5, duration: 0.25, onStart: () => (vignette.visible = true) }); await FX.wait(0.3); }
-      SFX.nudge(esc); shake(4 + 6 * esc, 0.12 + 0.08 * esc); boardDrop(0.4 + 0.6 * esc); cfKnock(10);
+      // b19 (user 2026-11-19: "a strong drop of the board ... and charge"): the drop + its shake moved from the column's step
+      // to the moment the collected value hits TOTAL (below); the step itself is calm (DROP_HIT false = the old step drop)
+      SFX.nudge(esc); if (!DROP_HIT) { shake(4 + 6 * esc, 0.12 + 0.08 * esc); boardDrop(0.4 + 0.6 * esc); } cfKnock(10);
       if (fireFrame.visible) gsap.to(fireFrame, { alpha: 0.62 + 0.38 * esc, duration: 0.2 });
-      await colReel.nudge(lastN ? 0.42 : 0.18 * Math.max(0.6, f));
+      await colReel.nudge(lastN ? 0.55 : (S.turbo ? 0.22 : 0.32) * Math.max(0.7, f), true);     // white 2026-11-16: the strip steps up (the chip below comes in)
       if (lastN) gsap.to(vignette, { alpha: 0, duration: 0.3, onComplete: () => (vignette.visible = false) });
       ctr.done++; ctr.draw(true);
       if (v < 0) { ctr.tot += -v; ctr.draw(false); await nudgeChipFire(-v); }
       else {
         pulseChip(v >= 50);
-        await FX.wait(0.08 * f);
-        if (f > 0.55) await streakToBadge(v);
+        await FX.wait((S.turbo ? 0.08 : 0.25) * f);          // white 2026-11-16: the chip can be read before it is taken
+        if (f > 0.55) await streakToBadge(v, (S.turbo ? 0.22 : 0.33) * Math.max(0.7, f));   // b18: x1.5 (was 0.22)
         badgeIn(); acc = capAdd(acc, v); accSet(acc, 1.25 + 0.5 * esc, esc);
+        if (DROP_HIT) { boardDropHit(v); shake(4 + 6 * esc, 0.12 + 0.08 * esc); }   // b19: the strong drop as the value hits TOTAL (shake as before)
         SFX.impact(lastN || v >= 50); SFX.rise(esc);   // white: no ring on the board
         if (lastN || v >= 50) flashScreen(multTint(v), 0.14, 0.3);
       }
@@ -2183,30 +2524,123 @@
     }
     return acc;
   }
+  // white 2026-11-16 SUPER WILD sequence (user, after Fortune Garuda: "when we have a superwild, we need an character activation
+  // animation, then it drops the super wild, then again animation and then it slowly gather multipliers on the halo wheel, 7
+  // chosen and one randomly generated, then the number from superwild shoots to the halo ring"). Steps 1-2 here (nudgePhase
+  // calls it): the bull's punch = the activation; every winning SUPER WILD lifts off its cell during the wind-up and drops back
+  // with the fist, its plate switching N -> N/N; the fire frame comes on. Steps 3-5 (roar, slow gathering, the count into the
+  // ring) are in fortuneChoiceShow. Returns the SUPER WILD counters. Only v.c.pivot / v.c.scale move (gx_symbols owns
+  // v.inner), always restored to the cell's base scale.
+  async function swActivate(r) {
+    r.bullActed = true;
+    const cells = r.superCells.map((c) => { const reel = Math.floor(c / 3), row = c % 3; return { c, reel, row, v: reels[reel].view(row) }; }).filter((o) => o.v && o.v.c);
+    const T = S.turbo ? 0.22 : 0.42, BX = GPASS ? SYM_SX : 1, BY = GPASS ? SYM_SY : 1;
+    cells.forEach((o) => {
+      gsap.to(o.v.c.pivot, { y: 30, duration: T, ease: "power2.out", overwrite: true });
+      gsap.to(o.v.c.scale, { x: BX * 1.12, y: BY * 1.12, duration: T, ease: "power2.out", overwrite: true }); });
+    let down = false;
+    const drop = (d) => { if (down) return; down = true;
+      cells.forEach((o) => { gsap.to(o.v.c.pivot, { y: 0, duration: d, ease: "power3.in", overwrite: true });
+        gsap.to(o.v.c.scale, { x: BX, y: BY, duration: d, ease: "power3.in", overwrite: true }); }); };
+    try {
+      if (!featureOn) {
+        const slam = bullSlam(true);                       // the punch: its wind-up = the activation
+        const mv = [bullDir.cur].concat(bullDir.queue).find((m) => m && m.name === "bull_punch" && !m.ended);
+        // the SUPER WILDs fall on the swing and land with the fist (the hit's own cell hop then bounces them); the code
+        // lunge (no clip) hits ~0.3 s in
+        await (mv ? Promise.race([mv.at("swing"), FX.wait(1.6)]) : FX.wait(S.turbo ? 0.1 : 0.2));
+        drop(0.11);
+        await slam;
+      } else { await FX.wait(T + 0.12); drop(0.1); await FX.wait(0.1); }
+    } finally { drop(0.1); }
+    boardDrop(1.4); SFX.superLand(); buzz(30); hitStop(50);
+    const sw = cells.map((o) => { GX.emit("wildLand", { reel: o.reel, row: o.row, id: "super_wild", x: REEL_CX[o.reel], y: rowY(o.row), view: o.v });
+      return superCounter(o.c, r.superCharges && r.superCharges[o.c]); });          // plate: N -> N/N with its pop
+    if (!featureOn) { gsap.fromTo(featRays, { alpha: 1 }, { alpha: 0.55, duration: 1.4 }); flameKick(1.2); feature(true); }
+    await FX.wait(S.turbo ? 0.12 : 0.3);
+    return sw;
+  }
   // Fortune Choice on the halo wheel. ctr = the counter (picks done / Choices); sw = the SUPER WILDs' counters (natural)
+  // white 2026-11-17 (Fortune Garuda 04:44-04:47): the picked multiplier coin goes into the bull's hand and he throws it into
+  // the column (bullOrb with the wheel's hand-off coin; no clip: the coin flies itself); the centre chip shows the value
+  async function pickThrow(v, j) {
+    const to = { x: COL_CX, y: COL_CY }, tint = multTint(v) === 0xffd070 ? 0xffb040 : multTint(v);
+    await bullOrb(to, tint, v, S.turbo ? 2 : j >= 2 ? 1.6 : 1.3, true, true);   // (no clip: the coin flies itself, coinFlies)
+    const id = colIdxOf(v);
+    if (Engine.STRIP[id] === v) { colReel.syms[4] = id; const cv = colReel.views[4]; cv.set(id); cv.setY(COL_CY); }
+    // b18b (QA: calm landing): a small scale-settle under the fading coin (was pulseChip: 1.3-1.45 pop + white glint flash)
+    gsap.fromTo(colReel.views[4].inner.scale, { x: 1.18, y: 1.18 }, { x: 1, y: 1, duration: 0.35, ease: "back.out(1.6)" });
+  }
+  // 2026-11-18 (user: "when the character chooses the charge, it should hit with the charge, and in the box we got to see the
+  // charge chip, charge counter working and choosing the number and hitting the second level of the popup box, basically the
+  // nudge chip state"; "in the max win case, the pink charge number effect after the character chooses charge should be
+  // removed"): a Fortune Choice CHARGE pick plays the nudgechip state. The wheel's CHARGE coin is handed to the bull and he
+  // throws it into the column (the same hand-off as a multiplier pick, bullOrb picked + calm); the centre slot becomes the
+  // CHARGE chip (chevrons in its window); the yellow bolt from the orb (chargeStrike); nudgeChipFire: the count rolls in and
+  // "+N CHARGES" rises into the CHARGES board, which then counts the run 0/N, 1/N ...; the run walks DOWN the column
+  // (colPlan + runActions, every chip into the TOTAL); then the board shows the Choices again. No pink "CHARGE N" tag.
+  const FC_CHARGE_THROW = true, CHARGE_TAG = false, FC_CHARGE_BOLT = false;   // b18b: no bolt after a thrown CHARGE coin
+  async function pickCharge(p, j, acc, ctr) {
+    const to = { x: COL_CX, y: COL_CY }, id = colIdxOf(-p.n), onStrip = Engine.STRIP[id] === -p.n;
+    await bullOrb(to, 0xffe14a, -p.n, S.turbo ? 2 : j >= 2 ? 1.6 : 1.3, true, true);   // (no clip: the coin flies itself, coinFlies)
+    // b18b (QA): calm landing - the swap happens under the coin as it fades (comet calm, 0.12 s), a small scale-settle, the
+    // chips below dip-fade to the run's values; no bolt: the thrown coin IS the hit (FC_CHARGE_BOLT restores chargeStrike)
+    if (onStrip) { colReel.syms[4] = id; const cv = colReel.views[4]; cv.set(id); cv.setY(COL_CY);
+      gsap.fromTo(cv.inner.scale, { x: 1.18, y: 1.18 }, { x: 1, y: 1, duration: 0.35, ease: "back.out(1.6)" }); }
+    colPlan(p.vals, false, true);                       // the run's chips below the centre
+    await FX.wait(S.turbo ? 0.1 : 0.3);
+    if (FC_CHARGE_BOLT) await chargeStrike(to);
+    await nudgeChipFire(p.n, true, !onStrip);
+    const run = counter(p.n); run.draw(false);          // the CHARGES board: the run's own count (nudgeChipFire popped it)
+    await FX.wait(S.turbo ? 0.1 : 0.3);
+    acc = await runActions(p.vals, acc, run);
+    await FX.wait(S.turbo ? 0.1 : 0.35);
+    ctr.draw(true);                                     // back to the Choices
+    return acc;
+  }
   async function fortuneChoiceShow(r, acc, ctr, sw, from) {
     const fc = r.fc, vals = fc.board.map((b) => (b.t === "mult" ? b.v : b.t === "charge" ? -b.n : "c2"));
+    const natural = r.superCells.length > 0;
+    if (natural && (!sw || !sw.length)) sw = r.superCells.map((c) => superCounter(c, r.superCharges && r.superCharges[c]));   // no swActivate seam
     const owner = []; (sw || []).forEach((s) => { for (let i = 0; i < s.n; i++) owner.push(s); });
     ctr.done = 0; ctr.tot = fc.choices0; ctr.draw(true);
-    bullReact("tease");
-    await GX.run("superHaloOpen", { vals }, 5000);
+    // white 2026-11-16 SUPER WILD sequence, step 3 ("then again animation"): the roar with the orb raised; the ring opens on it
+    bullReact("big"); flameKick(1.0);
+    const mv = bullLive() ? bullPlay("bull_big") : null;                            // the same running move bullReact started
+    await (mv ? Promise.race([mv.at("roar"), FX.wait(1.2)]) : FX.wait(S.turbo ? 0.25 : 0.5));
+    // step 4 ("slowly gather multipliers on the halo wheel, 7 chosen and one randomly generated"): gx_halo superHaloOpen slow -
+    // the positions fly out of different column chips one by one, the last one is rolled in the bull's hand orb. The wheel keeps
+    // the engine's 9 positions (8 gathered + 1 generated)
+    await GX.run("superHaloOpen", { vals, slow: true }, 20000);
+    // step 5 ("then the number from superwild shoots to the halo ring"): white 2026-11-17 (user: "look at the video 04:10 to
+    // 05:05", Fortune Garuda): no separate count flight; every Choice is fired by its SUPER WILD (fireball + three flame
+    // streaks into the ring, gx_halo superHaloPick d.sw), its plate counting down N/N -> N-1/N. The counter takes all the
+    // Choices at once here (the 2026-11-16 count flight is gone; gx_halo superHaloCharge with it).
+    ctr.tot = fc.choices0; ctr.draw(true);
     const accAt = () => fxTop.toLocal(accum.getGlobalPosition());
     const colAt = () => fxTop.toLocal(frameL.toGlobal(new PIXI.Point(COL_CX, COL_CY)));
     const cntAt = () => fxTop.toLocal(cntBox.getGlobalPosition());
     for (let j = 0; j < fc.picks.length; j++) {
       const p = fc.picks[j], s = owner[j];
-      if (s) { s.dec(); ringAt(s.x, s.y, 0xff7a3a, 1.2, 0.4); }
+      if (s) s.dec();                                 // white 2026-11-16: no orange ring on the SUPER WILD
       badgeIn();
-      const to = p.t === "mult" ? accAt() : p.t === "charge" ? colAt() : cntAt();
-      await GX.run("superHaloPick", { pos: p.pos, v: vals[p.pos], from: s ? { x: s.x, y: s.y } : from, to }, 6000);
+      const to = p.t === "mult" ? accAt() : p.t === "charge" ? colAt() : cntAt(), thr = p.t === "mult" || (p.t === "charge" && FC_CHARGE_THROW);
+      await GX.run("superHaloPick", { pos: p.pos, v: vals[p.pos], from: s ? { x: s.x, y: s.y } : from, to, sw: !!s, throw: thr }, 12000);
       ctr.done++; ctr.draw(true);
-      if (p.t === "mult") {
+      if (thr && p.t === "charge") {                    // 2026-11-18: the nudgechip state (pickCharge), then the ring comes back
+        acc = await pickCharge(p, j, acc, ctr);
+        if (j < fc.picks.length - 1) { await FX.wait(S.turbo ? 0.1 : 0.25); await GX.run("superHaloShow", {}, 1500); }
+      } else if (thr) {                                 // white 2026-11-17: he throws it into the column, it streaks up into the TOTAL
+        await pickThrow(p.v, j);
+        await streakToBadge(p.v, S.turbo ? 0.18 : 0.3);   // b18: x1.5 (was 0.12 / 0.2)
         acc = capAdd(acc, p.v); accSet(acc, 1.4, 0.5); SFX.impact(p.v >= 50); SFX.rise(j / Math.max(1, fc.picks.length - 1));
         if (p.v >= 50) flashScreen(multTint(p.v), 0.14, 0.3);
+        if (j < fc.picks.length - 1) { await FX.wait(S.turbo ? 0.1 : 0.25); await GX.run("superHaloShow", {}, 1500); }
       } else if (p.t === "choice2") {
         ctr.tot += 2; choiceFly(2); await FX.wait(0.5); ctr.draw(true);
-      } else {                                          // the column runs this CHARGE's actions into the total
-        chargeTag(p.n); colPlan(p.vals, true); await FX.wait(0.45);
+      } else {                                          // (FC_CHARGE_THROW off) the column runs this CHARGE's actions into the total
+        if (CHARGE_TAG) chargeTag(p.n); else chargeStrike({ x: COL_CX, y: COL_CY });
+        colPlan(p.vals, true); await FX.wait(0.45);
         const run = counter(p.n); run.draw(true);
         acc = await runActions(p.vals, acc, run);
         ctr.draw(true);
@@ -2216,34 +2650,80 @@
     await GX.run("superHaloClose", {}, 2000);
     return acc;
   }
+  // white 2026-11-16 (user: "the character should not throw during a charge, it should only do lighting strike from the
+  // ball, in yellow color"): a CHARGE is lit by ONE yellow bolt from the orb in the bull's hand - no throw, no punch
+  async function chargeStrike(to) {
+    const o = handOrb(); flameKick(1.0); bullReact("tease");          // eyes + aura only: no clip
+    SFX.lightning(); handStrike({ x0: o.x, y0: o.y, x: to.x, y: to.y, col: 0xffe14a, dur: 0.5, w: 15, branches: 2 });
+    await FX.wait(S.turbo ? 0.18 : 0.38);
+  }
+  // white 2026-11-16 (user: "when we get a charge in the main board it should go to the multiplier panel, then start to
+  // collect"): the CHARGE symbol with its count flies from its cell into the centre slot and becomes the CHARGE chip
+  // showing that count; then the bolt and "+N CHARGES". The symbol stays in its cell as a ghost (nudgePhase restores it).
+  async function chargeToColumn(b, ghosts) {            // b = { cell, n, vals }
+    const reel = Math.floor(b.cell / 3), row = b.cell % 3, v = reels[reel].view(row);
+    const from = { x: REEL_CX[reel], y: rowY(row) }, to = { x: COL_CX, y: COL_CY };
+    const fly = new PIXI.Container(); fly.position.set(from.x, from.y); fxTop.addChild(fly);
+    const glow = new PIXI.Sprite(FX.tex.glow); glow.anchor.set(0.5); glow.tint = 0xc070ff; glow.alpha = 0.35; glow.scale.set(1.2); glow.blendMode = PIXI.BLEND_MODES.ADD;
+    const sym = new PIXI.Sprite(v.a.texture); sym.anchor.set(0.5);
+    const win = new PIXI.Container(); win.position.set(0.5, -31.4);                       // the same window + digits as SymView.showCharge
+    const ww = new PIXI.Sprite(T("UI/charge_window")); ww.anchor.set(0.5); ww.scale.set(0.9); win.addChild(ww);
+    const sps = String(b.n).split("").map((d) => { const sp = new PIXI.Sprite(T("UI/charge_digit_" + d)); sp.anchor.set(0.5); sp.scale.set(0.38); return sp; });
+    const step = (sp) => sp.width * 0.84; let x = -sps.reduce((a, sp) => a + step(sp), 0) / 2;
+    sps.forEach((sp) => { sp.x = x + step(sp) / 2; x += step(sp); win.addChild(sp); });
+    fly.addChild(glow, sym, win);
+    ghosts.push(v); gsap.to(v.c, { alpha: 0.3, duration: 0.2 });
+    SFX.nudgeActivate();
+    await FX.tween(fly.scale, { x: 1.15, y: 1.15, duration: 0.2, ease: "back.out(2)" });
+    const D = S.turbo ? 0.3 : 0.55, ctrl = { x: (from.x + to.x) / 2, y: Math.min(from.y, to.y) - 140 }, p = { t: 0 };
+    gsap.to(fly.scale, { x: 0.5, y: 0.5, duration: D, ease: "power2.inOut" });
+    await FX.tween(p, { t: 1, duration: D, ease: "power2.inOut", onUpdate: () => { const q = FX.bezier(from, ctrl, to, p.t); fly.position.set(q.x, q.y); } });
+    const id = colIdxOf(-b.n), landed = Engine.STRIP[id] === -b.n;
+    if (landed) {                                       // the centre chip becomes the CHARGE chip, its count already shown
+      colReel.syms[4] = id; const cv = colReel.views[4]; cv.set(id, false); cv.setY(COL_CY); cv.chargeDigits(b.n); cv.cbChev.alpha = 0;
+      gsap.killTweensOf(fly.scale); fly.destroy({ children: true });
+      gsap.fromTo(cv.inner.scale, { x: 1.5, y: 1.5 }, { x: 1, y: 1, duration: 0.5, ease: "elastic.out(1,0.45)" });
+      if (!DROP_HIT) boardDrop(1.2);                   // b19: in a CHARGE round only the hits into TOTAL drop the board
+    }
+    await chargeStrike(to);
+    await nudgeChipFire(b.n, true, true);
+    if (!landed) gsap.to(fly, { alpha: 0, duration: 0.25, onComplete: () => fly.destroy({ children: true }) });   // (no such chip on the strip: the copy stood in)
+  }
   async function nudgePhase(r) {
     accCap = r.capped ? r.mult : Infinity;
-    const chipStart = r.startMult < 0;
-    if (featureOn) feature(true); else if (!chipStart) await bullCharge();
+    const chipStart = r.startMult < 0, bruns = r.boardRuns || [], hasCharge = chipStart || bruns.length > 0;
+    let sw = null;
+    // white 2026-11-16 (user: "the character should not throw during a charge"): no punch / throw clip in a CHARGE round
+    if (r.fc && typeof swActivate === "function") sw = await swActivate(r);   // package B: bull activation + SUPER WILD drop (returns the counters)
+    else if (!featureOn && !hasCharge) await bullCharge();                      // (Fortune Choice only, before package B lands)
+    if (!featureOn) feature(true, !r.fc);              // b18: a CHARGE round starts calm (no shake / shockwave / intro beats)
     let acc = chipStart ? 0 : r.startMult;
-    const bruns = r.boardRuns || [];
-    const ctr = counter(r.chipSteps || (bruns.length ? bruns[0].n : 0) || (r.fc ? r.fc.choices0 : 0));
-    screenUp(true); cntBox.visible = true; cntBox.scale.set(0); ctr.draw(false); centreMark.visible = true; centreMark.alpha = 0;
-    gsap.to(centreMark, { alpha: 1, duration: 0.25 });
-    lineGfx.forEach((g) => gsap.to(g, { alpha: 0.12, duration: 0.2 }));      // paylines step back while the column works
-    r.bullActed = true;
-    await FX.tween(cntBox.scale, { x: 1, y: 1, duration: 0.25, ease: "back.out(1.7)" });
-    const sw = r.superCells.map((c) => superCounter(c, r.superCharges && r.superCharges[c]));
-    if (chipStart) { await bullOrb({ x: COL_CX, y: COL_CY }, 0x5ff0ff, r.startMult, 1.25); feature(true); await nudgeChipFire(r.chipSteps); }
-    else { pulseChip(false); await streakToBadge(r.startMult); badgeIn(); accSet(acc, 1, 0); SFX.impact(false); }
-    if (r.nudges.length) { colPlan(r.nudges, false); acc = await runActions(r.nudges, acc, ctr); }
-    for (const b of bruns) {                            // every CHARGE symbol on the board fires its count on the column
-      const reel = Math.floor(b.cell / 3), row = b.cell % 3, from = { x: REEL_CX[reel], y: rowY(row) }, v = reels[reel].view(row);
-      if (v && v.chg) gsap.fromTo(v.chg.scale, { x: 1.5, y: 1.5 }, { x: 1, y: 1, duration: 0.3, ease: "back.out(3)" });
-      ringAt(from.x, from.y, 0xc070ff, 1.6, 0.4); SFX.nudgeActivate();
-      await beam(from, { x: COL_CX, y: COL_CY }, 0xc070ff); boardDrop(1.2);
-      chargeTag(b.n); colPlan(b.vals, true); await FX.wait(0.3);
-      const run = counter(b.n); run.draw(true);
-      acc = await runActions(b.vals, acc, run);
+    const ghosts = []; let ok = false;                  // board CHARGE symbols left as ghosts in their cells (chargeToColumn)
+    try {
+      const ctr = counter(r.chipSteps || (bruns.length ? bruns[0].n : 0) || (r.fc ? r.fc.choices0 : 0));   // no 0/N flicker before the SUPER WILD shoot
+      screenUp(true); cntBox.visible = true; cntBox.scale.set(0); ctr.draw(false); centreMark.visible = true; centreMark.alpha = 0;
+      gsap.to(centreMark, { alpha: 1, duration: 0.25 });
+      lineGfx.forEach((g) => gsap.to(g, { alpha: 0.12, duration: 0.2 }));      // paylines step back while the column works
+      r.bullActed = true;
+      await FX.tween(cntBox.scale, { x: 1, y: 1, duration: 0.25, ease: "back.out(1.7)" });
+      if (!sw) sw = r.superCells.map((c) => superCounter(c, r.superCharges && r.superCharges[c]));
+      if (chipStart) { await chargeStrike({ x: COL_CX, y: COL_CY }); await nudgeChipFire(r.chipSteps, true); }   // (was: the throw clip + comet)
+      else { pulseChip(false); await streakToBadge(r.startMult, S.turbo ? 0.2 : 0.32); badgeIn(); accSet(acc, 1, 0); SFX.impact(false); }   // b18b: 0.32 / 0.2 s like the charge chips (was the 0.18 s default)
+      if (r.nudges.length) { colPlan(r.nudges, false); acc = await runActions(r.nudges, acc, ctr); }
+      for (const b of bruns) {                          // every CHARGE symbol on the board flies into the column, then fires its count there
+        await chargeToColumn(b, ghosts);
+        colPlan(b.vals, true); await FX.wait(0.3);
+        const run = counter(b.n); run.draw(true);
+        acc = await runActions(b.vals, acc, run);
+      }
+      if (r.fc) acc = await fortuneChoiceShow(r, acc, ctr, sw, { x: COL_CX, y: COL_CY });
+      lineGfx.forEach((g) => gsap.to(g, { alpha: 1, duration: 0.2 }));
+      ok = true; window.G.lastAcc = acc;               // QA: the shown total (multiplier units) vs the engine's r.mult
+      return acc;
+    } finally {                                         // the ghosted CHARGE symbols come back (at once if something threw)
+      if (!ok) GX.run("superHaloClose", {}, 1000);      // white 2026-11-17: and an open SUPER WILD wheel closes
+      ghosts.forEach((v) => { if (ok) gsap.to(v.c, { alpha: 1, duration: 0.25, overwrite: "auto" }); else { gsap.killTweensOf(v.c, "alpha"); v.c.alpha = 1; } });
     }
-    if (r.fc) acc = await fortuneChoiceShow(r, acc, ctr, sw, { x: COL_CX, y: COL_CY });
-    lineGfx.forEach((g) => gsap.to(g, { alpha: 1, duration: 0.2 }));
-    return acc;
   }
   // the Buy Bonus round: no spin; the reels step back, the column lands on the starting multiplier, Fortune Choice plays
   async function buyShow(r) {                          // whatever happens, the player's own mode comes back
@@ -2256,7 +2736,7 @@
     Engine.setMode("buy");
     feature(true); bullReact("tease");
     const veil = new PIXI.Graphics().beginFill(0x000000).drawRect(REEL_X[0][0], rowY(0) - CELL_H / 2, REEL_X[2][1] - REEL_X[0][0], CELL_H * 3).endFill();
-    veil.alpha = 0; cellFxBack.addChild(veil); winObjs.push(veil); gsap.to(veil, { alpha: 0.6, duration: 0.3 });
+    veil.alpha = 0; cellFxBack.addChild(veil); winObjs.push(veil); gsap.to(veil, { alpha: 0.6 * WIN_VEIL / 0.65, duration: 0.3 });   // white: WIN_VEIL 0 = parchment stays
     reels.forEach((rl) => [0, 1, 2].forEach((row) => rl.view(row).dim(0.6)));
     msgTxt.visible = false;                                                  // the plaque takes the footer
     plaqueBg.alpha = 1; plaqueGlow.alpha = 0.5; plaqueTxt.visible = true; plaqueBig.visible = false; plaque.visible = true; wbTotal.visible = false;
@@ -2266,10 +2746,11 @@
     screenUp(true); cntBox.visible = true; cntBox.scale.set(0); ctr.draw(false);
     await FX.tween(cntBox.scale, { x: 1, y: 1, duration: 0.25, ease: "back.out(1.7)" });
     colJump(r.multIndex); await FX.wait(0.4);                               // the column lands on the starting multiplier
-    pulseChip(r.startMult >= 50); await streakToBadge(r.startMult); badgeIn();
+    pulseChip(r.startMult >= 50); await streakToBadge(r.startMult, S.turbo ? 0.2 : 0.32); badgeIn();   // b18b: 0.32 / 0.2 s (was 0.18)
     let acc = r.startMult; accSet(acc, 1.4, 0); SFX.impact(r.startMult >= 50);
     r.bullActed = true;
     acc = await fortuneChoiceShow(r, acc, ctr, [], { x: 540, y: 470 });
+    window.G.lastAcc = acc;                              // QA: the shown total vs the engine's r.totalX
     await laserApply(Math.max(1, acc));
     const tier = Engine.tier(r.totalX), popWin = TIER_ORDER.includes(tier);
     gsap.to(plaqueBg, { alpha: 0, duration: 0.15 }); gsap.to(plaqueGlow, { alpha: 0.95, duration: 0.15 });
@@ -2289,34 +2770,29 @@
     exModeSync(true);                                    // back to the player's own column
   }
   // Garuda "power-up clash": the bull's lightning pulls the next-higher medallion out; it swaps with the real one, then loses
+  const chipAbove = () => { const v = colReel.views[3]; return v ? v.v : 0; };   // white 2026-11-17: the chip the player sees above the centre
   function clashWanted(r) {
-    const up = Engine.STRIP[stripAt(r.multIndex, 1)];
+    const up = chipAbove();
     return r.startMult >= 5 && up > r.startMult && (S.forceKind === "clash" || (S.forceKind !== "halo" && r.totalX >= 5 && Math.random() < 0.3));
   }
   async function clash(r) {
     feature(true);
-    const upV = Engine.STRIP[stripAt(r.multIndex, 1)], cur = r.startMult;
+    const upV = chipAbove(), cur = r.startMult;
     const chest = CHEST;
     GX.emit("clashStart", { chest, up: upV, cur });
     bullReact("big");
     gsap.fromTo(featRays, { alpha: 1 }, { alpha: 0.55, duration: 0.8 });
-    flashAt(chest.x, chest.y, 0xfff0c0, 3, 0.4); SFX.rumble(1.2);
+    { const o = handOrb(); flashAt(o.x, o.y, 0xfff0c0, 1.0, 0.3); } SFX.rumble(1.2);   // white (lightning fix): the orb charges (was a 3x white flash on the chest)
     await FX.wait(S.turbo ? 0.25 : 0.4);
-    const zap = new PIXI.Graphics(); zap.blendMode = PIXI.BLEND_MODES.ADD; fxTop.addChild(zap);
+    // white (lightning fix): the clash bolts leave the orb in the hand like every strike (they were bare 4-8 px lines
+    // from the chest, re-scribbled every frame): one held bolt per medallion (gx_feature handStrike), the second a beat later
+    { const o = handOrb(); handStrike({ x0: o.x, y0: o.y, x: COL_CX, y: COL_CY - COL_P, dur: 0.62, col: 0xfff2c0 }); }
+    gsap.delayedCall(0.08, () => { const o = handOrb(); handStrike({ x0: o.x, y0: o.y, x: COL_CX, y: COL_CY, dur: 0.54, col: 0xfff2c0, w: 11, branches: 1 }); });
     const zt = gsap.to({}, { duration: 0.6, onUpdate: () => {
-      zap.clear();
-      for (let b = 0; b < 2; b++) {
-        const tgt = b ? { x: COL_CX, y: COL_CY } : { x: COL_CX, y: COL_CY - COL_P };
-        zap.lineStyle(4 + Math.random() * 4, 0xfff2c0, 0.9).moveTo(chest.x, chest.y);
-        for (let s = 1; s <= 8; s++) {
-          const f = s / 8, wob = (1 - Math.abs(f - 0.5) * 2) * 60;
-          zap.lineTo(chest.x + (tgt.x - chest.x) * f + (Math.random() - 0.5) * wob, chest.y + (tgt.y - chest.y) * f + (Math.random() - 0.5) * wob);
-        }
-      }
-      if (Math.random() < 0.4) burstAt(COL_CX, COL_CY - (Math.random() < 0.5 ? COL_P : 0), 0xffd060, 8);
+      if (Math.random() < 0.2) burstAt(COL_CX, COL_CY - (Math.random() < 0.5 ? COL_P : 0), 0xffd060, 6);
     } });
     SFX.impact(false);
-    await FX.wait(0.6); zt.kill(); zap.destroy();
+    await FX.wait(0.6); zt.kill();
     const mk = (v, d) => {
       const c = new PIXI.Container();
       const parts = [chipBgTex(v), T(COINS && v > 0 ? "Multipliers/coin_rim" : "Multipliers/chip_rim"), chipLabelTex(v)];
@@ -2360,8 +2836,8 @@
       gsap.fromTo(v.c.pivot, { y: A * (1 - dd / Rr) }, { y: 0, duration: 0.25, ease: "power2.out", delay: dd / 2600 });
     }));
     colReel.views.forEach((v, i) => {
-      if (Math.hypot(COL_CX - P.x, COL_Y0 + i * COL_P - P.y) > Rr) return;
-      [v.b.pivot, v.f.pivot].forEach((pv) => gsap.fromTo(pv, { y: A * 0.5 }, { y: 0, duration: 0.22, ease: "power2.out", delay: 0.04 + i * 0.02 }));
+      if (Math.hypot(COL_CX - P.x, COL_Y0 + (i - 1) * COL_P - P.y) > Rr) return;
+      [v.b.pivot, v.f.pivot, v.fb.pivot, v.fc.pivot].forEach((pv) => gsap.fromTo(pv, { y: A * 0.5 }, { y: 0, duration: 0.22, ease: "power2.out", delay: 0.04 + i * 0.02 }));
     });
   }
   // a golden energy shard from the bull into a board cell
@@ -2417,14 +2893,22 @@
     await mv.at("hit");
     await FX.wait(short ? 0.08 : S.turbo ? 0.2 : 0.35);
   }
+  const SLAM_FAN = false;
+  // b19 (user 2026-11-19: "During super win, we have 2 explosion that should not be there after he hits the board"): the
+  // painted impact flipbook (boom: white star flash -> orange fireball / fire ring) and the glow puffs on the bar are off;
+  // the hit keeps its weight (sound, hit-stop, shake, board recoil / drop, zoom punch, cell hop, a little smoke, embers).
+  // ?slamboom (or SLAM_BOOM = true) brings them back.
+  const SLAM_BOOM = params.has("slamboom");
   function slamFx(P) {
     const y0 = 596;                                           // the frame's top bar
-    SFX.slam(); SFX.impact(true); heavyHit({ x: P.x, y: y0 }, 1, 0xffaa32);
+    // white 2026-11-16 (user: remove the "simple shapes firework" after the fist hits the board): no streak star /
+    // streaking dots / rings (heavyHit noShapes), no orange ring and no spark fan along the bar; the weight stays
+    // (hit-stop, shake, shockwave, zoom punch, impact flipbook, smoke, embers, cracks, cell hop, sound)
+    SFX.slam(); SFX.impact(true); heavyHit({ x: P.x, y: y0 }, 1, 0xffaa32, true);
     VFX.shockwave(P.x, y0, { amp: 30, radius: 900, dur: 0.25 }); VFX.zoomPunch(P.x, y0 + 300, 0.16, 0.12);
-    flashAt(P.x, y0, 0xfff2cd, 1.4, 0.06); flashAt(P.x, y0 - 20, 0xffaa32, 2.6, 0.22);
-    ringAt(P.x, y0, 0xffaa32, 2.6, 0.3);
-    boom(P.x, y0, 2.2); smokeAt(P.x, y0 - 6, 5, 0.8);
-    for (let k = 0; k < 28; k++) {                           // a shallow, directional fan along the bar
+    if (SLAM_BOOM) { flashAt(P.x, y0, 0xfff2cd, 1.4, 0.06); flashAt(P.x, y0 - 20, 0xffaa32, 2.6, 0.22); boom(P.x, y0, 2.2); }   // b19: the two "explosions"
+    smokeAt(P.x, y0 - 6, SLAM_BOOM ? 5 : 3, SLAM_BOOM ? 0.8 : 0.65);   // b19: a smaller dust puff (it read as part of the blast)
+    if (SLAM_FAN) for (let k = 0; k < 28; k++) {             // a shallow, directional fan along the bar (off: SLAM_FAN)
       const side = Math.random() < 0.5 ? -1 : 1, a = Math.PI / 2 + side * (Math.PI * (0.32 + 0.16 * Math.random())) - Math.PI, sp = 380 + Math.random() * 700;
       topP.emit({ tex: Math.random() < 0.5 ? FX.tex.spark : FX.tex.dot, x: P.x + (Math.random() - 0.5) * 70, y: y0,
         vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, ay: 1600, s0: 0.25 + Math.random() * 0.3, s1: 0, life: 0.6 + Math.random() * 0.4,
@@ -2455,9 +2939,9 @@
     await FX.tween(bull, { y: by + 8, duration: 0.1, ease: "power3.in" });
     const P = { x: 470, y: 600 };
     shake(16, 0.45); SFX.slam();
-    VFX.shockwave(P.x, P.y, { amp: 36, radius: 1500, dur: 0.9 }); VFX.zoomPunch(P.x, P.y + 300, 0.16, 0.35); VFX.rgbFlash(10, 0.3);
-    ringAt(P.x, P.y, 0xfff0c0, 4, 0.5); flashAt(P.x, P.y, 0xffffff, 3, 0.3);
-    for (let k = 0; k < 44; k++) topP.emit({ tex: Math.random() < 0.5 ? FX.tex.spark : FX.tex.dot, x: P.x + (Math.random() - 0.5) * 760, y: 596,
+    VFX.shockwave(P.x, P.y, { amp: 36, radius: 1500, dur: 0.9 }); VFX.zoomPunch(P.x, P.y + 300, 0.16, 0.35);
+    if (SLAM_BOOM) { VFX.rgbFlash(10, 0.3); flashAt(P.x, P.y, 0xffffff, 3, 0.3); }   // b19: no flash on the hit (no-clip lunge too); white 2026-11-16: no ring / spark shower (see slamFx)
+    if (SLAM_FAN) for (let k = 0; k < 44; k++) topP.emit({ tex: Math.random() < 0.5 ? FX.tex.spark : FX.tex.dot, x: P.x + (Math.random() - 0.5) * 760, y: 596,
       vx: (Math.random() - 0.5) * 700, vy: -200 - Math.random() * 760, ay: 1500, s0: 0.25 + Math.random() * 0.3, s1: 0, life: 0.8, tint: 0xffd060 });
     const crack = new PIXI.Graphics(); crack.blendMode = PIXI.BLEND_MODES.ADD; fxTop.addChild(crack);
     for (const dir of [-1, 1]) {
@@ -2474,8 +2958,9 @@
   // the bull charges the fire in his hand (it takes the orb's colour), winds up and hurls it as a comet (Kling throw clip)
   const RIM_VIOLET = [0.6, 0.28, 1.0];
   const rgbOf = (t) => [((t >> 16) & 255) / 255, ((t >> 8) & 255) / 255, (t & 255) / 255];
-  async function bullOrb(to, tint, label, k, picked) {
+  async function bullOrb(to, tint, label, k, picked, calm) {
     const mv = bullLive() ? bullPlay("bull_throw", k) : null;
+    if (!mv && picked && window.GX_HALO_HANDOFF) return coinFlies(to, tint, label, calm);   // white 2026-11-17: never leave the wheel's coin behind
     if (!mv) return bullOrbCode(to, tint, label);
     await mv.startedP;
     const tRel = (mv.c.cfg.events || {}).release || 1.94;
@@ -2488,12 +2973,13 @@
     const g = new PIXI.Sprite(FX.tex.glow); g.anchor.set(0.5); g.tint = tint; g.blendMode = PIXI.BLEND_MODES.ADD; g.scale.set(0.1);
     const ring = new PIXI.Sprite(FX.tex.ring); ring.anchor.set(0.5); ring.tint = tint; ring.blendMode = PIXI.BLEND_MODES.ADD; ring.scale.set(0.1);
     cg.addChild(g, ring);
-    gsap.to(g.scale, { x: 1.0, y: 1.0, duration: cd, ease: "power1.in" });
+    if (calm) { ring.visible = false; g.alpha = 0.45; g.visible = !(label < 0); }   // b18b: a calm (Fortune Choice) throw: no ring, no pulled sparks, a soft glow (none on a CHARGE coin)
+    gsap.to(g.scale, { x: calm ? 0.6 : 1.0, y: calm ? 0.6 : 1.0, duration: cd, ease: "power1.in" });
     gsap.to(ring.scale, { x: 0.6, y: 0.6, duration: cd });
     const follow = () => {
       if (flame.gx == null) return;
       cg.position.set(flame.gx, flame.gy - 70); ring.rotation += 0.18; cg.visible = flame.on > 0.05;
-      for (let e = nEmit(25); e > 0; e--) {
+      for (let e = calm ? 0 : nEmit(25); e > 0; e--) {
         const a = Math.random() * Math.PI * 2, r0 = 120;
         topP.emit({ tex: FX.tex.dot, x: cg.x + Math.cos(a) * r0, y: cg.y + Math.sin(a) * r0, vx: -Math.cos(a) * r0 * 3.2, vy: -Math.sin(a) * r0 * 3.2, s0: 0.3, s1: 0, life: 0.3, tint });
       }
@@ -2509,42 +2995,63 @@
     const c = mv.c, from = flame.gx != null && flame.on > 0.05 ? { x: flame.gx, y: flame.gy - 70 } : bullPt(c, c.cfg.release || [560, 230]);
     const d = c.cfg.dir || [90, 60], dl = Math.hypot(d[0], d[1]);
     const ctrl = { x: Math.min(W - 40, from.x + d[0] / dl * 420), y: from.y + d[1] / dl * 420 };
-    flashAt(from.x, from.y, 0xffffff, 1.8, 0.2); starFlash(from.x, from.y, 1.3, tint);
+    if (!calm) { flashAt(from.x, from.y, 0xffffff, 1.8, 0.2); starFlash(from.x, from.y, 1.3, tint); }   // b18b: a calm throw leaves the hand quietly
     GX.emit("throwRelease", { from, to, tint, label });
-    await comet(from, ctrl, to, tint, label, S.turbo ? 0.22 : 0.3);
-    orbImpact(to, tint);
+    await comet(from, ctrl, to, tint, label, S.turbo ? 0.22 : 0.3, calm);
+    orbImpact(to, tint, calm);
+  }
+  // white 2026-11-17: the coin a wheel handed over (window.GX_HALO_HANDOFF) flies to `to` itself (no throw clip)
+  async function coinFlies(to, tint, label, calm) {
+    const H = window.GX_HALO_HANDOFF; window.GX_HALO_HANDOFF = null;
+    const from = H && H.c && !H.c.destroyed ? { x: H.c.x, y: H.c.y } : handOrb();
+    if (H && H.c && !H.c.destroyed) H.c.destroy({ children: true });
+    await comet(from, { x: from.x + 160, y: (from.y + to.y) / 2 }, to, tint, label, S.turbo ? 0.25 : 0.35, calm);
+    orbImpact(to, tint, calm);
   }
   // a fireball with a trailing magic flame, flown along a curve
-  function comet(from, ctrl, to, tint, label, dur) {
+  // calm (b18b, the Fortune Choice coins: QA "a big glow ball around the coin covers the counter boards"): a modest glow
+  // behind the coin (0.75, half alpha), no white core / ring / white speed streak, a thin trail; the coin fades out over
+  // 0.12 s at the landing so the chip swap under it cross-fades (pickThrow / pickCharge swap on the landing frame)
+  function comet(from, ctrl, to, tint, label, dur, calm) {
     const o = new PIXI.Container(); o.position.set(from.x, from.y); fxTop.addChild(o);
-    const tail = VFX.magicFlame(o, 150, 300, rgbOf(tint)); tail.power = 1.5;
-    const g = new PIXI.Sprite(FX.tex.glow); g.anchor.set(0.5); g.tint = tint; g.blendMode = PIXI.BLEND_MODES.ADD; g.scale.set(2.1);
+    const tail = VFX.magicFlame(o, 150, 300, rgbOf(tint)); tail.power = calm ? 0.7 : 1.5;
+    const G0 = calm ? 0.75 : 2.1;
+    const g = new PIXI.Sprite(FX.tex.glow); g.anchor.set(0.5); g.tint = tint; g.blendMode = PIXI.BLEND_MODES.ADD; g.scale.set(G0); if (calm) g.alpha = 0.5;
     const core = new PIXI.Sprite(FX.tex.glow); core.anchor.set(0.5); core.tint = 0xffffff; core.blendMode = PIXI.BLEND_MODES.ADD; core.scale.set(0.45);
     const ring = new PIXI.Sprite(FX.tex.ring); ring.anchor.set(0.5); ring.tint = tint; ring.blendMode = PIXI.BLEND_MODES.ADD; ring.scale.set(0.6);
-    o.addChild(g, ring, core);
-    if (label) {                                             // the same coin the bull held (face + numerals, picker size), so the hand-off reads as one object
+    o.addChild(g, ring, core); if (calm) { ring.visible = false; core.visible = false; }
+    if (label < 0) {                                         // 2026-11-18: a Fortune Choice CHARGE = the wheel's CHARGE coin (gx_halo chargeCoin / gx_picker), not the old NUDGE plate
+      const f = new PIXI.Sprite(T("UI/charge_badge")); f.anchor.set(0.5); f.scale.set(0.86 * 0.52); o.addChild(f);
+    } else if (label) {                                      // the same coin the bull held (face + numerals, picker size), so the hand-off reads as one object
       const k = COINS ? 0.86 : 0.6;
       if (COINS) {
         const f = new PIXI.Sprite(chipBgTex(label)); f.anchor.set(0.5); f.scale.set(label < 0 ? k * NUDGE_K : k); o.addChild(f);
         const rm = new PIXI.Sprite(T(label < 0 ? "Multipliers/chip_rim" : "Multipliers/coin_rim")); rm.anchor.set(0.5); rm.scale.copyFrom(f.scale); o.addChild(rm);
       }
-      const l = new PIXI.Sprite(chipLabelTex(label)); l.anchor.set(0.5); l.scale.set(COINS ? (label < 0 ? k * NUDGE_K : k * LABEL_K) : k); o.addChild(l);
+      const l = labelSprite(label); l.anchor.set(0.5); l.scale.set(COINS ? (label < 0 ? k * NUDGE_K : k * LABEL_K) : k); o.addChild(l);
     }
     const p = { t: 0 }; let px = from.x, py = from.y;
     return FX.tween(p, { t: 1, duration: dur, ease: "power2.in", onUpdate: () => {
       const q = FX.bezier(from, ctrl, to, p.t), vx = q.x - px, vy = q.y - py; px = q.x; py = q.y;
       o.position.set(q.x, q.y); ring.rotation += 0.3;
       if (vx || vy) tail.rotation = Math.atan2(-vx, vy);           // the flame streams behind the ball
-      const n = nEmit(70);
-      for (let k = 0; k < n; k++) topP.emit({ tex: k ? FX.tex.dot : FX.tex.spark, x: q.x + (Math.random() - 0.5) * 30, y: q.y + (Math.random() - 0.5) * 30, s0: 0.5, s1: 0, life: 0.4, tint });
-      if (vx || vy) { const sp = Math.hypot(vx, vy); g.scale.set(2.1 + sp / 40, 2.1); g.rotation = Math.atan2(vy, vx); topP.emit({ tex: FX.tex.dot, x: q.x, y: q.y, vx: -vx * 8, vy: -vy * 8, s0: 0.9, s1: 0, life: 0.18, stretch: 300, tint: 0xffffff }); }
-    } }).then(() => o.destroy({ children: true }));
+      const n = nEmit(calm ? 20 : 70);
+      for (let k = 0; k < n; k++) topP.emit({ tex: k ? FX.tex.dot : FX.tex.spark, x: q.x + (Math.random() - 0.5) * 30, y: q.y + (Math.random() - 0.5) * 30, s0: calm ? 0.3 : 0.5, s1: 0, life: calm ? 0.25 : 0.4, tint });
+      if (vx || vy) { const sp = Math.hypot(vx, vy); g.scale.set(G0 + sp / (calm ? 160 : 40), G0); g.rotation = Math.atan2(vy, vx); if (!calm) topP.emit({ tex: FX.tex.dot, x: q.x, y: q.y, vx: -vx * 8, vy: -vy * 8, s0: 0.9, s1: 0, life: 0.18, stretch: 300, tint: 0xffffff }); }
+    } }).then(() => {
+      if (!calm) { o.destroy({ children: true }); return; }
+      tail.power = 0; g.visible = false;
+      gsap.to(o, { alpha: 0, duration: 0.12, ease: "power1.in", onComplete: () => o.destroy({ children: true }) });
+    });
   }
-  function orbImpact(to, tint) {
+  function orbImpact(to, tint, calm) {         // calm (white 2026-11-17, the Fortune Choice throws): no burst / star / ring shapes
+    // b18b (QA: white flash + fire ring round the centre box on a Fortune Choice landing): calm = the sound only; the caller
+    // settles the chip (pickThrow pulseChip / pickCharge scale-settle). No flipbook, shockwave, flash, shake or recoil
+    if (calm) { SFX.impact(false); return; }
     boom(to.x, to.y, 1.9, tint);
     VFX.shockwave(to.x, to.y, { amp: 26, radius: 800 });
-    flashAt(to.x, to.y, 0xfff4dc, 1.8, 0.1); burstAt(to.x, to.y, tint, 22); starFlash(to.x, to.y, 1.6, tint);
-    SFX.impact(true); heavyHit(to, 0.8, tint);
+    flashAt(to.x, to.y, 0xfff4dc, 1.8, 0.1); if (!calm) { burstAt(to.x, to.y, tint, 22); starFlash(to.x, to.y, 1.6, tint); }
+    SFX.impact(true); heavyHit(to, 0.8, tint, !!calm);
     hopCells(to, 18, 640);
   }
   // no throw clip: an orb in the roar clip's raised fist
@@ -2555,7 +3062,7 @@
     const core = new PIXI.Sprite(FX.tex.glow); core.anchor.set(0.5); core.tint = 0xffffff; core.blendMode = PIXI.BLEND_MODES.ADD; core.scale.set(0);
     const ring = new PIXI.Sprite(FX.tex.ring); ring.anchor.set(0.5); ring.tint = tint; ring.blendMode = PIXI.BLEND_MODES.ADD; ring.scale.set(0);
     o.addChild(g, ring, core);
-    if (label) { const l = new PIXI.Sprite(chipLabelTex(label)); l.anchor.set(0.5); l.scale.set(0.45); o.addChild(l); }
+    if (label) { const l = labelSprite(label); l.anchor.set(0.5); l.scale.set(0.45); o.addChild(l); }
     const cd = S.turbo ? 0.35 : 0.75;
     SFX.orbCharge(cd); gsap.to(flame, { boost: 1.1, duration: cd });
     gsap.to(g.scale, { x: 1.3, y: 1.3, duration: cd, ease: "back.out(2)" });
@@ -2590,13 +3097,7 @@
     gsap.to(st.scale, { x: sc, y: sc, duration: 0.42, ease: "power2.out" });
     gsap.to(st, { alpha: 0, rotation: st.rotation + 0.6, duration: 0.42, ease: "power1.in", onComplete: () => st.destroy() });
   }
-  function lightBeam(x, y, tint) {
-    if (!lightBeam.on) return;   // white (user 2026-11-13): no light beam up from the column
-    const b = new PIXI.Sprite(FX.tex.ray); b.anchor.set(0.5, 0); b.position.set(x, y); b.scale.set(1.3, -0.95);
-    b.tint = tint; b.blendMode = PIXI.BLEND_MODES.ADD; b.alpha = 0; fxTop.addChild(b);
-    gsap.timeline({ onComplete: () => b.destroy() }).to(b, { alpha: 0.95, duration: 0.07 }).to(b, { alpha: 0, duration: 0.75, ease: "power2.in" });
-    gsap.to(b.scale, { x: 0.35, duration: 0.82, ease: "power2.in" });
-  }
+
   // a spinning 3D coin that arcs from a winning cell to a counter
   function coinTrail(from, to, delay, onArrive) {
     const c = new PIXI.AnimatedSprite(FX.tex.coinFrames); c.anchor.set(0.5); c.animationSpeed = 0.35 + Math.random() * 0.3;
@@ -2614,13 +3115,43 @@
     starFlash(at.x + (Math.random() - 0.5) * 120, at.y, 0.7, 0xffe08a);
     const now = performance.now(); if (now - lastPlink > 70) { lastPlink = now; SFX.plink(); }
   }
+  // white 2026-11-17 (user: "during a simple win (without super wild or nudge) do a nice coin animation on the total win
+  // board, then hit the multiplier (bigger than 1) with an impact animation on the same board and show coin animation
+  // again"): spinning gold coins burst up out of the win board in a fan and fall back past it (k = size of the burst)
+  function winBoardCoins(k, noPop) {               // b19: noPop = multHit's own (stronger) plaque pop owns the scale
+    k = k || 1;
+    const n = Math.round((MOBILE ? 11 : 20) * k);
+    for (let i = 0; i < n; i++) {
+      const x = 540 + (Math.random() - 0.5) * 380, a = -Math.PI / 2 + (x - 540) / 380 * 0.9 + (Math.random() - 0.5) * 0.35;
+      const sp = (620 + Math.random() * 520) * (0.85 + 0.15 * k);
+      topP.emit({ frames: FX.tex.coinFrames, fps: 14 + Math.random() * 20, x, y: WB_Y2 + 6, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, ay: 2500, drag: 0.25,
+        s0: 0.4 + Math.random() * 0.16, s1: 0.36, life: 0.9 + Math.random() * 0.35, a0: 1, a1: 0, vr: (Math.random() - 0.5) * 5, blend: PIXI.BLEND_MODES.NORMAL });
+    }
+    for (let i = 0; i < Math.round(8 * k); i++) topP.emit({ tex: FX.tex.spark, x: 540 + (Math.random() - 0.5) * 300, y: WB_Y2 + (Math.random() - 0.5) * 30,
+      s0: 0.15, s1: 0.5, life: 0.35, a0: 1, a1: 0, vr: 3, tint: 0xfff0c8 });
+    if (!noPop) gsap.fromTo(plaque.scale, { x: PLAQUE_S * 1.1, y: PLAQUE_S * 1.1 }, { x: PLAQUE_S, y: PLAQUE_S, duration: 0.3, ease: "back.out(2.5)" });
+    SFX.coin();
+  }
+  // the multiplier lands on the win board: a heavy hit there (shockwave through the scene, hit-stop, a gold flare on the
+  // panel behind the count); winBarHit adds the drop and the light sweep
+  function winBoardImpact(v) {
+    const k = Math.min(1, Math.log10(Math.max(2, v)) / 2);
+    VFX.shockwave(540, WB_Y2, { amp: 18 + 14 * k, radius: 700 + 300 * k, dur: 0.5 });
+    hitStop(50 + 40 * k); buzz(25);
+    const g = new PIXI.Sprite(FX.tex.glow); g.anchor.set(0.5); g.position.set(540, WB_Y2); g.tint = 0xffc850; g.blendMode = PIXI.BLEND_MODES.ADD;
+    plaqueL.addChildAt(g, plaqueL.getChildIndex(plaque));
+    gsap.fromTo(g.scale, { x: 2.2, y: 0.55 }, { x: 4.2 + k, y: 0.9, duration: 0.45, ease: "power2.out" });
+    gsap.fromTo(g, { alpha: 0.95 }, { alpha: 0, duration: 0.5, ease: "power2.in", onComplete: () => g.destroy() });
+  }
+  const BAL_COINS = false;   // white 2026-11-16 (user): no coin flight from TOTAL WIN to the balance
   function balanceStreak() {
-    const from = { x: 540, y: 1374 }, to = { x: balVal.x + balVal.width / 2, y: 1864 };
+    if (!BAL_COINS) return;
+    const from = { x: 540, y: WB_Y2 }, to = { x: balVal.x + balVal.width / 2, y: 1864 };
     for (let k = 0; k < 6; k++) coinTrail(from, to, 0.05 + k * 0.06, k === 5 ? (pt) => { flashAt(pt.x, pt.y, 0xffd060, 2.2, 0.3); burstAt(pt.x, pt.y, 0xffd060, 14); starFlash(pt.x, pt.y, 1.4, 0xffe08a); } : (pt) => winBarPop(pt));
   }
   // vignette for the tease heartbeat
   const vignette = new PIXI.Sprite(FX.tex.vignette); vignette.width = W; vignette.height = H; vignette.alpha = 0; vignette.visible = false;
-  fxTop.addChildAt(vignette, 0);
+  ambFront.addChild(vignette);   // white 2026-11-16 ("keep the board color consistent"): under the board (was over it in fxTop: it darkened the board's edges and corners)
   // magic flame in the bull's open hand (idle clip) that rides up into his raised fist (roar clip)
   const HAND_CLIP = { x: 78, y: 492 }, FIST_CLIP = { x: 120, y: 292 };
   { const h = clips.bull_idle && clips.bull_idle.cfg.hand; if (h) { HAND_CLIP.x = h[0]; HAND_CLIP.y = h[1]; } }   // V4: its own hand
@@ -2756,7 +3287,7 @@
         }
         g.endHole();
       }
-      g.endFill(); g.alpha = 0; gsap.to(g, { alpha: 0.65, duration: 0.1 }); cellFxBack.addChild(g); winObjs.push(g);
+      g.endFill(); g.alpha = 0; gsap.to(g, { alpha: WIN_VEIL, duration: 0.1 }); cellFxBack.addChild(g); winObjs.push(g);   // white: WIN_VEIL 0 = parchment stays
     });
     const d = { k: 0 };
     gsap.to(d, { k: 1, duration: 0.1, onUpdate: () => {
@@ -2769,6 +3300,10 @@
     for (const c of cells) {
       const reel = Math.floor(c / 3), row = c % 3, id = curGrid[reel][row];
       if (id === "wild" || id === "super_wild") {
+        // white 2026-11-16 (user: "remove all the color animation in super wild and wild apart from the eyes glow"): the
+        // WILD's Kling win clip has the burn baked in (the face turns orange-red, a gold flare behind) -> no clip and no ray
+        // burst: the still art with gx_symbols' punch + weak eye glow. ?wildclip brings the clip back.
+        if (!params.has("wildclip")) continue;
         if (clips[id + "_win"]) playCellClip(id, reel, row);
         else if (id !== "super_wild") {
           const rb = new PIXI.Sprite(FX.tex.burst); rb.anchor.set(0.5); rb.position.set(REEL_CX[reel], rowY(row)); rb.scale.set(0.3);
@@ -2785,17 +3320,22 @@
     if (rung) bullReact(rung === 2 ? "tease" : "win");
     if (rung === 2) { flameKick(1.0); flashScreen(0xffd070, 0.1, 0.35); }
     showLine(r.lines[0], r.lines[0].pay * BETS[S.betIdx]);
-    if (rung) [...cells].forEach((c, ci) => {
+    // white 2026-11-18 b18 (user: "during the SUPER WILD win we don't need to throw coins into the total win tab, same for
+    // the WILD and CHARGE"): no coin streams into the win bar and no win-board coin bursts in a round with a SUPER WILD /
+    // Fortune Choice, a WILD in a win line, or any CHARGE (column CHARGE chip, board CHARGE run); plain line wins keep them
+    const coinsOK = !r.fc && !r.nudges.length && !(r.boardRuns && r.boardRuns.length) && !(r.startMult < 0) && !r.chipSteps
+      && !r.lines.some((l) => l.rows.some((row, reel) => Engine.WILDS.has(r.grid[reel][row])));
+    if (rung && coinsOK) [...cells].forEach((c, ci) => {
       const from = { x: REEL_CX[Math.floor(c / 3)], y: rowY(c % 3) };
-      for (let k = 0; k < (rung === 2 ? 6 : 3); k++) coinTrail(from, { x: 540, y: 1374 }, 0.12 + ci * 0.05 + k * 0.08, winBarPop);
-      const v = reels[Math.floor(c / 3)].view(c % 3);               // winners beat together, in time
-      gsap.fromTo(v.inner.scale, { x: 1, y: 1 }, { x: 1.07, y: 1.07, duration: 0.16, delay: 0.3, yoyo: true, repeat: rung === 2 ? 5 : 3, ease: "sine.inOut" });
+      for (let k = 0; k < (rung === 2 ? 6 : 3); k++) coinTrail(from, { x: 540, y: WB_Y2 }, 0.12 + ci * 0.05 + k * 0.08, winBarPop);
+      // white 2026-11-16 (user: "the animations are too many on the symbols"): no extra beat on top of each symbol's own move
     });
     // rail plaque pops 0.6 -> 1.05 -> 1 and counts the base win (it replaces the footer total while it shows)
     plaqueBg.alpha = 1; plaqueGlow.alpha = 0.5; plaqueTxt.visible = true; plaqueBig.visible = false;
     plaque.visible = true; wbTotal.visible = false;
     // a win below the stake (no feature) is a net loss: it goes straight to its total, with no multiplier flight
-    const quiet = rung === 0 && !r.nudges.length && !r.fc && !(r.boardRuns && r.boardRuns.length), firstCount = quiet ? r.win : r.baseWin;
+    // white 2026-11-16: a quiet win WITH a multiplier first shows its base win (the multiplier then hits the board)
+    const quiet = rung === 0 && !r.nudges.length && !r.fc && !(r.boardRuns && r.boardRuns.length), firstCount = quiet && !(r.mult > 1) ? r.win : r.baseWin;
     plaqueShown.v = MOBILE ? firstCount : firstCount * 0.15; drawPlaque();   // white: phones show the final number at once (each redraw of this big text costs 10-30 ms there)
     plaque.alpha = 0; plaque.scale.set(0.6 * PLAQUE_S);
     gsap.to(plaque, { alpha: 1, duration: 0.1 });
@@ -2803,16 +3343,25 @@
       .to(plaque.scale, { x: PLAQUE_S, y: PLAQUE_S, duration: 0.1 });
     await FX.tween(plaqueShown, { v: firstCount, duration: S.turbo ? 0.2 : quiet ? 0.28 : 0.35, ease: "power1.out", onUpdate: () => { drawPlaqueRoll(); SFX.tick(); } });
     SFX.line();
-    await FX.wait(rung === 0 ? 0.08 : S.turbo ? 0.1 : 0.25);
+    const simpleWin = !r.nudges.length && !r.fc && !(r.boardRuns && r.boardRuns.length), coinK = rung === 0 ? 0.5 : rung === 1 ? 1 : 1.3;
+    // b19 (user 2026-11-19: "when you hit the total win board, we need coins at that second, not after"): with a multiplier > 1
+    // the one burst fires in multHit's landing frame (MH_COIN_K x richer, it replaces the before + after bursts); 1x keeps this one
+    const MH_COIN_K = 1.4, hitCoins = simpleWin && coinsOK && r.mult > 1 ? coinK * MH_COIN_K : 0;
+    if (simpleWin && coinsOK && !(r.mult > 1)) winBoardCoins(coinK);    // white 2026-11-17: coins on the win board (b18: not with WILD / SUPER WILD / CHARGE)
+    await FX.wait(rung === 0 ? 0.08 : S.turbo ? 0.1 : simpleWin ? 0.45 : 0.25);
     // multiplier phase
     if (r.nudges.length || r.fc || (r.boardRuns && r.boardRuns.length)) {
       const acc = await nudgePhase(r);
       await laserApply(Math.max(1, acc));
     } else if (r.mult > 1 && quiet) {
-      pulseChip(false);
-      const mt = new PIXI.Text("x" + r.mult, FX.gold(40, { fill: FX.TIER_FILL.mega })); mt.anchor.set(0.5); mt.position.set(plaque.x + 230, plaque.y);
-      plaqueL.addChild(mt); winObjs.push(mt); multTag = mt;
-      gsap.fromTo(mt.scale, { x: 1.4, y: 1.4 }, { x: 1, y: 1, duration: 0.2, ease: "back.out(1.6)" });
+      // white 2026-11-16 (user: "during the multiplier bigger than 1, we need to hit the total win board"): small wins too:
+      // the one-row screen shows xN, the number hits the board, the plaque counts on to the total
+      // white 2026-11-18 b18 (user: "it should simply do a direct hit from the multiplier box, not the popup box"): no board
+      // rises; the number flies straight from the centre chip to the win bar (was multShow + multHit fromScreen)
+      colHotOff(0);                                      // b19 (C): the gold-dust frame fades as the number leaves the column
+      await multHit(r.mult, true, false, hitCoins);     // b19: the coins in the landing frame
+      await FX.tween(plaqueShown, { v: r.win, duration: S.turbo ? 0.15 : 0.3, ease: "power1.out", onUpdate: () => { drawPlaqueRoll(); SFX.tick(); } }); plaqueShown.v = r.win; drawPlaque();
+      // b19: no second burst after the count (was: if (coinsOK) winBoardCoins(coinK))
     } else if (r.mult > 1) {
       if (clashWanted(r)) await clash(r);
       // the bull throws fire at the column for every multiplier of 5x and more, except on a win below the stake
@@ -2822,7 +3371,8 @@
         const halo = r.mult >= HALO_MIN && !params.has("nohalo");
         if (halo) await GX.run("halo", { mult: r.mult, tint: multTint(r.mult) }, 7000);
         await bullOrb({ x: COL_CX, y: COL_CY }, multTint(r.mult) === 0xffd070 ? 0xffb040 : multTint(r.mult), r.mult, r.totalX >= 10 ? 1.15 : 1.7, halo); r.bullActed = true; }
-      await multHit(r.mult, r.bullActed || rung === 0);
+      colHotOff(0);                                      // b19 (C): the gold-dust frame fades as the number leaves the column
+      await multHit(r.mult, true, false, hitCoins);    // white 2026-11-18 b18: a direct hit from the centre chip (no one-row screen); b19: coins at landing
     } else {
       pulseChip(false);
     }
@@ -2833,7 +3383,7 @@
     if (r.totalX >= 5 && !r.bullActed) { slamP = bullSlam(); r.bullActed = true; }
     if (r.mult > 1 && popWin) {
       const mt = new PIXI.Text("x" + r.mult, FX.gold(46, { fill: FX.TIER_FILL.mega })); mt.anchor.set(0.5); mt.position.set(plaque.x + 250, plaque.y);
-      plaqueL.addChild(mt); winObjs.push(mt); multTag = mt;
+      plaqueL.addChild(mt); winObjs.push(mt); multTag = mt; mt.renderable = false;   // white 2026-11-16: no "xN" tag (user)
       gsap.fromTo(mt.scale, { x: 1.6, y: 1.6 }, { x: 1, y: 1, duration: 0.3, ease: "back.out(1.6)" });
       await FX.wait(S.turbo ? 0.15 : 0.25);
     } else if (r.mult > 1 && !quiet) {
@@ -2845,9 +3395,11 @@
       bigTw = FX.tween(plaqueShown, { v: r.win, duration: cuDur, ease: "power1.in", onUpdate: function () {
         drawBig(); const pr = this.progress(), now = gsap.globalTimeline.time();
         if (now - cuT > 0.07) { cuT = now; SFX.rise(pr); }
-      } }).then(() => { SFX.line(); gsap.fromTo(plaqueBig.scale, { x: 1.12, y: 1.12 }, { x: 1, y: 1, duration: 0.25, ease: "back.out(2)" }); });
+      } }).then(() => { SFX.line(); const k = bigFit();   // the pop settles on the fitted size (was 1: big amounts overflowed the panel)
+        gsap.fromTo(plaqueBig.scale, { x: k * 1.12, y: k * 1.12 }, { x: k, y: k, duration: 0.25, ease: "back.out(2)" });
+        /* b19: no coins after the count (they fire at the hit, multHit) */ });
       const mt = new PIXI.Text("x" + r.mult, FX.gold(40, { fill: FX.TIER_FILL.mega })); mt.anchor.set(0.5); mt.position.set(plaque.x + 300, plaque.y);
-      plaqueL.addChild(mt); winObjs.push(mt); multTag = mt;
+      plaqueL.addChild(mt); winObjs.push(mt); multTag = mt; mt.renderable = false;   // white 2026-11-16: no "xN" tag (user)
       gsap.fromTo(mt.scale, { x: 1.6, y: 1.6 }, { x: 1, y: 1, duration: 0.3, ease: "back.out(1.6)" });
     }
     if (bigTw) await bigTw;
@@ -3020,6 +3572,10 @@
   pop.eventMode = "static"; pop.hitArea = new PIXI.Rectangle(0, 0, W, H);
   let popTap = null, titlePulse = null;
   pop.on("pointertap", () => popTap && popTap());
+  // b19 (user 2026-11-19: "During super win, we have 2 explosion that should not be there"): the BIG -> MEGA -> SUPER
+  // tier-ups each fired a glow puff, ring, shockwave and dot burst here (+ gx_popup impact flash / rings / lines). Off;
+  // ?popburst brings them back. The title still slams in, the fanfare, coins and shake stay.
+  const POP_BURST = params.has("popburst");
   function setTierTitle(t, first) {
     GX.emit("popupTier", { tier: t, first });
     const look = TIER_LOOK[t];
@@ -3039,11 +3595,11 @@
     const up = first ? 1.12 : 1.38;                    // a tier-up slams in; the first title just arrives
     gsap.fromTo(popTitle.scale, { x: base * up, y: base * up }, { x: base, y: base, duration: first ? 0.16 : 0.26, ease: first ? "back.out(1.2)" : "back.out(2.6)" });
     if (!first) {
-      popCoins.emit({ tex: FX.tex.glow, x: 540, y: 760, s0: 7, s1: 11, life: 0.32, tint: look.glow, a0: 0.85, a1: 0, blend: PIXI.BLEND_MODES.ADD });
+      if (POP_BURST) popCoins.emit({ tex: FX.tex.glow, x: 540, y: 760, s0: 7, s1: 11, life: 0.32, tint: look.glow, a0: 0.85, a1: 0, blend: PIXI.BLEND_MODES.ADD });
       if (!again) { hitStop(70); buzz(50); }
     }
     titlePulse = gsap.to(popTitle.scale, { x: base * 1.03, y: base * 1.03, duration: 0.7, yoyo: true, repeat: -1, ease: "sine.inOut", delay: 0.26 });
-    ringAt(540, 760, look.burst, 6, 0.6, popCoins);
+    if (POP_BURST) ringAt(540, 760, look.burst, 6, 0.6, popCoins);   // b19: off
 
     plateLac.tint = PLATE_TINT[t] || 0x5a0d1c; medTint.tint = banTint.tint = WP_COL[t] || 0xe0303a;
     gsap.fromTo(popBan.scale, { x: first ? 0.6 : 1.14, y: first ? 0.6 : 1.14 }, { x: 1, y: 1, duration: first ? 0.32 : 0.3, ease: "back.out(2.2)" });
@@ -3051,8 +3607,8 @@
     popGlow.tint = look.glow; popBurst.tint = popBurst2.tint = look.burst; flare1.tint = look.flare; flare2.tint = 0xffffff;
     popTitleMask.text = popTitle.text; popAmtGlow.tint = look.glow;
     if (popRays) popRays.setTint(look.burst);
-    if (!first) VFX.shockwave(540, 740 + POP_DY, { amp: 30, radius: 1200, dur: 0.3 });
-    for (let k = 0; k < 18 + 12 * Math.max(0, TIER_ORDER.indexOf(t)); k++) {
+    if (!first && POP_BURST) VFX.shockwave(540, 740 + POP_DY, { amp: 30, radius: 1200, dur: 0.3 });   // b19: off
+    for (let k = 0; k < (POP_BURST ? 18 + 12 * Math.max(0, TIER_ORDER.indexOf(t)) : 0); k++) {     // b19: dot burst off
       const a = Math.random() * Math.PI * 2, v = 600 + Math.random() * 900;
       popCoins.emit({ tex: FX.tex.dot, x: 540, y: 790, vx: Math.cos(a) * v, vy: Math.sin(a) * v, drag: 2.6, s0: 0.35 + Math.random() * 0.3, s1: 0,
         life: 0.7 + Math.random() * 0.3, tint: Math.random() < 0.4 ? 0xffffff : look.burst, stretch: 380, blend: PIXI.BLEND_MODES.ADD });
@@ -3138,8 +3694,8 @@
         gsap.to(popFaders, { alpha: 0, duration: 0.3 });
         // the amount shrinks and flies down to the win bar
         gsap.to(popAmt.scale, { x: popAmt.scale.x * 0.3, y: popAmt.scale.y * 0.3, duration: 0.4, ease: "power2.in" });
-        gsap.to(popAmt, { y: 1374 - POP_DY, alpha: 0.3, duration: 0.4, ease: "power2.in", onComplete: () => {
-          ringAt(540, 1374, 0xffd060, 2, 0.3); SFX.line();
+        gsap.to(popAmt, { y: WB_Y2 - POP_DY, alpha: 0.3, duration: 0.4, ease: "power2.in", onComplete: () => {
+          ringAt(540, WB_Y2, 0xffd060, 2, 0.3); SFX.line();
           pop.visible = false; popCoins.clear(); popAmt.position.set(540, 930); res();
         } });
       };
@@ -3155,46 +3711,11 @@
     const fill = new PIXI.Graphics().beginFill(0xff8a20, 0.12).drawRoundedRect(x0 + 4, CELL_Y0 + 4, w - 8, h - 8, 20).endFill();
     const i = new PIXI.Graphics().lineStyle(5, 0xffe08a, 0.9).drawRoundedRect(x0 + 4, CELL_Y0 + 4, w - 8, h - 8, 20);
     [fill, i].forEach((g) => (g.blendMode = PIXI.BLEND_MODES.ADD));
+    fill.visible = false;                               // white 2026-11-16: no orange wash on reel 3's parchment (the rim line stays)
     tease.addChild(fill, i);
     FireRect(tease, x0 + 6, CELL_Y0 + 6, x1 - 6, WIN_Y1 - 6, { pad: 50, top: 80, height: 62 });
     tease.box = [x0, CELL_Y0, x1, WIN_Y1];
   }
-  // multiplier tease: warm glow over the tray, a bright centre band and two pointers that knock on every chip
-  const colTease = new PIXI.Container(); colTease.visible = false; boardFx.addChild(colTease);
-  {
-    const [x0, y0, x1, y1] = TRAY, w = x1 - x0, h = y1 - y0;
-    const fill = new PIXI.Graphics().beginFill(0xffb040, 0.08).drawRoundedRect(x0 + 4, y0 + 4, w - 8, h - 8, 18).endFill();
-    const rim = new PIXI.Graphics().lineStyle(4, 0xffe08a, 0.85).drawRoundedRect(x0 + 4, y0 + 4, w - 8, h - 8, 18);
-    const band = new PIXI.Sprite(FX.tex.glow); band.anchor.set(0.5); band.position.set(COL_CX, COL_CY);
-    band.scale.set(w / 110, COL_P / 150); band.tint = 0xffd070;
-    [fill, rim, band].forEach((g) => (g.blendMode = PIXI.BLEND_MODES.ADD));
-    const ptr = [[x0 - 12, 1], [x1 + 12, -1]].map(([x, dir]) => {
-      const g = new PIXI.Graphics().beginFill(0x000000, 0.45).drawPolygon([-dir * 6, -32, dir * 26, 0, -dir * 6, 32]).endFill()
-        .beginFill(0xffd36b).lineStyle(2, 0x7a4a10).drawPolygon([-dir * 4, -26, dir * 20, 0, -dir * 4, 26]).endFill();
-      g.position.set(x, COL_CY); g.dir = dir; return g;
-    });
-    colTease.addChild(fill, band, rim);                 // white: no big pointers, the small frame arrows knock instead
-    Object.assign(colTease, { box: [x0, y0, x1, y1], band, rim, ptr: cfArrows, heat: 0 });
-  }
-  function colTeaseOn() {
-    gsap.killTweensOf(colTease); colTease.visible = true; colTease.alpha = 0; colTease.heat = 0;
-    gsap.to(colTease, { alpha: 1, duration: 0.3 }); gsap.to(colTease, { heat: 1, duration: 1.6, ease: "power1.in" });
-    SFX.colTease();
-  }
-  function colTeaseTick(left) {                     // a chip arrives in the centre slot
-    const k = colTease.heat;
-    SFX.colTick(k);
-    gsap.fromTo(colTease.band, { alpha: 0.7 }, { alpha: 0.25 + 0.3 * k, duration: 0.22 });
-    colTease.ptr.forEach((g) => gsap.fromTo(g, { x: g.x0 ?? (g.x0 = g.x) }, { x: g.x0 + g.dir * 7, duration: 0.07, yoyo: true, repeat: 1, ease: "power1.out" }));
-    const v = colReel.views[4];
-    if (v && v.inner) gsap.fromTo(v.inner.scale, { x: 1.07 + 0.05 * k, y: 1.07 + 0.05 * k }, { x: 1, y: 1, duration: 0.24, ease: "power2.out" });
-    if (left <= 6) boardP.emit({ tex: FX.tex.spark, x: COL_CX + (Math.random() - 0.5) * 120, y: COL_CY, s0: 0.1, s1: 0.5, life: 0.35, a0: 1, a1: 0, vr: 3, tint: 0xfff0c8 });
-  }
-  function colTeaseOff() {
-    gsap.killTweensOf(colTease);
-    gsap.to(colTease, { alpha: 0, duration: 0.35, onComplete: () => (colTease.visible = false) });
-  }
-
   // ---------- round ----------
   let skipWait = null;
   const waitSkippable = (s) => new Promise((res) => { const d = gsap.delayedCall(s, done); function done() { skipWait = null; res(); } skipWait = () => { d.kill(); done(); }; });
@@ -3217,6 +3738,7 @@
   }
   async function spin(force, buyKind) {
     if (S.state !== "idle") return;
+    exShowCancel("spin");                                // white 2026-11-18: the EX show ends in the same frame (column back to its plan)
     const buyCost = buyKind ? Engine.BUY[buyKind].cost * BETS[S.betIdx] : 0;
     if (S.balance < (buyKind ? buyCost : stake())) {
       showMsg("NOT ENOUGH BALANCE"); gsap.fromTo(ui.balance_bar, { alpha: 0.4 }, { alpha: 1, duration: 0.15, repeat: 5, yoyo: true });
@@ -3226,18 +3748,26 @@
     clearWin();
     S.state = "spinning"; quick = false; setUiLocked(true); S.forceKind = force || null;
     const bet = BETS[S.betIdx];
+    // QA hook (2026-11-18): ?fcpick=charge | choice2 | mult (or G.fcPick = "charge") - a forced demo round (keys 3, m, ...)
+    // or a Buy Bonus is re-drawn until its Fortune Choice has a pick of that kind (engine rounds as usual, only chosen)
+    const fcWant = (window.G && window.G.fcPick) || params.get("fcpick"), fcHas = (t) => !fcWant || !!(t && t.fc && t.fc.picks.some((p) => p.t === fcWant));
     let r;
-    if (buyKind) r = Engine.buySpin(buyKind, bet, false);
+    if (buyKind) { r = Engine.buySpin(buyKind, bet, false); for (let k = 0; k < 20000 && !fcHas(r); k++) r = Engine.buySpin(buyKind, bet, false); }
     else if (force === "max") {
       // DEMO only: a max win is too rare to find by seed search (none in tens of millions), so the demo sets up a
       // real, possible outcome: two full lines of WILDs with the 1000x chip (capped at the max win), settled by the engine as usual
       // white: with the 50,000x cap a real max win needs Fortune Choice: a board of SUPER WILDs, the 1000x chip in the
       // centre, the first seed whose round hits the cap (found in under a few thousand seeds in every mode)
       const sg = [0, 1, 2].map(() => ["super_wild", "super_wild", "super_wild"]), ci = Engine.STRIP.indexOf(1000);
-      for (let sd = 1; sd < 300000 && !r; sd++) { const t = Engine.settle(sg, ci, bet, stake(), Engine.mulberry32(sd)); if (t.capped) r = t; }
+      for (let pass = 0; pass < 2 && !r; pass++)                  // (pass 1: ?fcpick found nothing - any capped round)
+        for (let sd = 1; sd < 300000 && !r; sd++) { const t = Engine.settle(sg, ci, bet, stake(), Engine.mulberry32(sd)); if (t.capped && (pass || fcHas(t))) r = t; }
       if (!r) r = Engine.settle([["wild", "wild", "K"], ["wild", "wild", "J"], ["wild", "wild", "A"]], Engine.STRIP.indexOf(1000), bet, stake());
     }
-    else if (force) { const f = Engine.findRound(force, bet, exArg(), 1 + Math.floor(Math.random() * 1e6)); r = f ? f.round : Engine.spin(bet, exArg()); }
+    else if (force) {
+      let s0 = 1 + Math.floor(Math.random() * 1e6), f = Engine.findRound(force, bet, exArg(), s0);
+      for (let k = 0; k < 400 && f && !fcHas(f.round); k++) f = Engine.findRound(force, bet, exArg(), f.seed + 1);   // ?fcpick
+      r = f ? f.round : Engine.spin(bet, exArg());
+    }
     else r = Engine.spin(bet, exArg());
     window.G.last = r;
     setBalance(S.balance - r.stake, false);
@@ -3253,8 +3783,9 @@
     SFX.spin(); bullReact("spin");
     arrowSpeed = 6.3;                                   // ~360 deg/s while the reels run (Garuda)
     gsap.fromTo(spinFlash, { alpha: 0.9 }, { alpha: 0, duration: 0.5 });
-    ringAt(scx, scy, 0xffd060, 1.6, 0.4);
-    for (let k = 0; k < 26; k++) {
+    // white 2026-11-16 (user: "we still have the dots exploding from spin button"): no ring / dot swirl from the button
+    if (SPIN_BURST) ringAt(scx, scy, 0xffd060, 1.6, 0.4);
+    if (SPIN_BURST) for (let k = 0; k < 26; k++) {
       const a = (k / 26) * Math.PI * 2;
       topP.emit({ tex: FX.tex.dot, x: scx + Math.cos(a) * 118, y: scy + Math.sin(a) * 118, vx: -Math.sin(a) * 460 + Math.cos(a) * 140, vy: Math.cos(a) * 460 + Math.sin(a) * 140,
         drag: 3.2, s0: 0.32, s1: 0, life: 0.45, tint: k % 3 ? 0xffd060 : 0xffffff, stretch: 420 });
@@ -3263,10 +3794,38 @@
     // Garuda timing: no lift; stops at 0.50 / 0.70 / 0.90 s, the column at 1.10 s (turbo 0.15 / 0.20 / 0.25 / 0.30 s).
     // A stop request lands ~0.15 s later (the final symbols scroll in), so requests go out that much earlier.
     reels.forEach((rl) => rl.start(0, tb)); colReel.start(0, tb);   // Garuda: every reel starts at once, no lift
+    // b19 (items 7-8): the hot column - 32 chips/s and the gold-dust frame (after exShowCancel above, which ends a demo frame)
+    if (COL_HOT) { colReel.vmax = colReel.speed = Math.max(colReel.vmax, COL_HOT_V); colHotOn(); }
+    colGrowTo(0, 0.18);                                // white 2026-11-17: the rolling column is one even strip
     // Porco: each reel may start its stop when the previous one has; stops come one loop apart (~0.4 s)
-    const tStop = tb ? [0.1, 0.15, 0.2, 0.25] : [0.75, 1.1, 1.45, 1.7], LEAD = 0;   // white 2026-11-13: calmer, towards Pascal (0.6/1.0/1.4/1.7)   // Garuda (measured): hard stops 0.72 / 0.90 / 1.08 / 1.25 s     // timing pass 2026-11-10 (was 0.6/1.0/1.4/1.7)
+    const tStop = tb ? [0.1, 0.15, 0.2] : [0.75, 1.1, 1.45], LEAD = 0;   // white 2026-11-13: calmer, towards Pascal (0.6/1.0/1.4/1.7)   // Garuda (measured): hard stops 0.72 / 0.90 / 1.08 / 1.25 s     // timing pass 2026-11-10 (was 0.6/1.0/1.4/1.7)
     const wildsEarly = [0, 1].reduce((a, reel) => a + r.grid[reel].filter((s) => Engine.WILDS.has(s)).length, 0);
     const doTease = wildsEarly >= 2 && !tb;
+    // white 2026-11-17 (user: "the multiplier part should stop after the 3rd reel equally timing", "smooth reel rotation and
+    // stop"): the column is the fourth reel. It lands one reel-gap after the third reel, in every round (was: a long roll on
+    // a win that eased down, hung on 500x / 1000x and crept in ~1.5 s after the reels). Its stop is a glide (Reel.glideStop):
+    // the roll keeps its 9 chips/s, eases out over 0.55 s (turbo 0.25) a little past the target and settles. The slow strip
+    // needs its 9-chip window to scroll in, so the stop is asked early enough for that (before the reels' own stops).
+    colC = r.multIndex;
+    // b19: a plain win with a multiplier > 1 keeps the gold-dust frame until the number flies (present() -> colHotOff before multHit)
+    const hotHold = r.win > 0 && r.mult > 1 && !r.nudges.length && !r.fc && !(r.boardRuns && r.boardRuns.length);
+    colReel.onLand = () => { colGrowTo(1, 0.25); onColumnLand(r); if (!hotHold) colHotOff(COL_HOT_HOLD); };
+    // white (Garuda): a fresh window round the engine's centre and nudge values
+    const colFix = { 0: stripAt(colC, 0) }; for (let k = 1; k <= 3; k++) if (k <= r.nudges.length) colFix[-k] = colIdxOf(r.nudges[k - 1]);   // white 2026-11-16: the first nudges sit BELOW the centre (a run walks down)
+    const colFinal = colWindow(colFix);
+    const g0 = gsap.globalTimeline.time(), tNow = () => gsap.globalTimeline.time() - g0;
+    const GAP = tStop[2] - tStop[1], COL_TD = tb ? 0.25 : 0.55, COL_OV = tb ? 0.08 : 0.12;
+    const colLand = (doTease ? tStop[1] + 1.1 : tStop[2]) + 3.5 / reels[2].vNormal + GAP;   // a reel lands ~3.5 cells after its stop call
+    const colNeed = (colFinal.length + 1 + COL_OV) / colReel.vmax + COL_TD / 2;
+    let colP = null;
+    const colGo = () => {
+      if (colP) return;
+      if (quick) { colReel.speed = Math.max(colReel.speed, colReel.vTurbo); colP = colReel.stop(colFinal, true); return; }   // a double-tap still slams it fast (b19: never slower than the hot roll)
+      // T = the overshoot's peak; the strip crosses its target sqrt(2 over td / v) earlier, and that crossing is the landing
+      colP = colReel.glideStop(colFinal, { T: Math.max(0.2, colLand + Math.sqrt(2 * COL_OV * COL_TD / colReel.vmax) - tNow()), td: COL_TD, over: COL_OV,
+        extra: (n) => Array.from({ length: n }, (_, k) => stripAt(colC, k - n - 2)) });
+    };
+    const colTimer = gsap.delayedCall(Math.max(0, colLand - colNeed - 0.25), colGo);
     await waitSkippable(Math.max(0.02, tStop[0] - LEAD));
     const landed = [];
     for (let i = 0; i < 3; i++) {
@@ -3285,32 +3844,12 @@
       rl.onLand = () => onReelLand(i, r);
       landed.push(rl.stop(r.grid[i], tb || quick));
     }
-    await waitSkippable(quick ? 0.03 : tStop[3] - tStop[2]);
-    colC = r.multIndex;
-    colReel.onLand = () => onColumnLand(r);
-    // white (Garuda): a fresh window round the engine's centre and nudge values
-    const colFix = { 0: stripAt(colC, 0) }; for (let k = 1; k <= 3; k++) if (k <= r.nudges.length) colFix[k] = colIdxOf(r.nudges[k - 1]);
-    const colFinal = colWindow(colFix);
-    if (r.win > 0 && !tb && !quick) {                // a win to multiply: the column rolls on, ticking chip by chip
-      colTeaseOn();
-      const small = r.win < r.stake && !r.nudges.length && !r.fc && !(r.boardRuns && r.boardRuns.length);            // a short roll for a win below the stake
-      landed.push(colReel.teaseStop(colFinal, { vSlow: small ? 5.5 : 4.2, tau: 0.2, t1: small ? 0.42 : 0.85, t2: small ? 0.45 : 0.75, over: 0.09,
-        extra: (n) => Array.from({ length: n }, (_, k) => stripAt(colC, k - n - 2)),
-        onTick: (left, v) => {
-          if (v < 11) colTeaseTick(left);
-          // a 500x / 1000x chip passing the centre: the roll hangs on it for a moment and the bull leans in
-          const val = Engine.STRIP[colReel.syms[4]];
-          if (left > 0 && val >= 500 && v < 14 && colReel.tween && !quick) {
-            const tw = colReel.tween; tw.timeScale(0.4); gsap.delayedCall(0.3, () => { if (colReel.tween === tw && !quick) tw.timeScale(1); });
-            SFX.tease(0.4); flameKick(1.2); bullReact("tease");
-            flashAt(COL_CX, COL_CY, 0xfff0b0, 1.6, 0.3); ringAt(COL_CX, COL_CY, 0xffe08a, 1.6, 0.35);
-          }
-        } }).then(colTeaseOff));
-    } else landed.push(colReel.stop(colFinal, tb || quick));
+    if (!colP) { colTimer.kill(); colGo(); }
+    landed.push(colP);
     await Promise.all(landed);
     gsap.to(tease, { alpha: 0, duration: 0.25, onComplete: () => (tease.visible = false) });
     if (vignette.visible) gsap.to(vignette, { alpha: 0, duration: 0.3, onComplete: () => (vignette.visible = false) });
-    colC = (r.multIndex + r.nudges.length) % Engine.STRIP.length;
+    colC = stripAt(r.multIndex, -r.nudges.length);   // white 2026-11-16: a CHARGE run steps the strip up
     curGrid = r.grid.map((c) => c.slice());
     arrowSpeed = 0.35;
     if (r.win > 0) await present(r);
@@ -3336,43 +3875,53 @@
         const x = REEL_CX[i], y = rowY(row);
         const v = reels[i].view(row);
         gsap.killTweensOf(v.inner.scale); gsap.fromTo(v.inner.scale, { x: 1.08, y: 1.08 }, { x: 1, y: 1, duration: 0.16, ease: "power2.out" });
-        ringAt(x, y, id === "wild" ? 0xd9a0ff : 0xff8a3a, 1.8, 0.5); flashAt(x, y, 0xffe0a0, 1.3, 0.3);
-        burstAt(x, y, id === "wild" ? 0xe0b0ff : 0xffa050, 16, boardP); boom(x, y, 1.0, id === "wild" ? 0xe8c8ff : null, boardFx);
-        VFX.shockwave(x, y, { amp: 12, radius: 300, wave: 90, dur: 0.45 }); starFlash(x, y, 1.6, id === "wild" ? 0xe0b0ff : 0xffc080);
+        // white 2026-11-16 (user: "remove all the color animation in super wild and wild apart from the eyes glow"): the
+        // landing keeps the pop, the board drop and gx_symbols' dust; no coloured ring, flash, spark burst, impact flipbook,
+        // shockwave or star flash (src/game.js.bak_pre_symbols has them)
         if (id === "super_wild") { SFX.superLand(); hitStop(50); buzz(30); } else { SFX.wildLand(); buzz(15); }
         if (id === "super_wild" && v.cnt && r.superCharges) { v.cnt.text = String(r.superCharges[i * 3 + row] || Engine.NUDGES); gsap.fromTo(v.cnt.scale, { x: 1.5, y: 1.5 }, { x: 1, y: 1, duration: 0.3, ease: "back.out(2.5)" }); }
         GX.emit("wildLand", { reel: i, row, id, x, y, view: v }); boardDrop(id === "super_wild" ? 1.4 : 1);
       }
     }
   }
-  // a NUDGE chip in the centre fires: cyan shock, lightning, "+N NUDGES" flies to the counter
-  async function nudgeChipFire(n) {
-    boardDrop(1.2);                                     // white: a CHARGE fires: strong drop
+  // a CHARGE chip in the centre fires: its count rolls in, "+N CHARGES" flies to the counter. white 2026-11-16 (user: calm,
+  // "only lighting strike from the ball, in yellow"): no cyan ring / burst / boom / bolt; struck = the yellow bolt already
+  // hit it (chargeStrike), else (a nested CHARGE reached inside a run) it comes after the reveal; noReveal = count shown
+  async function nudgeChipFire(n, struck, noReveal) {
+    // b18 (user: no shakes at the start of the nudge chip demo): a CHARGE that the yellow bolt already struck (the round's
+    // first CHARGE: column chip, board CHARGE, Fortune Choice CHARGE pick) fires without the board drop / shake - the bolt
+    // is its accent; a nested CHARGE reached inside a run keeps its drop and shake
+    if (!struck && !DROP_HIT) boardDrop(1.2);           // white: a CHARGE fires: strong drop (b19: off, only the hits into TOTAL drop the board; its shake stays)
     const v = colReel.views[4];
-    if (v.reveal) await v.reveal(n);                    // white: the badge's chevrons fly up and its count rolls in
+    if (v.reveal && !noReveal) await v.reveal(n);       // white: the badge's chevrons fly up and its count rolls in
+    if (!struck) await chargeStrike({ x: COL_CX, y: COL_CY });
     gsap.fromTo(v.inner.scale, { x: 1.5, y: 1.5 }, { x: 1, y: 1, duration: 0.6, ease: "elastic.out(1,0.45)" });
     gsap.fromTo(v.flash, { alpha: 1 }, { alpha: 0, duration: 0.7 });
     gsap.fromTo(v.magic.uniforms, { uAmp: 5 }, { uAmp: 1, duration: 1.2 });
-    ringAt(COL_CX, COL_CY, 0x5ff0ff, 2.0, 0.5); flashAt(COL_CX, COL_CY, 0xbaffff, 1.1, 0.1);
-    burstAt(COL_CX, COL_CY, 0x7ff4ff, 12); boom(COL_CX, COL_CY, 1.1, 0xa8f6ff); lightning(COL_CX, COL_CY, 0xbaffff);
-    SFX.nudgeActivate(); shake(8, 0.25);
-    const t = new PIXI.Text(`+${n} CHARGES`, FX.gold(44, { fill: ["#F0FFFF", "#7FF4FF", "#1A9FB0"] }));
-    t.anchor.set(0.5); t.position.set(COL_CX - 40, COL_CY); fxTop.addChild(t);
-    gsap.fromTo(t.scale, { x: 0.4, y: 0.4 }, { x: 1, y: 1, duration: 0.35, ease: "back.out(3)" });
+    SFX.nudgeActivate(); if (!struck) shake(8, 0.25);
+    const t = new PIXI.Text(`+${n} CHARGES`, FX.gold(44, { fill: ["#FFFBE0", "#FFE14A", "#C98A10"] }));
+    // white 2026-11-17 (user: "the +x charge number should stay in the middle, it slightly drifts to left"): centred on the
+    // column (was 40 px left of it), as wide as the screen's edge allows, and it rises straight up into the CHARGES board
+    const tk = Math.min(1, (2 * (W - COL_CX) - 24) / 1.1 / Math.max(1, t.width));   // its pop overshoots ~10%: still on screen
+    // b18b (QA: it popped right on the CHARGE chip's own "CHARGE" lettering): it pops one chip pitch above the centre chip
+    t.anchor.set(0.5); t.position.set(COL_CX, COL_CY - COL_P); fxTop.addChild(t);
+    gsap.fromTo(t.scale, { x: 0.4 * tk, y: 0.4 * tk }, { x: tk, y: tk, duration: 0.35, ease: "back.out(1.6)" });
     await FX.wait(0.45);
-    await FX.tween(t, { x: cntBox.x, y: cntBox.y, alpha: 0.2, duration: 0.45, ease: "power2.in" });
+    const cAt = fxTop.toLocal(cntBox.getGlobalPosition());
+    await FX.tween(t, { x: COL_CX, y: cAt.y, alpha: 0.2, duration: 0.45, ease: "power2.in" });
     t.destroy();
-    gsap.fromTo(cntBox.scale, { x: 1.6, y: 1.6 }, { x: 1, y: 1, duration: 0.4, ease: "back.out(3)" });
+    { const k = cbPk(cntNum, 1.6); gsap.fromTo(cntBox.scale, { x: k, y: k }, { x: 1, y: 1, duration: 0.4, ease: "back.out(3)" }); }   // b18b: clamped to the board
   }
   function onColumnLand(r) {
     SFX.columnStop();
     const v = r.startMult;
-    ringAt(COL_CX, COL_CY, 0xffd060, 1.1, 0.35);
-    if (v < 0) { ringAt(COL_CX, COL_CY, 0x5ff0ff, 2, 0.5); burstAt(COL_CX, COL_CY, 0x7ff4ff, 14); SFX.wildLand(); lightBeam(COL_CX, COL_CY, 0x7ff4ff); }
-    if (v >= 10) lightBeam(COL_CX, COL_CY, v >= 100 ? 0xffe8a0 : 0xffc860);
+    // white 2026-11-16 (calm look): no rings / spark bursts when the column lands; a CHARGE landing is the sound only
+    // (its yellow bolt and collection follow in nudgePhase)
+    if (v < 0) SFX.wildLand();
     if (v >= 50) {
-      shake(v >= 500 ? 16 : 8, 0.35); hitStop(v >= 500 ? 110 : 70); buzz(v >= 500 ? 80 : 40); flashAt(COL_CX, COL_CY, 0xffffff, 2.4, 0.45); burstAt(COL_CX, COL_CY, 0xffe08a, 28);
-      ringAt(COL_CX, COL_CY, 0xfff0b0, 3, 0.6); SFX.impact(v >= 500);
+      shake(v >= 500 ? 16 : 8, 0.35); hitStop(v >= 500 ? 110 : 70); buzz(v >= 500 ? 80 : 40);
+      flashAt(COL_CX, COL_CY, 0xfff0c8, 1.1, 0.3);     // white (lightning fix): was a 2.4 pure-white flash that burned the column out under the bolt's hit
+      SFX.impact(v >= 500);
       lightning(COL_CX, COL_CY);
     }
   }
@@ -3381,10 +3930,29 @@
     const x0 = REEL_X[reel][0], x1 = REEL_X[reel][1];
     embers([x0, WIN_Y1 - 10, x1, WIN_Y1], 2, 0xff9a40);
   }
-  // white: the orb in the bull's hand, in fxTop px (the magic flame rides the tracked hand; the orb glow sits 60 px up)
-  function handOrb() { try { return fxTop.toLocal(flame.c.toGlobal(new PIXI.Point(0, -60))); } catch (e) { return { x: FIST.x, y: FIST.y }; } }
+  // white: the orb in the bull's hand, in fxTop px (the magic flame rides the tracked hand). Lightning fix: the centre of
+  // the orb mesh itself (it sits h*0.285 = 94 px up and leans with the hand); 60 px up was the palm under the orb, so the
+  // bolts came out of the fingers
+  function handOrb() {
+    try { const o = flame.c.orb; return fxTop.toLocal(o ? o.orbM.toGlobal(new PIXI.Point(0, 0)) : flame.c.toGlobal(new PIXI.Point(0, -60))); }
+    catch (e) { return { x: FIST.x, y: FIST.y }; }
+  }
+  // a bolt from the orb in the hand to a point: gx_feature draws it; if that plugin is not there (failed to load), a
+  // plain held bolt here so the clash / column hits never lose their bolt (code review 2026-11-16)
+  function handStrike(d) {
+    if (GX.has && GX.has("handStrike")) { GX.emit("handStrike", d); return; }
+    const g = new PIXI.Graphics(); g.blendMode = PIXI.BLEND_MODES.ADD; fxTop.addChild(g);
+    const pts = [[d.x0, d.y0]], n = 10, nx = -(d.y - d.y0), ny = d.x - d.x0, L = Math.hypot(nx, ny) || 1;
+    for (let s = 1; s < n; s++) { const f = s / n, off = (Math.random() - 0.5) * 70 * Math.sin(Math.PI * f);
+      pts.push([d.x0 + (d.x - d.x0) * f + (nx / L) * off, d.y0 + (d.y - d.y0) * f + (ny / L) * off]); }
+    pts.push([d.x, d.y]);
+    const line = (w, c, a) => { g.lineStyle({ width: w, color: c, alpha: a, join: PIXI.LINE_JOIN.ROUND, cap: PIXI.LINE_CAP.ROUND });
+      g.moveTo(pts[0][0], pts[0][1]); pts.slice(1).forEach((p) => g.lineTo(p[0], p[1])); };
+    const w = d.w || 15; line(w, d.col || 0xffd27a, 0.5); line(w * 0.33, 0xffffff, 1);
+    gsap.to(g, { alpha: 0, duration: (d.dur || 0.36) * 0.5, delay: (d.dur || 0.36) * 0.5, ease: "power2.in", onComplete: () => g.destroy() });
+  }
   function lightning(x, y, col) {
-    { const o = handOrb(); SFX.lightning(); GX.emit("handStrike", { x0: o.x, y0: o.y, x, y, col }); return; }   // white: from the hand's fireball
+    { const o = handOrb(); SFX.lightning(); handStrike({ x0: o.x, y0: o.y, x, y, col }); return; }   // white: from the hand's fireball
     if (FX.tex.bolts) return lightningArt(x, y, col);
     SFX.lightning();
     const g = new PIXI.Graphics(); g.blendMode = PIXI.BLEND_MODES.ADD; fxTop.addChild(g);
@@ -3483,8 +4051,8 @@
       const live = mobBull.live && !!clips.bull_idle;
       if (bullClipC.visible !== live) { bullClipC.visible = live; bullSpr.visible = !live; eyes.forEach((e) => (e.visible = !live)); }
     }
-    if (multTag && !multTag.destroyed && plaque.visible && plaqueBig.visible)   // the xN tag rides just after the counting digits
-      multTag.position.set(plaque.x + (plaqueBig.textWidth * plaqueBig.scale.x * plaque.scale.x) / 2 + (multTag.width * multTag.scale.x) / 2 + 22, plaque.y + 8);
+    if (multTag && !multTag.destroyed && multTag.renderable && plaque.visible && plaqueBig.visible)   // the xN tag rides just after the counting digits
+      multTag.position.set(plaque.x + (plaqueBig.width * plaque.scale.x) / 2 + (multTag.width * multTag.scale.x) / 2 + 22, plaque.y + 8);
     if (booms.size) { const k = 0.55 * gsap.globalTimeline.timeScale(); booms.forEach((b) => { if (b.destroyed) booms.delete(b); else b.animationSpeed = k; }); }
     // idle life: after 5 s without a spin a shimmer runs across the symbols, the spin button calls, the flame flares
     if (S.state === "idle" && !S.auto && !pop.visible) {
@@ -3497,7 +4065,7 @@
           gsap.delayedCall(d, () => { if (S.state === "idle") boardP.emit({ tex: FX.tex.spark, x: REEL_CX[reel] + 60, y: rowY(row) - 50, s0: 0.1, s1: 0.5, life: 0.4, a0: 1, a1: 0, vr: 3, tint: 0xfff0c8 }); });
         }));
         gsap.fromTo(spinC.scale, { x: 1, y: 1 }, { x: 1.06, y: 1.06, duration: 0.22, delay: 0.5, yoyo: true, repeat: 3, ease: "sine.inOut" });
-        gsap.delayedCall(0.5, () => { if (S.state === "idle") ringAt(scx, scy, 0xffd060, 1.6, 0.5); });
+        gsap.delayedCall(0.5, () => { if (SPIN_BURST && S.state === "idle") ringAt(scx, scy, 0xffd060, 1.6, 0.5); });   // white: no ring (SPIN_BURST)
         flameKick(0.7);
       }
     } else idleLifeT = 0;
@@ -3538,7 +4106,7 @@
       boardP.emit({ tex: FX.tex.spark, x, y, s0: 0.05, s1: 0.45, life: 0.6, a0: 1, a1: 0, vr: 2, tint: 0xfff0c8 });
     }
     chipGlintT -= dt;
-    if (chipGlintT < 0 && colReel.state === "idle") {
+    if (chipGlintT < 0 && colReel.state === "idle" && S.state === "idle") {
       chipGlintT = 1.2 + Math.random() * 1.5;
       const v = colReel.views[1 + Math.floor(Math.random() * 7)];
       gsap.fromTo(v.flash, { alpha: 0 }, { alpha: 0.8, duration: 0.25, yoyo: true, repeat: 1 });
@@ -3582,11 +4150,6 @@
     if (tease.visible) {
       embers(tease.box, nEmit(50));
     }
-    if (colTease.visible) {                          // the tray warms up as the roll slows
-      const k = colTease.heat;
-      colTease.rim.alpha = 0.45 + 0.4 * k + 0.15 * Math.sin(time * (6 + 8 * k));
-      embers(colTease.box, nEmit(4 + 22 * k));
-    }
     // shake
     // shake around the board's rest point (= its pivot: the intro scales the board about (540, 940))
     if (shakeT > 0) { shakeT -= dt; const a = shakeA * Math.max(0, shakeT) / 0.4, dx = (Math.random() - 0.5) * a;
@@ -3595,10 +4158,25 @@
   });
 
   // ---------- intro ----------
+  // b19 (user 2026-11-19: "remove the tap to play, play it instant"): no TAP TO PLAY screen; once loading is done (the logo
+  // screen waits for the art and the bull video's first picture as before) the game begins by itself, exactly as ?autostart.
+  // ?tap = the old tap screen (TAP_SCREEN). Sound: browsers keep audio locked until the first gesture, so the first
+  // pointer / key anywhere unlocks it (SFX.unlock; audio.js also resumes its own context); music is scheduled at begin and
+  // starts then. No sound before that gesture, nothing throws.
+  const TAP_SCREEN = params.has("tap");
   const tap = new PIXI.Text("TAP TO PLAY", FX.gold(54));
   tap.anchor.set(0.5); tap.position.set(540, 1200); loadC.addChild(tap);
   loadTxt.visible = false; bar.visible = false; barBg.visible = false;
-  gsap.to(tap, { alpha: 0.35, duration: 0.7, yoyo: true, repeat: -1 });
+  if (TAP_SCREEN) gsap.to(tap, { alpha: 0.35, duration: 0.7, yoyo: true, repeat: -1 }); else tap.visible = false;
+  if (!TAP_SCREEN) {
+    const GEST = ["pointerdown", "pointerup", "touchend", "keydown", "click"];
+    const firstGesture = () => {
+      try { SFX.unlock(); } catch (e) { /* audio not available */ }
+      const c = window.AUDIO && AUDIO.context && AUDIO.context();
+      if (!c || c.state === "running") GEST.forEach((ev) => window.removeEventListener(ev, firstGesture, true));
+    };
+    GEST.forEach((ev) => window.addEventListener(ev, firstGesture, { capture: true, passive: true }));
+  }
   [bgL, ambBack, bullL, ambFront, boardL, uiL].forEach((l) => (l.alpha = 0));
   const begin = async () => {
     SFX.unlock(); SFX.music("base");
@@ -3619,8 +4197,10 @@
     GX.emit("introDone", {});
     S.state = "idle";
   };
-  loadC.eventMode = "static"; loadC.hitArea = new PIXI.Rectangle(0, 0, W, H); loadC.cursor = "pointer";
-  loadC.once("pointertap", begin);
+  if (TAP_SCREEN) {   // b19: only with ?tap (old behaviour)
+    loadC.eventMode = "static"; loadC.hitArea = new PIXI.Rectangle(0, 0, W, H); loadC.cursor = "pointer";
+    loadC.once("pointertap", begin);
+  }
 
   // keyboard + demo hooks
   const KEYS = { "1": "win", "2": "wild", "3": "superwild", "4": "big", "5": "mega", "6": "super", "7": "epic", "8": "tease", "9": "m1000", "0": "nowin", n: "nudge4", m: "max", g: "nudgechip", h: "nudgechain", c: "clash", w: "halo" };
@@ -3628,6 +4208,7 @@
     if (exBet.isOpen()) { if (e.code === "Escape") exBet.close(); return; }      // white: no spin behind the EXTRA BET popup
     if (e.code === "Space") { e.preventDefault(); onSpinPress(); return; }
     if (e.key === "b" && buyUI && S.state === "idle") { buyUI.open(); return; }
+    if (e.key === "d" && S.state === "idle" && window.COLDUST) { COLDUST.play(); return; }   // white 2026-11-18: DEMO gold-dust fast column (gx_coldust.js), no round
     if (KEYS[e.key] && S.state === "idle") spin(KEYS[e.key]);
   });
   // taps unlock the phone's videos (iOS Low Power Mode / data saver refuse play() outside a gesture)
@@ -3636,16 +4217,23 @@
   }, { capture: true, passive: true }));
   // effect plugins (src/gx_*.js): the game's internals in one object, then every registered plugin starts
   GX.start({ PIXI, gsap, app, W, H, MOBILE, GPASS, params, S, Engine, FX, VFX, SFX, T, reels, colReel,
-    REEL_X, REEL_CX, CELL_Y0, CELL_H, WIN_Y1, rowY, COL_CX, COL_CY, COL_P, TRAY, HIGH,
+    REEL_X, REEL_CX, CELL_Y0, CELL_H, WIN_Y1, rowY, COL_CX, COL_CY, COL_P, TRAY, HIGH, LIFT,
     layers: { bgL, ambBack, bullL, ambFront, boardL, uiL, fxTop, popL, board, boardFx, cellFxBack, frameL, reelsL, plaqueL },
     pop: { pop, popBody, popDark, popGlow, popBurst, popTitle, popTitleArt, popAmt, popPlate, popHero, popRays, popFlame, popCoins, popFaders, POP_DY },
     bull, bullFit, bullToL, bullDir, bullReact, handNow, handOrb, flame, featRays, vignette, topP, boardP, winObjs,
-    burstAt, ringAt, boom, flashAt, starFlash, lightBeam, lightning, shake, hitStop, flameKick, multTint, nEmit,
-    fireFrame, tease, colTease, FireRect, embers, TITLE: !GPASS,
+    burstAt, ringAt, boom, flashAt, starFlash, lightning, shake, hitStop, flameKick, multTint, nEmit,
+    fireFrame, tease, FireRect, embers, TITLE: !GPASS,
     isFeature: () => featureOn });
+  GX.ctx.exs = { swDigits, swPick, SW_PLATE, swTopL, showMsg, clearWin, colGrow: exColGrow, colFinish: exColFinish,      // EX show seam (src/gx_exshow.js reads it at play time)
+    overlayOpen: () => exBet.isOpen() || !!(buyUI && buyUI.isOpen && buyUI.isOpen()) || menuL.children.length > 0, minOf: (m) => [1, 3, 15, 50][m] };
+  GX.ctx.cds = { colIds, colWindow, stripAt, colIdxOf, colGrow, colGrowTo, setColC: (c) => { colC = c; }, exCancel: exShowCancel,   // gold-dust column demo seam (src/gx_coldust.js)
+    idle: () => S.state === "idle", overlayOpen: GX.ctx.exs.overlayOpen };
   window.G = { mobBull: () => mobBull, mobWild: () => mobWild, bullView: () => ({ still: bullSpr.visible, clip: !!(bullClipC ? bullClipC.visible : clips.bull_idle), alpha: bull.worldAlpha }), spin, S, reels, colReel, Engine, clips, feature, bullSlam, bullCharge, bullOrb, bullPlay, bullDir, bullReact, buy: (k) => spin(null, k), buyUI: () => buyUI, state: () => S.state, last: null, popOpen: () => pop.visible && !!popTap, tapPop: () => popTap && popTap() };
   window.G.toggleEx = toggleEx; window.G.exBet = exBet; window.G.exPress = exPress;
-  if (params.has("autostart")) begin();
+  window.G.exColGrow = exColGrow; window.G.exColFinish = exColFinish; window.G.exModePrep = exModePrep;   // QA (EX show)
+  window.G.exPlan = () => exPlan; window.G.exG = EXG;
+  window.G.colDust = (o) => (window.COLDUST ? COLDUST.play(o) : Promise.resolve("off"));   // DEMO: gold-dust fast column (key "d")
+  if (params.has("autostart") || !TAP_SCREEN) begin();   // b19: begins by itself unless ?tap
   document.querySelectorAll("[data-force]").forEach((b) => b.addEventListener("click", () => { SFX.unlock(); if (S.state === "idle") spin(b.dataset.force); }));
   document.querySelectorAll("[data-buy]").forEach((b) => b.addEventListener("click", () => { SFX.unlock(); if (S.state === "idle") spin(null, b.dataset.buy); }));
 })().catch((e) => {

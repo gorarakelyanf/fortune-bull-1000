@@ -1,12 +1,16 @@
 // Fortune Bull 1000 - effect plugin: symbols (see src/gx.js)
-// SYMBOL WIN ANIMATIONS (cellWin): every symbol gets its own 0.6-0.9 s move, then a calm loop while the win shows.
-//   A K Q J     springy jump + squash/stretch, gem glint at a corner, ring of sparks in the letter's colour
-//   hourglass   rocked like it is being turned (+-8 deg, elastic), gold sand pours under it, violet shimmer
-//   sun         rotating fan of gold rays behind it, swells with a warm flash, small flares orbit
-//   chest       hop with squash, fountain of coins + gems from the lid, gold glow from inside
-//   wild/super  roar pulse with two shock rings, flame licks rising behind, horn glints (super = stronger, red-gold)
-// WILD LANDING (wildLand): ground-slam dust ring on the cell's bottom edge, light cracks across the cell (0.3 s),
-//   embers; super_wild also a 0.4 s rising fire column.
+// SYMBOL WIN ANIMATIONS (cellWin). WHITE 2026-11-16 (user: "overall the animations are too many on the symbols, we need
+// to simplify that", "remove the burn of the sun", "in super wild and wild make the eyes glow weaker", "remove all the
+// color animation in super wild and wild apart from the eyes glow"): ONE simple move per symbol, then a slow breath.
+// No particles, rings, flashes, ray fans, flares, glows or tinted copies (the light glint = game.js cellHighlight's sweep).
+//   A K Q J     punch: squash, swell, elastic settle (simpleMove)
+//   hourglass   one full turn with an elastic landing
+//   sun         the same punch (no burn, no ray fan, no flash, no orbiting flares)
+//   chest       hop with squash
+//   wild/super  the punch on the whole seal + a WEAK eye glow (the only light; the WILD plays no Kling clip any more, its
+//               win clip has the burn baked in - see game.js present())
+// WILD LANDING (wildLand): a neutral dust ring + dust puffs on the cell's bottom edge (no coloured cracks, embers or
+//   fire column).
 // Cleanup: a marker pushed into winObjs (clearWin destroys it) + a watchdog (view reused / round spinning) kill every
 // tween and restore view.b / view.inner exactly.
 GX.plugin(function (ctx) {
@@ -156,7 +160,71 @@ GX.plugin(function (ctx) {
     A.every(1.2, 0.5, () => P.emit({ tex: FX.tex.spark, x: rnd(-70, 70), y: rnd(-60, 60), vy: -20, s0: 0.05, s1: 0.3, life: 0.5, a0: 1, a1: 0, vr: 3, tint: Math.random() < 0.5 ? col : hi }));
   }
 
-  // ---------- hourglass, white (user 2026-11-13: "the sandclock animation is too bad, fix it") ----------
+  // ---------- white 2026-11-16: the one simple win move (squash, swell, elastic settle, then a slow breath) ----------
+  function simpleMove(A, h, peak, breath) {
+    A.tw(gsap.timeline()
+      .to(h.scale, { x: 0.95, y: 0.95, duration: 0.14, ease: "power2.in" })
+      .to(h.scale, { x: peak, y: peak, duration: 0.2, ease: "back.out(1.6)" })
+      .to(h.scale, { x: 1, y: 1, duration: 0.8, ease: "elastic.out(1,0.5)" }));
+    A.later(1.3, () => A.tw(gsap.to(h.scale, { x: breath || 1.03, y: breath || 1.03, duration: 1.2, ease: "sine.inOut", yoyo: true, repeat: -1 })));
+  }
+  // hourglass, white 2026-11-16: just the turn (no violet light, light in the glass, rings, sparks or sand stream)
+  function hourglassTurn(d, A) {
+    const h = A.hero;
+    A.tw(gsap.timeline({ delay: 0.04 })
+      .to(h.scale, { x: 1.1, y: 1.1, duration: 0.16, ease: "power2.out" })
+      .to(h, { rotation: "+=" + TAU, duration: 0.78, ease: "power2.inOut" }, "-=0.02")
+      .to(h.scale, { x: 1.05, y: 0.95, duration: 0.07, ease: "power2.in" }, "-=0.06")
+      .to(h.scale, { x: 1, y: 1, duration: 0.6, ease: "elastic.out(1,0.42)" }));
+    A.later(1.7, () => A.tw(gsap.to(h.scale, { x: 1.03, y: 1.03, duration: 1.1, ease: "sine.inOut", yoyo: true, repeat: -1 })));
+  }
+  // sun, white 2026-11-16 (user: "remove the burn of the sun, it is too much"): the plain punch
+  function sunCalm(d, A) { simpleMove(A, A.hero, 1.12); }
+  // chest, white 2026-11-16: the hop alone (no coin / gem fountain, no light from the lid, no glow behind)
+  // white 2026-11-16 (user: "on mobile, the chest gets cut"): the hop stays inside the tile (lift 18 -> 8 px, stretch 1.07 -> 1.04);
+  // in the top row the lid slid under the frame's top band and was cut flat, so there it does not lift and stretches to 1.02 only
+  function chestHop(d, A) {
+    const h = A.hero, y0 = h.y, st = { lift: 0 };
+    const top = d.row === 0, lift = top ? 0 : 8, peak = top ? 1.02 : 1.04;
+    const upd = () => { h.y = y0 + (1 - h.scale.y) * 90 - st.lift; };
+    A.tw(gsap.timeline({ onUpdate: upd })
+      .to(h.scale, { x: 1.08, y: 0.9, duration: 0.11, ease: "power2.in" })
+      .to(h.scale, { x: 0.97, y: peak, duration: 0.13, ease: "power2.out" })
+      .to(st, { lift, duration: 0.17, ease: "power2.out" }, "<")
+      .to(st, { lift: 0, duration: 0.13, ease: "power2.in" })
+      .to(h.scale, { x: 1.08, y: 0.92, duration: 0.06, ease: "power2.out" })
+      .to(h.scale, { x: 1, y: 1, duration: 0.5, ease: "elastic.out(1,0.4)" }));
+    A.later(1.3, () => A.tw(gsap.to(h.scale, { x: 1.015, y: 1.015, duration: 1.2, ease: "sine.inOut", yoyo: true, repeat: -1, onUpdate: upd })));
+  }
+  // letters, white 2026-11-16: the punch alone (no spark burst)
+  function letterCalm(d, A) { simpleMove(A, A.hero, 1.14, 1.035); }
+  // WILD / SUPER WILD, white 2026-11-16: the punch on the whole seal and a weak eye glow - nothing else (no burn copies,
+  // no glow behind, no shock rings, no flash, no sparks, no shake). Eye points in the art's texture px.
+  const EYES = { wild: { xs: [129, 190], y: 125 }, super_wild: { xs: [134, 190], y: 113 } };
+  // user: "make the eyes glow weaker": SUPER WILD half of its old code glow (was 1); the WILD's old glow was the Kling clip's
+  // white-hot eyes (much stronger than this code glow at 1), so ~half of that is 0.9 here (its gold face is lighter too)
+  const EYE_K = { wild: 0.9, super_wild: 0.5 };
+  function wildCalm(d, A) {
+    const v = d.view, h = v.inner;
+    simpleMove(A, h, d.id === "super_wild" ? 1.12 : 1.1);
+    A.later(0.06, () => {
+      const e = EYES[d.id]; if (!e || v.a.destroyed || !v.a.texture) return;
+      const bl = new PIXI.Container(); v.inner.addChild(bl); A.own(bl);
+      const tw_ = v.a.texture.width, th_ = v.a.texture.height, ey = v.a.y + (e.y - th_ / 2) * v.a.scale.y;
+      const eyes = [];
+      e.xs.forEach((tx) => { const ex = v.a.x + (tx - tw_ / 2) * v.a.scale.x;
+        eyes.push(spr(FX.tex.glow, bl, { tint: 0xff5a00, x: ex, y: ey, s: 0.32, sy: 0.19, alpha: 0 }),
+          spr(FX.tex.glow, bl, { tint: 0xffd24a, x: ex, y: ey, s: 0.15, sy: 0.085, alpha: 0 }),
+          spr(FX.tex.glow, bl, { tint: 0xfff6d0, x: ex, y: ey, s: 0.065, sy: 0.038, alpha: 0 })); });
+      const st = { k: 0 }, K = EYE_K[d.id] || 0.5;
+      A.tw(gsap.to(st, { k: 1, duration: 0.4, ease: "power2.out" }));
+      let tt = 0;
+      A.onStep((dt) => { tt += dt; const g = 0.5 + 0.5 * Math.sin(tt * 3.4);
+        eyes.forEach((s, i) => (s.alpha = K * st.k * [0.9, 1, 1][i % 3] * (0.8 + 0.2 * g))); });
+    });
+  }
+
+  // ---------- hourglass, white (user 2026-11-13: "the sandclock animation is too bad, fix it") - unused since 2026-11-16 ----------
   function hourglass(d, A) {
     const h = A.hero, fx = A.fx(), P = A.parts(fx);
     const GOLD = 0xffd060, HOT = 0xfff0b0;
@@ -480,7 +548,9 @@ GX.plugin(function (ctx) {
     A.later(1.5, () => A.tw(gsap.to(h.scale, { x: 1.035, y: 1.035, duration: 1.2, ease: "sine.inOut", yoyo: true, repeat: -1 })));
   }
 
-  const MOVES = { A: letterRoar, K: letterRoar, Q: letterRoar, J: letterRoar, hourglass, sun, chest, wild, super_wild: wild };
+  void low; void hourglass; void hourglassOld; void sun; void chest; void wild; void letterRoar;   // the old moves (kept for reference)
+  const MOVES = { A: letterCalm, K: letterCalm, Q: letterCalm, J: letterCalm, hourglass: hourglassTurn, sun: sunCalm, chest: chestHop,
+    wild: wildCalm, super_wild: wildCalm };   // white 2026-11-16: one simple move each
   GX.on("cellWin", (d) => {
     const fn = MOVES[d.id];
     if (!fn || !d.view) return;
@@ -489,6 +559,7 @@ GX.plugin(function (ctx) {
   });
 
   // ---------- wild landing ----------
+  const CALM_LAND = true;                              // white 2026-11-16: dust only (false = the old coloured landing)
   GX.on("wildLand", (d) => {
     const sup = d.id === "super_wild";
     const objs = [], tws = [];
@@ -499,14 +570,17 @@ GX.plugin(function (ctx) {
     const by = CELL_H / 2 - 12;
     // ground-slam dust ring (flat ellipse on the bottom edge) + dust puffs rolling sideways
     const dr = spr(FX.tex.ring, c, { tint: 0xf0dcb8, blend: NORMAL, y: by, s: 0.25, sy: 0.06, alpha: 0.9 });
-    const dr2 = spr(FX.tex.ring, c, { tint: sup ? 0xffa040 : 0xe8c8ff, y: by, s: 0.2, sy: 0.05, alpha: 0.9 });
     tws.push(gsap.to(dr.scale, { x: 1.35, y: 0.3, duration: 0.5, ease: "power2.out" }), gsap.to(dr, { alpha: 0, duration: 0.5, ease: "power1.in" }));
-    tws.push(gsap.to(dr2.scale, { x: 1.1, y: 0.22, duration: 0.35, ease: "power2.out" }), gsap.to(dr2, { alpha: 0, duration: 0.35 }));
     for (let i = 0; i < N(10); i++) {
       const s = i % 2 ? 1 : -1;
       P.emit({ tex: FX.tex.smoke, blend: NORMAL, x: s * rnd(10, 60), y: by + rnd(-8, 4), vx: s * rnd(160, 300), vy: rnd(-40, -10), drag: 3.5,
         s0: rnd(0.18, 0.26), s1: rnd(0.4, 0.55), life: rnd(0.5, 0.7), a0: 0.55, a1: 0, tint: 0xd9c4a0, vr: s * 0.8 });
     }
+    // white 2026-11-16 (user: "remove all the color animation in super wild and wild apart from the eyes glow"): the
+    // coloured ring, the light cracks, the embers and the SUPER WILD's fire column are gone - only the neutral dust stays
+    if (CALM_LAND) { tws.push(gsap.delayedCall(1.3, done)); return; }
+    const dr2 = spr(FX.tex.ring, c, { tint: sup ? 0xffa040 : 0xe8c8ff, y: by, s: 0.2, sy: 0.05, alpha: 0.9 });
+    tws.push(gsap.to(dr2.scale, { x: 1.1, y: 0.22, duration: 0.35, ease: "power2.out" }), gsap.to(dr2, { alpha: 0, duration: 0.35 }));
     // light cracks radiating across the cell (0.3 s)
     const cr = new PIXI.Graphics(); cr.blendMode = ADD; c.addChild(cr);
     const hw = 118, hh = CELL_H / 2 - 6;

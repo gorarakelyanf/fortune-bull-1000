@@ -63,9 +63,12 @@ GX.plugin(function (ctx) {
     skyFx.addChild(c); clouds.push(c);
   }
   const skyFlash = new PIXI.Sprite(FX.tex.glow); skyFlash.anchor.set(0.5); skyFlash.blendMode = ADD; skyFlash.tint = 0xffc890; skyFlash.alpha = 0; skyFx.addChild(skyFlash);
+  // white 2026-11-16 (user: "remove the clouds and lighting in the background, don't darken it"): the storm sky (dark band,
+  // clouds, sheet lightning) and the orange heat behind the bull never draw; the hall keeps its normal colour (game.js drawSky)
+  skyFx.renderable = false;
   // ember glow on the bull: a broad heat behind him and a soft chest glow in front (inside bullFit so it rides the crouch)
   const [chX, chY] = ctx.bullToL(474, 326);
-  const backGlow = new PIXI.Sprite(FX.tex.glow); backGlow.anchor.set(0.5); backGlow.blendMode = ADD; backGlow.tint = 0xd8400c; backGlow.alpha = 0;
+  const backGlow = new PIXI.Sprite(FX.tex.glow); backGlow.anchor.set(0.5); backGlow.blendMode = ADD; backGlow.tint = 0xd8400c; backGlow.alpha = 0; backGlow.renderable = false;
   backGlow.position.copyFrom(ctx.featRays.position); backGlow.scale.set(3.4, 2.8); backGlow.visible = false;
   layers.bullL.addChildAt(backGlow, Math.min(1, layers.bullL.children.length));
   const chestGlow = new PIXI.Sprite(FX.tex.glow); chestGlow.anchor.set(0.5); chestGlow.blendMode = ADD; chestGlow.tint = 0xff8a30; chestGlow.alpha = 0;
@@ -101,8 +104,7 @@ GX.plugin(function (ctx) {
       let d = Math.random() * per, x, y;
       if (d < x1 - x0) { x = x0 + d; y = y0; } else if ((d -= x1 - x0) < y1 - y0) { x = x1; y = y0 + d; }
       else if ((d -= y1 - y0) < x1 - x0) { x = x1 - d; y = y1; } else { x = x0; y = y1 - (d - (x1 - x0)); }
-      safe(() => ctx.starFlash(x, y, rnd(0.6, 1.0), 0xfff0c0));
-      hotP.emit({ tex: FX.tex.glow, x, y, s0: 0.5, s1: 0.2, life: 0.4, a0: 0.6, a1: 0, tint: 0xffc860 });
+      safe(() => ctx.starFlash(x, y, rnd(0.6, 1.0), 0xfff0c0));   // white 2026-11-16: the star only, no warm glow puff on the frame
     }
     // distant sheet lightning in the storm
     flashT -= dt;
@@ -116,43 +118,99 @@ GX.plugin(function (ctx) {
   }));
 
   // ---------- lightning drawing ----------
-  function boltPts(x0, y0, x1, y1, n, jag) {
-    const pts = [[x0, y0]], dx = x1 - x0, dy = y1 - y0, L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L;
-    for (let s = 1; s < n; s++) {
-      const f = s / n, off = (Math.random() - 0.5) * 2 * jag * Math.sin(Math.PI * f);
-      pts.push([x0 + dx * f + nx * off, y0 + dy * f + ny * off]);
+  // (2026-11-16 lightning fix) ONE strike = ONE channel, made once (midpoint displacement, kept as along / across
+  // fractions of the bolt) and mapped onto the live ends every frame, so it stays glued to the orb in the moving hand
+  // and to its target. The old bolt was re-randomised 5-6 times per strike (a new zig-zag each time = popping), had miter
+  // spikes and a glow that vanished on the parchment. Now: the leader shoots from the source to the target (~0.07 s), the
+  // channel flashes twice in place (return strokes: only its finest kinks re-jitter), the forks die first, then it fades.
+  // Round joins; a thin saturated edge (normal blend) under the additive glow + white core keeps it readable on the pale
+  // board without a burn. The flashes are small and local (a spark at the orb, a small glow on the hit).
+  const LSTYLE = (w, color, alpha) => ({ width: w, color, alpha, join: PIXI.LINE_JOIN.ROUND, cap: PIXI.LINE_CAP.ROUND });
+  function channel(n, rough) {                         // n = 2^k segments; u along 0..1, v across (in bolt lengths)
+    let p = [{ u: 0, v: 0 }, { u: 1, v: 0 }], amp = rough;
+    while (p.length - 1 < n) {
+      const q = [p[0]];
+      for (let i = 1; i < p.length; i++) {
+        const a = p[i - 1], b = p[i];
+        q.push({ u: (a.u + b.u) / 2 + (Math.random() - 0.5) * (b.u - a.u) * 0.3, v: (a.v + b.v) / 2 + (Math.random() - 0.5) * amp }, b);
+      }
+      p = q; amp *= 0.6;
     }
-    pts.push([x1, y1]); return pts;
+    return p;
   }
-  function strokeBolt(g, pts, wGlow, wCore, col) {
-    const path = (w, c, a) => { g.lineStyle(w, c, a); g.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]); };
-    path(wGlow * 2.2, col, 0.18); path(wGlow, col, 0.5); path(wCore, 0xffffff, 1);
-  }
-  function drawBolt(g, x0, y0, x1, y1, o) {
-    const pts = boltPts(x0, y0, x1, y1, o.n || 12, o.jag || 50);
-    strokeBolt(g, pts, o.w || 14, o.core || 4, o.col || 0xffd27a);
-    const br = o.branches || 0;
-    for (let b = 0; b < br; b++) {
-      const i = 2 + Math.floor(Math.random() * (pts.length - 4)), [bx, by] = pts[i];
-      const a = Math.atan2(y1 - y0, x1 - x0) + (Math.random() < 0.5 ? -1 : 1) * rnd(0.4, 0.9), len = rnd(60, 160);
-      strokeBolt(g, boltPts(bx, by, bx + Math.cos(a) * len, by + Math.sin(a) * len, 5, 22), (o.w || 14) * 0.5, (o.core || 4) * 0.55, o.col || 0xffd27a);
-    }
-  }
-  // a flickering bolt for `dur` seconds (redrawn a few times), then gone
+  // a darker, saturated version of the bolt colour for its edge (gold -> amber, cyan -> teal)
+  const edgeOf = (c) => {
+    const r = (c >> 16) & 255, g = (c >> 8) & 255, b = c & 255, m = Math.max(r, g, b), s = (x) => Math.max(0, Math.round((m - (m - x) * 2.4) * 0.78));
+    return (s(r) << 16) | (s(g) << 8) | s(b);
+  };
+  const polyline = (g, p, w, color, alpha) => {
+    if (p.length < 2 || alpha <= 0.004) return;
+    g.lineStyle(LSTYLE(w, color, alpha)); g.moveTo(p[0][0], p[0][1]);
+    for (let i = 1; i < p.length; i++) g.lineTo(p[i][0], p[i][1]);
+  };
+  // strike(x0, y0, x1, y1, dur, o): o.from() = live source point (the orb), o.col, o.w (glow width), o.core, o.rough,
+  // o.branches, o.onHit() when the leader reaches the target. Returns the container (it removes itself).
   function strike(x0, y0, x1, y1, dur, o) {
-    const g = new PIXI.Graphics(); g.blendMode = ADD; layers.fxTop.addChild(g);
-    const st = { t: 0 }; let last = -1;
-    gsap.to(st, { t: 1, duration: dur, ease: "none", onUpdate: () => {
-      const f = Math.floor(st.t * (o.redraws || 5));
-      if (f !== last) { last = f; g.clear(); drawBolt(g, x0, y0, x1, y1, o); }
-      g.alpha = st.t < 0.6 ? (Math.random() < 0.2 ? 0.55 : 1) : 1 - (st.t - 0.6) / 0.4;
-    }, onComplete: () => g.destroy() });
-    return g;
+    o = o || {};
+    const col = o.col || 0xffd27a, edge = edgeOf(col), W0 = o.w || 15, C0 = o.core || W0 * 0.34;
+    const c = new PIXI.Container(); c.name = "bolt"; layers.fxTop.addChild(c);
+    const gE = new PIXI.Graphics(), gA = new PIXI.Graphics(); gA.blendMode = ADD; c.addChild(gE, gA);
+    const tip = new PIXI.Sprite(FX.tex.glow); tip.anchor.set(0.5); tip.blendMode = ADD; tip.tint = col; tip.scale.set(0.3); c.addChild(tip);
+    const main = channel(32, o.rough || 0.2);
+    const forks = [];
+    for (let b = 0; b < (o.branches || 0); b++) {
+      const i = Math.floor(rnd(0.2, 0.68) * (main.length - 1));
+      forks.push({ i, a: (b % 2 ? -1 : 1) * rnd(0.32, 0.7), len: rnd(0.1, 0.2), p: channel(8, 0.34), w: rnd(0.45, 0.6) });
+    }
+    let jit = main.map(() => 0), stroke = 0, hit = false;
+    const LEAD = Math.min(0.075, dur * 0.22);       // game seconds for the leader to reach the target
+    const st = { t: 0 };
+    const draw = () => {
+      const s = (o.from && o.from()) || { x: x0, y: y0 };
+      const ax = s.x, ay = s.y, dx = x1 - ax, dy = y1 - ay, L = Math.hypot(dx, dy) || 1, nx = -dy / L, ny = dx / L;
+      const f = st.t, lead = Math.min(1, (f * dur) / LEAD);
+      // brightness: full on the hit, two return strokes in the same channel, then out
+      const a = f < 0.34 ? 1 : f < 0.4 ? 0.35 : f < 0.52 ? 1 : f < 0.57 ? 0.5 : f < 0.64 ? 0.9 : Math.max(0, 1 - (f - 0.64) / 0.36);
+      const k = f < 0.4 ? 0 : f < 0.57 ? 1 : 2;
+      if (k !== stroke) { stroke = k; jit = main.map((q, i) => (i && i < main.length - 1 ? (Math.random() - 0.5) * 0.012 : 0)); }
+      const P = (q, i) => { const v = q.v + jit[i]; return [ax + dx * q.u + nx * v * L, ay + dy * q.u + ny * v * L]; };
+      const pts = [];
+      for (let i = 0; i < main.length; i++) {
+        const q = main[i];
+        if (q.u <= lead) { pts.push(P(q, i)); continue; }
+        const pq = main[i - 1], w = (lead - pq.u) / ((q.u - pq.u) || 1), A = P(pq, i - 1), B = P(q, i);
+        pts.push([A[0] + (B[0] - A[0]) * w, A[1] + (B[1] - A[1]) * w]); break;
+      }
+      gE.clear(); gA.clear();
+      polyline(gE, pts, W0 * 1.1, edge, 0.6 * a);        // edge (normal blend) frames the hot parts on the parchment
+      polyline(gA, pts, W0 * 2.6, col, 0.16 * a);        // soft bloom (reads on the dark hall)
+      polyline(gA, pts, W0 * 0.7, col, 0.65 * a);
+      polyline(gA, pts, C0, 0xffffff, a);
+      // forks: grow once the leader has passed their root, fade before the main channel
+      const fa = a * (f < 0.5 ? 0.8 : Math.max(0, 0.8 - (f - 0.5) * 4));
+      const ux = dx / L, uy = dy / L;
+      forks.forEach((fk) => {
+        const ru = main[fk.i].u; if (lead <= ru || fa <= 0.01) return;
+        const grow = Math.min(1, (lead - ru) / 0.22), [rx, ry] = P(main[fk.i], fk.i);
+        const ca = Math.cos(fk.a), sa = Math.sin(fk.a), fx = ux * ca - uy * sa, fy = ux * sa + uy * ca, fl = fk.len * L;
+        const fp = [];
+        for (const q of fk.p) { if (q.u > grow) break; fp.push([rx + fx * q.u * fl - fy * q.v * fl, ry + fy * q.u * fl + fx * q.v * fl]); }
+        polyline(gE, fp, W0 * 1.1 * fk.w, edge, 0.55 * fa);
+        polyline(gA, fp, W0 * 0.7 * fk.w, col, 0.6 * fa);
+        polyline(gA, fp, C0 * 0.6, 0xffffff, 0.85 * fa);
+      });
+      const e = pts[pts.length - 1];
+      tip.position.set(e[0], e[1]); tip.visible = lead < 1; tip.alpha = 0.9;
+      if (lead >= 1 && !hit) { hit = true; if (o.onHit) safe(o.onHit); }
+    };
+    draw();
+    gsap.to(st, { t: 1, duration: dur, ease: "none", onUpdate: () => safe(draw), onComplete: () => kill(c) });
+    return c;
   }
 
   // ---------- 1. feature intro cutscene ----------
   let intro = null;
-  function playIntro() {
+  function playIntro(calm) {      // calm (b18): a CHARGE round - the beats keep their sound / flash, no board shake / shockwave
     if (intro) { intro.progress(1); intro = null; }
     const turbo = !!S.turbo, objs = [];
     const fx = layers.fxTop, [rx, ry] = [ctx.featRays.x, ctx.featRays.y];
@@ -163,6 +221,7 @@ GX.plugin(function (ctx) {
     dgr.addColorStop(0.88, "rgba(8,2,10,1)"); dgr.addColorStop(1, "rgba(8,2,10,0)"); dg.fillStyle = dgr; dg.fillRect(0, 0, 4, 256);
     const dark = new PIXI.Sprite(PIXI.Texture.from(dc)); dark.position.set(-100, BOARD[1] - 140); dark.width = W + 200; dark.height = DH;
     dark.alpha = 0; fx.addChildAt(dark, 0); objs.push(dark);
+    dark.visible = false;      // white 2026-11-16 (user: "keep the board color consistent"): no dark beat over the board
     // gold light cones from behind the bull, turning slowly
     const cones = new PIXI.Container(); cones.position.set(rx, ry); cones.scale.set(0.1); cones.alpha = 0;
     layers.bullL.addChildAt(cones, 0); objs.push(cones);
@@ -180,6 +239,7 @@ GX.plugin(function (ctx) {
     const coreHot = new PIXI.Sprite(FX.tex.glow); coreHot.anchor.set(0.5); coreHot.blendMode = ADD; coreHot.tint = 0xfff2c0; coreHot.scale.set(1.2, 0.45); coreHot.alpha = 0.5;
     const trail = new PIXI.Sprite(FX.tex.ray); trail.anchor.set(0.5, 0); trail.blendMode = ADD; trail.tint = 0xffa030; trail.scale.set(2.6, 0.8); trail.alpha = 0.3;
     core.addChild(trail, coreGlow, coreHot);
+    trail.visible = false;     // white 2026-11-16: the core's glow lights only above the board (it washed the reels orange on its way up)
     const head = { y: BOARD[3] - 30, w: 360 };
 
     const emitColumn = (n) => {
@@ -207,11 +267,11 @@ GX.plugin(function (ctx) {
       }
     };
     const beat = (big) => safe(() => {
-      ctx.shake(big ? 12 : 8, big ? 0.35 : 0.25);
+      if (!calm) ctx.shake(big ? 12 : 8, big ? 0.35 : 0.25);
       sfx("impact", big);
       ctx.flashAt(rx, ry + 80, 0xff8a20, big ? 1.6 : 1.2, 0.25);
-      ctx.ringAt(rx, ry, 0xffd060, big ? 4.2 : 3.2, 0.5);
-      if (ctx.VFX && ctx.VFX.shockwave && !MOBILE) ctx.VFX.shockwave(540, big ? ry : 940, { amp: big ? 18 : 12, radius: 1200, dur: 0.6 });
+      // white 2026-11-16 (calm look): no ring behind the bull's head on the beat
+      if (!calm && ctx.VFX && ctx.VFX.shockwave && !MOBILE) ctx.VFX.shockwave(540, big ? ry : 940, { amp: big ? 18 : 12, radius: 1200, dur: 0.6 });
     });
 
     const tl = gsap.timeline({ onComplete: () => { objs.forEach(kill); if (intro === tl) intro = null; } });
@@ -229,7 +289,7 @@ GX.plugin(function (ctx) {
       // the column rises from under the board up past the bull (0.3 -> 0.85 s), widening as it goes
       .to(core, { alpha: 1, duration: 0.12 }, 0.3)
       .to(head, { y: -160, w: 900, duration: 0.5, ease: "power2.in", onUpdate: () => {
-        core.y = head.y; core.scale.x = 0.5 + 0.7 * head.w / 900;
+        core.y = head.y; core.scale.x = 0.5 + 0.7 * head.w / 900; core.visible = head.y < BOARD[1] - 160;
         emitColumn(ctx.nEmit(MOBILE ? 70 : 100));
       } }, 0.3)
       .to(core, { alpha: 0, duration: 0.25 }, 0.8)
@@ -252,7 +312,7 @@ GX.plugin(function (ctx) {
     if (on === featureOn) return;
     featureOn = on;
     setMood(on);
-    if (on) playIntro();
+    if (on) playIntro(!!(d && d.calm));
   });
 
   // ---------- 3. clash pose ----------
@@ -330,20 +390,24 @@ GX.plugin(function (ctx) {
       }
       for (let i = 0; i < 18 * M; i++) hotP.emit({ tex: FX.tex.dot, x: chX + rnd(-90, 90), y: chY + rnd(-20, 40), vx: rnd(-60, 60), vy: rnd(-900, -500), drag: 1.6,
         s0: rnd(0.2, 0.4), s1: 0, life: rnd(0.5, 0.8), a0: 1, a1: 0, stretch: 600, tint: 0xffd27a });
-      // lightning to the multiplier column, and the hit there (white: from the hand's fireball)
+      // lightning to the multiplier column, and the hit there (white: from the hand's fireball). Lightning fix: ONE bolt
+      // that stays on the orb (was two re-scribbled bolts) and a small hit flash on the chip (was 2.4: it burned it white)
       const ho = ctx.handOrb ? ctx.handOrb() : { x: chX, y: chY };
-      strike(ho.x, ho.y, tx, ty, 0.38, { n: 14, jag: 70, w: 16, core: 5, branches: 3, redraws: 6, col: 0xffd27a });
-      strike(ho.x, ho.y, tx, ty - ctx.COL_P * 0.5, 0.3, { n: 12, jag: 90, w: 9, core: 3, branches: 1, redraws: 5, col: 0xffb040 });
-      gsap.delayedCall(0.05, () => safe(() => { ctx.flashAt(tx, ty, 0xfff0c0, 2.4, 0.3); ctx.burstAt(tx, ty, 0xffd060, Math.round(14 * M)); }));
+      strike(ho.x, ho.y, tx, ty, 0.42, { w: 17, branches: 2, col: 0xffd27a, from: ctx.handOrb,
+        onHit: () => { ctx.flashAt(tx, ty, 0xffe8b0, 0.9, 0.24); ctx.burstAt(tx, ty, 0xffd060, Math.round(14 * M)); } });
+      ctx.flashAt(ho.x, ho.y, 0xffe0a0, 0.6, 0.16);
       ctx.shake(10, 0.25); sfx("lightning"); sfx("impact", true);
     }));
   });
 
-  // white: a bolt from the fireball in the bull's hand to a point (game.js lightning())
+  // white: a bolt from the fireball in the bull's hand to a point (game.js lightning()). The bolt keeps following the
+  // orb while it lives; a small spark at the orb, a small glow when it lands (were 1.2 / 1.6: they hid hand and chip).
+  // d: x0 y0 (orb) x y (target) [col dur w branches]
   GX.on("handStrike", (d) => safe(() => {
-    strike(d.x0, d.y0, d.x, d.y, 0.34, { n: 16, jag: 60, w: 13, core: 4, branches: 2, redraws: 6, col: d.col || 0xffd27a });
-    ctx.flashAt(d.x0, d.y0, 0xffe0a0, 1.2, 0.18);
-    gsap.delayedCall(0.04, () => safe(() => ctx.flashAt(d.x, d.y, 0xfff0c0, 1.6, 0.22)));
+    const col = d.col || 0xffd27a;
+    strike(d.x0, d.y0, d.x, d.y, d.dur || 0.36, { w: d.w || 15, branches: d.branches !== undefined ? d.branches : 2, col,
+      from: ctx.handOrb, onHit: () => ctx.flashAt(d.x, d.y, col, 0.75, 0.2) });
+    ctx.flashAt(d.x0, d.y0, 0xffe0a0, 0.55, 0.14);
   }));
 
   // ---------- 4. near-win strike on the teased reel ----------
@@ -351,25 +415,28 @@ GX.plugin(function (ctx) {
     const reel = d && d.reel !== undefined ? d.reel : 2;
     const [x0, x1] = ctx.REEL_X[reel], cx = (x0 + x1) / 2, y0 = ctx.CELL_Y0, y1 = ctx.WIN_Y1;
     gsap.delayedCall(0.12, () => safe(() => {
-      // pre-flash: the sky above the reel lights up a beat before the strike
-      const ho = ctx.handOrb ? ctx.handOrb() : { x: cx, y: y0 - 330 };   // white: from the hand's fireball
-      ctx.flashAt(ho.x, ho.y, 0xfff0c0, 2.0, 0.2);
-      const g = strike(ho.x, ho.y, cx + rnd(-20, 20), y1 - 30, 0.5, { n: 16, jag: 55, w: 18, core: 5, branches: 4, redraws: 5, col: 0xffe2a0 });
-      void g;
-      const beam = new PIXI.Sprite(FX.tex.ray); beam.anchor.set(0.5, 0); beam.position.set(cx, y1); beam.blendMode = ADD; beam.tint = 0xffd890;
-      beam.scale.set((x1 - x0) / 128 * 1.1, -(y1 - y0 + 200) / 1024); beam.alpha = 0; layers.fxTop.addChild(beam);
-      gsap.timeline({ onComplete: () => kill(beam) }).to(beam, { alpha: 0.4, duration: 0.05 }).to(beam, { alpha: 0, duration: 0.45, ease: "power2.in" });
-      for (let row = 0; row < 3; row++) {
-        const cy0 = y0 + row * ctx.CELL_H;
-        const f = new PIXI.Graphics().beginFill(0xfff2c8).drawRoundedRect(x0 + 6, cy0 + 6, x1 - x0 - 12, ctx.CELL_H - 12, 18).endFill()
-          .lineStyle(6, 0xffd060, 1).drawRoundedRect(x0 + 6, cy0 + 6, x1 - x0 - 12, ctx.CELL_H - 12, 18);
-        f.blendMode = ADD; f.alpha = 0; layers.fxTop.addChild(f);
-        gsap.timeline({ delay: row * 0.045, onComplete: () => kill(f) }).to(f, { alpha: 0.26, duration: 0.04 }).to(f, { alpha: 0, duration: 0.3, ease: "power2.out" });
-      }
-      gsap.delayedCall(0.08, () => safe(() => {
-        ctx.flashAt(cx, y1 - 30, 0xffe8b0, 2.2, 0.3); ctx.burstAt(cx, y1 - 30, 0xffd060, Math.round(16 * M)); ctx.ringAt(cx, y1 - 30, 0xffd060, 1.8, 0.35);
-      }));
-      ctx.shake(6, 0.18); sfx("lightning");
+      // white: from the hand's fireball. Lightning fix: the bolt used to cut diagonally over reels 1-2 to the bottom of
+      // the teased reel; now it hits the TOP of that reel and runs DOWN it (a second bolt from the hit point, one path),
+      // the cells' rims light in turn behind it; small local flashes (the orb flash 2.0, the bottom 2.2 and the 0.26 cell fills
+      // + 0.4 beam burned the reel white)
+      const ho = ctx.handOrb ? ctx.handOrb() : { x: cx, y: y0 - 330 };
+      const top = { x: cx + rnd(-12, 12), y: y0 + 12 }, bot = { x: cx + rnd(-18, 18), y: y1 - 26 };
+      ctx.flashAt(ho.x, ho.y, 0xfff0c0, 0.6, 0.16);
+      strike(ho.x, ho.y, top.x, top.y, 0.5, { w: 16, branches: 2, col: 0xffe2a0, from: ctx.handOrb, onHit: () => {
+        ctx.flashAt(top.x, top.y, 0xffe8b0, 0.7, 0.18);
+        strike(top.x, top.y, bot.x, bot.y, 0.42, { w: 15, branches: 2, rough: 0.15, col: 0xffe2a0, onHit: () => {
+          ctx.flashAt(bot.x, bot.y, 0xffe8b0, 0.9, 0.26); ctx.burstAt(bot.x, bot.y, 0xffd060, Math.round(14 * M)); ctx.ringAt(bot.x, bot.y, 0xffd060, 1.2, 0.3);
+        } });
+        // the reel's cells answer with a gold RIM each, top to bottom (no fill / light beam: the parchment keeps its colour)
+        for (let row = 0; row < 3; row++) {
+          const cy0 = y0 + row * ctx.CELL_H;
+          const f = new PIXI.Graphics().lineStyle(6, 0xffd060, 1).drawRoundedRect(x0 + 6, cy0 + 6, x1 - x0 - 12, ctx.CELL_H - 12, 18);
+          f.blendMode = ADD; f.alpha = 0; layers.fxTop.addChild(f);
+          gsap.timeline({ delay: row * 0.03, onComplete: () => kill(f) }).to(f, { alpha: 0.5, duration: 0.04 }).to(f, { alpha: 0, duration: 0.3, ease: "power2.out" });
+        }
+        ctx.shake(6, 0.18);
+      } });
+      sfx("lightning");
     }));
   });
 });

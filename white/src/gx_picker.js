@@ -19,13 +19,14 @@ GX.plugin(function (ctx) {
   const faceTex = (v) => {
     try {
       v = coinOf(v);
-      if (v < 0) return ctx.T("Multipliers/chip_bg_nudge");
+      if (v < 0) return ctx.T("UI/charge_badge");          // 2026-11-18: a Fortune Choice CHARGE coin (as on the wheel, gx_halo chargeCoin)
       if (GPASS) { const t = PIXI.Assets.get(`assets/Multipliers/coin_${v}.webp`); if (t) return t; }
       return ctx.T(`Multipliers/chip_bg_${v}`);
     } catch (e) { return PIXI.Texture.EMPTY; }
   };
   const labelTex = (v) => {
-    try { return ctx.T(v < 0 ? `Multipliers/label_nudge${-v}` : `Multipliers/label_${v}x`); } catch (e) { return PIXI.Texture.EMPTY; }
+    if (v < 0) return PIXI.Texture.EMPTY;                   // the CHARGE badge carries its own art (its count shows in the column)
+    try { return ctx.T(`Multipliers/label_${v}x`); } catch (e) { return PIXI.Texture.EMPTY; }
   };
   const sp = (tex, parent) => { const s = new PIXI.Sprite(tex || PIXI.Texture.EMPTY); s.anchor.set(0.5); if (parent) parent.addChild(s); return s; };
 
@@ -39,6 +40,15 @@ GX.plugin(function (ctx) {
       const gx = cfg.x + h.x * sc, gy = cfg.y + h.y * sc;
       const q = ctx.bullToL(b.x + (gx - b.x) * b.scale.x, b.y + (gy - b.y) * b.scale.y);
       return { x: q[0], y: q[1] - 70, on: 1 };
+    } catch (e) { return null; }
+  }
+
+  // balls (user 2026-11-19 b): the bull's hand orb in fxTop space (centre, sphere radius rs) for a wheel ball merging into it
+  function orbGeo() {
+    try {
+      const o = ctx.flame && ctx.flame.c && ctx.flame.c.orb; if (!o) return null;
+      const P = PIXI.Point, a = fxTop.toLocal(o.orbM.toGlobal(new P(0, 0))), b = fxTop.toLocal(o.orbM.toGlobal(new P(o.R, 0)));
+      return { x: a.x, y: a.y, rs: Math.hypot(b.x - a.x, b.y - a.y) };
     } catch (e) { return null; }
   }
 
@@ -71,12 +81,15 @@ GX.plugin(function (ctx) {
     const SC = MOBILE ? 0.85 : 0.8;
     const c = new PIXI.Container(); c.scale.set(0);
     const glow = sp(FX.tex.glow, c); glow.tint = tint; glow.blendMode = ADD; glow.alpha = 0.45; glow.scale.set(0.9);
+    // b18b (QA: no aura on a picked CHARGE coin, ring / hand / coin): a wheel's CHARGE coin rides the hand without its glow,
+    // light streak or flash
+    const calmC = !!d.picked && real < 0; if (calmC) glow.visible = false;
     const coin = new PIXI.Container(); c.addChild(coin);
     const face = sp(faceTex(POOL[0]), coin);
     // the thin gold rim of the stone-pass coins rides on the face (hidden on the square NUDGE plate)
     const rimT = GPASS && PIXI.Assets.get("assets/Multipliers/coin_rim.webp");
     face.rim = rimT ? sp(rimT, face) : null;
-    const setRim = (v) => { if (face.rim) face.rim.visible = coinOf(v) > 0; };
+    const setRim = (v) => { if (face.rim) face.rim.visible = coinOf(v) > 0; face.scale.set(v < 0 ? 0.52 : 1); };   // (the CHARGE badge art is drawn at 0.52, as on the wheel)
     const label = sp(labelTex(POOL[0]), coin); if (GPASS) label.scale.set(0.85);
     const sheen = sp(FX.tex.glow, coin); sheen.tint = 0xffffff; sheen.blendMode = ADD; sheen.alpha = 0; sheen.scale.set(1.1, 0.75);
     const k = { c, coin, glow, face, label, tint, extra: [], follow: null, tw: null, phase: "pop", v: POOL[0] };
@@ -89,8 +102,13 @@ GX.plugin(function (ctx) {
     if (H && live(H.c)) {
       blend = { t: 0, x: H.c.x, y: H.c.y }; k.handoff = true;
       c.position.set(H.c.x, H.c.y); c.scale.set(H.c.scale.x);
-      if (KNOWN.has(real)) { face.texture = faceTex(real); label.texture = labelTex(real); setRim(real); }
-      try { H.c.destroy({ children: true }); } catch (e) {}
+      if (KNOWN.has(real) || real < 0) { face.texture = faceTex(real); label.texture = labelTex(real); setRim(real); }
+      if (H.c.isBall) {                                              // balls (user 2026-11-19): adopt the wheel's fire ball itself (no chip swap)
+        gsap.killTweensOf(H.c); gsap.killTweensOf(H.c.scale);
+        coin.addChildAt(H.c, coin.getChildIndex(sheen)); H.c.position.set(0, 0); H.c.scale.set(1); H.c.alpha = 1; H.c.glow.alpha = 0;
+        face.visible = label.visible = false; k.ball = H.c;
+        glow.visible = false; k.s0 = H.c.scale.x;                    // balls (user 2026-11-19 b): it merges into the hand ball (its own glow)
+      } else try { H.c.destroy({ children: true }); } catch (e) {}
       k.extra.push(gsap.to(blend, { t: 1, duration: Math.min(0.4, cd * 0.45), ease: "power2.inOut" }));
     }
     // above the game's own charge glow (added right after this event)
@@ -99,6 +117,12 @@ GX.plugin(function (ctx) {
     k.follow = () => {
       if (!live(c)) return;
       const p = handPos(); if (!p) return;
+      if (k.ball) {                                                  // balls (user 2026-11-19 b): centred on the hand ball, its size x 0.95
+        const o = orbGeo(), kk = o ? (2 * o.rs * 0.95) / (k.ball.ballD || 168) : SC, q = o || p;
+        const e = blend && blend.t < 1 ? blend.t : 1;
+        c.position.set(blend.x + (q.x - blend.x) * e, blend.y + (q.y - blend.y) * e); c.scale.set(k.s0 + (kk - k.s0) * e);
+        c.visible = e < 1 || p.on > 0.05; return;
+      }
       if (blend && blend.t < 1) { const e = blend.t; c.position.set(blend.x + (p.x - blend.x) * e, blend.y + (p.y - blend.y) * e); c.visible = true; return; }
       c.position.set(p.x, p.y); c.visible = p.on > 0.05;
     };
@@ -110,9 +134,10 @@ GX.plugin(function (ctx) {
     const tLand = d.picked ? 0.01 : cd * (short ? 0.6 : 0.62);      // picked by the halo wheel: it arrives already landed
     const tSlow = tLand * 0.6;
     const pulses = d.picked ? [cd * 0.3] : short ? [cd * 0.3] : [cd * 0.14, cd * 0.3, cd * 0.46];
-    if (blend) k.extra.push(gsap.to(c.scale, { x: SC * 1.08, y: SC * 1.08, duration: Math.min(0.4, cd * 0.45), ease: "power2.inOut" }));
+    if (blend && k.ball) { /* balls (user 2026-11-19 b): k.follow sizes it to the hand ball */ }
+    else if (blend) k.extra.push(gsap.to(c.scale, { x: SC * 1.08, y: SC * 1.08, duration: Math.min(0.4, cd * 0.45), ease: "power2.inOut" }));
     else k.extra.push(gsap.to(c.scale, { x: SC, y: SC, duration: popD, ease: "back.out(2.6)" }));
-    ctx.flashAt(p0 ? p0.x : 0, p0 ? p0.y : 0, tint, 0.6, 0.18);
+    if (!calmC) ctx.flashAt(p0 ? p0.x : 0, p0 ? p0.y : 0, tint, 0.6, 0.18);
 
     let last = POOL[0], nextAt = 0, step = 1 / 15, landed = false, pi = 0;
     const setFace = (v) => {
@@ -128,31 +153,30 @@ GX.plugin(function (ctx) {
       gsap.killTweensOf(glow); gsap.killTweensOf(glow.scale);
       gsap.fromTo(glow, { alpha: 1 }, { alpha: 0.45, duration: Math.min(0.3, cd * 0.15), ease: "power2.out" });
       gsap.fromTo(glow.scale, { x: 1.35 * big, y: 1.35 * big }, { x: 0.9, y: 0.9, duration: Math.min(0.3, cd * 0.15), ease: "power2.out" });
-      gsap.fromTo(c.scale, { x: SC * 1.2 * big, y: SC * 1.2 * big }, { x: SC, y: SC, duration: Math.min(0.22, cd * 0.12), ease: "power2.out" });
-      ctx.ringAt(c.x, c.y, tint, 0.8 + 0.2 * pi, 0.28);
+      if (!k.ball) gsap.fromTo(c.scale, { x: SC * 1.2 * big, y: SC * 1.2 * big }, { x: SC, y: SC, duration: Math.min(0.22, cd * 0.12), ease: "power2.out" });   // balls (b): sized by k.follow
+      if (!k.handoff) ctx.ringAt(c.x, c.y, tint, 0.8 + 0.2 * pi, 0.28);   // white 2026-11-17: a wheel coin arrives without rings
     };
     const land = () => {
       landed = true; k.phase = "landed"; k.v = real;
       face.texture = faceTex(real); setRim(real);
-      if (KNOWN.has(real)) label.texture = labelTex(real);
-      else {
+      if (KNOWN.has(real) || real < 0) label.texture = labelTex(real);
+      else if (!k.ball) {                                                // balls (user 2026-11-19): the adopted ball already carries its value
         label.texture = PIXI.Texture.EMPTY;
         try { const tx = new PIXI.Text(real + "x", FX.gold(64)); tx.anchor.set(0.5); coin.addChild(tx); } catch (e) {}
       }
       gsap.killTweensOf([coin, coin.scale]); coin.y = 0; coin.alpha = 1; coin.scale.set(1);
       if (!k.handoff) gsap.fromTo(c.scale, { x: SC * 1.45, y: SC * 1.45 }, { x: SC * 1.08, y: SC * 1.08, duration: 0.3, ease: "back.out(2.4)" });
-      gsap.fromTo(sheen, { alpha: 0.55 }, { alpha: 0, duration: 0.3, ease: "power2.in" });
+      if (!calmC && !k.ball) gsap.fromTo(sheen, { alpha: 0.55 }, { alpha: 0, duration: 0.3, ease: "power2.in" });   // b18b: no white sheen over a picked CHARGE coin
       gsap.fromTo(glow, { alpha: 1 }, { alpha: 0.65, duration: 0.35 });
       gsap.fromTo(glow.scale, { x: 2.0, y: 2.0 }, { x: 1.15, y: 1.15, duration: 0.35, ease: "power2.out" });
       // light streak: a hot diagonal blade across the coin, sweeping through
+      if (!calmC && !k.ball) {                                          // balls (user 2026-11-19 b): no white sheen / streak / flash over the hand ball
       const st = sp(FX.tex.shine || FX.tex.glow); st.blendMode = ADD; st.tint = 0xfff4dc; st.rotation = -0.42;
       st.position.set(c.x, c.y); st.scale.set(0.1, 0.5); st.alpha = 1; fxTop.addChild(st);
       gsap.to(st.scale, { x: 2.4, y: 0.18, duration: 0.26, ease: "power3.out" });
       gsap.to(st, { alpha: 0, duration: 0.3, ease: "power2.in", onComplete: () => live(st) && st.destroy() });
-      ctx.starFlash(c.x, c.y, 1.1, 0xfff2c0);
-      ctx.flashAt(c.x, c.y, 0xffe6a0, 0.8, 0.16);
-      ctx.ringAt(c.x, c.y, tint, 1.7, 0.32);
-      ctx.burstAt(c.x, c.y, 0xffd060, MOBILE ? 7 : 14);
+      ctx.flashAt(c.x, c.y, 0xffe6a0, 0.8, 0.16); }
+      if (!k.handoff) { ctx.starFlash(c.x, c.y, 1.1, 0xfff2c0); ctx.ringAt(c.x, c.y, tint, 1.7, 0.32); ctx.burstAt(c.x, c.y, 0xffd060, MOBILE ? 7 : 14); }
       // the coin stays readable on top of its own burst
       fxTop.addChild(c);
     };
@@ -182,7 +206,7 @@ GX.plugin(function (ctx) {
   let plaque = null, prevS = 0;
   const findPlaque = () => {
     const pl = layers.plaqueL; if (!pl) return null;
-    return pl.children.find((o) => o instanceof PIXI.Container && Math.abs(o.x - 540) < 1 && Math.abs(o.y - 1372) < 1) || null;
+    return pl.children.find((o) => o instanceof PIXI.Container && Math.abs(o.x - 540) < 1 && Math.abs(o.y - 1370) < 6) || null;
   };
   // starburst rays as one canvas texture (gold-white tapered blades)
   const burstTex = (() => {
@@ -201,6 +225,7 @@ GX.plugin(function (ctx) {
     } catch (e) { return FX.tex.star8; }
   })();
   function hitAccent() {
+    return;   // white 2026-11-16 (calm look): no starburst / ring / sparks at the plaque; the win board hit (game.js winBarHit) is the accent
     if (!live(plaque)) return;
     const gp = plaque.getGlobalPosition(), p = fxTop.toLocal(gp);
     const R = 0.15 * W;
