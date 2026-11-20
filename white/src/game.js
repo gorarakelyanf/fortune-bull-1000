@@ -192,7 +192,7 @@
   if (V2ART) { add("Multipliers/chip_bg_nudge5"); add("UI/buy_button"); }
   ["title_big", "title_mega", "title_super", "title_epic", "title_max", "wp_medallion_gold", "wp_medallion_tint", "wp_banner_gold", "wp_banner_tint", "wp_tablet_gold", "wp_tablet_tint"].forEach((n) => files.push(`assets/Popup/${n}.webp`));
   ["chip_coat", "chip_glints", "chip_rim", "chip_shadow"].forEach((n) => add("Multipliers/" + n));
-  ["Multipliers/centre_frame", "UI/nudge_box", "UI/total_box", "UI/counter_screen", "UI/counter_board", "UI/counter_board_red", "UI/counter_board_open", "UI/buy_bg", "UI/total_plate", "UI/cf_arrow", "vfx/winline", "vfx/winline_rest", "UI/exp_panel", "UI/exp_card_red", "UI/exp_card_amber", "UI/exp_card_purple", "UI/exp_confirm", "UI/buy_label", "UI/ex_plate", "UI/charge_badge", "UI/charge_window", "UI/charge_chev", "UI/charge_digit_0", "UI/charge_digit_1", "UI/charge_digit_2", "UI/charge_digit_3", "UI/charge_digit_4", "UI/charge_digit_5", "UI/charge_digit_6", "UI/charge_digit_7", "UI/charge_digit_8", "UI/charge_digit_9", "UI/charge_digit_slash", "UI/total_x", "UI/charge_rect", "UI/charge_rect_window", "UI/ex_switch_off", "UI/ex_switch_on"].forEach((p) => files.push(`assets/${p}.webp`));   // every art set uses these
+  ["Multipliers/centre_frame", "UI/nudge_box", "UI/total_box", "UI/counter_screen", "UI/counter_board", "UI/counter_board_red", "UI/counter_board_open", "UI/buy_bg", "UI/total_plate", "UI/cf_arrow", "vfx/winline", "vfx/winline_rest", "UI/exp_panel", "UI/exp_card_red", "UI/exp_card_amber", "UI/exp_card_purple", "UI/exp_confirm", "UI/buy_label", "UI/ex_plate", "UI/charge_badge", "UI/charge_window", "UI/charge_chev", "UI/charge_digit_0", "UI/charge_digit_1", "UI/charge_digit_2", "UI/charge_digit_3", "UI/charge_digit_4", "UI/charge_digit_5", "UI/charge_digit_6", "UI/charge_digit_7", "UI/charge_digit_8", "UI/charge_digit_9", "UI/charge_digit_slash", "UI/total_x", "UI/charge_rect", "UI/charge_rect_window", "UI/ex_switch_off", "UI/ex_switch_on", "UI/ex2_off", "UI/ex2_on", "UI/buy2", "UI/counter_board_red_thin"].forEach((p) => files.push(`assets/${p}.webp`));   // every art set uses these   // b21: ex2_* / buy2 = the user's new buttons
   if (GPASS) ["Board/panel_dark", "Board/tile_low", "Board/tile_low_blur", "Board/tray_dark", "Board/plinth_slim", "Board/plinth_fade", "Board/frame_stone"].forEach((p) => files.push(`assets/${p}.webp`));
   if (COINS) { Engine.MULT_VALUES.forEach((v) => files.push(`assets/Multipliers/coin_${v}.webp`)); ["coin_shadow", "coin_rim", "centre_frame_thin"].forEach((n) => files.push(`assets/Multipliers/${n}.webp`)); }
   ["autoplay", "autoplay_shadow", "balance_bar_border", "balance_bar_fill", "bet_window_border", "bet_window_fill",
@@ -474,6 +474,26 @@
   centreFrame.visible = false;
   const cfFx = VFX.moltenFrame(frameL, { x: COL_CX, y: COL_CY, w: 195, h: 117, r: 15, band: 13, ri: 7 });
   cfArrows.forEach((a) => frameL.addChildAt(a, frameL.getChildIndex(cfFx.mesh)));   // white: under the frame, only the point shows
+  // b21 (user 2026-11-20: "make the multiplier middle frame simply white glow"): the molten gold frame and its two arrowheads
+  // are replaced by one soft white glow line round the centre slot (a baked canvas: wide faint halo, brighter inner halo,
+  // a thin white core; ADD; still - no pulse, sparks or flames). The chip numbers no longer pass under bars (colFront
+  // gets the plain tray mask). ?cfgold = the b20 molten frame + arrows
+  const CF_GLOW = !params.has("cfgold");
+  if (CF_GLOW) {
+    cfFx.mesh.visible = false; cfArrows.forEach((a) => { a.visible = false; });
+    // b21 later the same day (user: "make this frame thicker and yellow glowing", screenshot of the white line round a CHARGE
+    // chip): warm yellow instead of white, every pass about twice as thick (core 2 -> 4.5 px), a wider halo; a touch bigger
+    // so the extra thickness grows outward, off the chip
+    const GW = 190, GH = 112, GR = 15, GP = 40, K2 = 2;                 // the glow line's box, halo room, 2x
+    const c = document.createElement("canvas"); c.width = (GW + 2 * GP) * K2; c.height = (GH + 2 * GP) * K2;
+    const g = c.getContext("2d"); g.scale(K2, K2);
+    const rr = () => { g.beginPath(); g.roundRect ? g.roundRect(GP, GP, GW, GH, GR) : g.rect(GP, GP, GW, GH); };
+    [[18, "255,190,30", 0.26, 30], [9, "255,214,70", 0.62, 14], [4.5, "255,240,150", 0.98, 4]].forEach(([lw, rgb, a, blur]) => {
+      g.lineWidth = lw; g.strokeStyle = `rgba(${rgb},${a})`; g.shadowColor = `rgba(${rgb},1)`; g.shadowBlur = blur * K2; rr(); g.stroke(); });
+    const glowSp = new PIXI.Sprite(PIXI.Texture.from(c)); glowSp.anchor.set(0.5); glowSp.scale.set(1 / K2);
+    glowSp.position.set(COL_CX, COL_CY); glowSp.blendMode = PIXI.BLEND_MODES.ADD; glowSp.eventMode = "none";
+    frameL.addChildAt(glowSp, frameL.getChildIndex(cfFx.mesh) + 1);
+  }
   app.ticker.add(() => {                                  // hotter while the column teases; flashes when the arrows knock
     cfFx.power = 1;
     if (Math.abs(cfArrows[0].x - cfArrows[0].x0) > 2) cfFx.flash = Math.max(cfFx.flash, 0.8); });
@@ -1009,7 +1029,7 @@
   // on the window while it rolls (colHotOn / colHotOff below). ?nocolhot = the old 9 chips/s column without the frame.
   const COL_HOT = !params.has("nocolhot"), COL_HOT_V = 32, COL_HOT_BLUR = 10 + 1.5 / 0.6;
   const colReel = new Reel({ rows: 7, pitch: COL_P, y0: COL_Y0, vmax: 9, vNormal: 9, vTurbo: 26, accel: 400, stopDur: 0.62, stopFast: 0.22,
-    masks: [[colBack, maskRect(TRAY[0], TRAY[1], TRAY[2], TRAY[3])], [colFront, colBarsMask], [colFrontCB, maskRect(TRAY[0] - 30, TRAY[1], TRAY[2] + 30, TRAY[3])]],
+    masks: [[colBack, maskRect(TRAY[0], TRAY[1], TRAY[2], TRAY[3])], [colFront, CF_GLOW ? maskRect(TRAY[0] - 30, TRAY[1], TRAY[2] + 30, TRAY[3]) : colBarsMask], [colFrontCB, maskRect(TRAY[0] - 30, TRAY[1], TRAY[2] + 30, TRAY[3])]],
     make: () => new ChipView(), rand: () => colShowPick(),          // white: Garuda's show strip while spinning
     above: (i) => (colQ.length ? colQ.shift() : (i + 1) % Engine.STRIP.length),
     onSpeed: (s) => { const b = Math.max(0, ((COL_HOT ? Math.min(s, COL_HOT_BLUR) : s) - 10) * 0.6); colBlur.blurY = b; colBack.filters = colFront.filters = colFrontCB.filters = b > 0.5 ? [colBlur] : null; } });   // b19: blur capped at 1.5 px (COL_HOT)
@@ -1050,7 +1070,7 @@
   const CF_ARROW_HIDE = new Set([1000, 500]);
   app.ticker.add(() => {
     const cv = colReel.views[4], rest = colReel.state === "idle";
-    const want = rest && cv && CF_ARROW_HIDE.has(cv.v) ? 0 : 1;
+    const want = CF_GLOW || (rest && cv && CF_ARROW_HIDE.has(cv.v)) ? 0 : 1;   // b21: no arrows with the white glow frame
     cfArrows.forEach((a) => { a.alpha += (want - a.alpha) * 0.25; a.renderable = a.alpha > 0.02; });
   });
 
@@ -1330,11 +1350,26 @@
   // BUY BONUS chip's width (234 px; pill 197 -> 234), its bottom level with the chip's (on the container: the body's
   // press tween owns body.scale)
   const EX_K = 234 / 197; ui.ex.scale.set(EX_K); ui.ex.y += 20;
+  // b21 (user 2026-11-20: "we have new buttons"): the user's new EX switch art, the round EX plate fused on the pill, ON/OFF
+  // and the knob baked in (tools/ex_switch_v2.py: ex2_off = the art as drawn; ex2_on = knob right, green face, "ON" left).
+  // One sprite in place of pill + plate + EX + OFF texts; pill 234 px wide on screen as before, its centre where the old
+  // pill's was. ?oldbtn = the b20 switch.
+  const EX2 = !params.has("oldbtn") && !!PIXI.Assets.get("assets/UI/ex2_off.webp");
+  let exSw = EX_SW;
+  if (EX2) {
+    exSw = 0.5 / EX_K;                                                  // 2x art; the container's EX_K is undone here
+    ui.ex.spr.texture = T("UI/ex2_off"); ui.ex.spr.scale.set(exSw);
+    ui.ex.spr.y = -35.1 / EX_K;                                         // texture centre -> pill centre at (0, 0) (tool prints 35.1)
+    exPlate.visible = exLabel.visible = exState.visible = false;
+    exTag.y = -106.3 / EX_K - 16;                                       // above the art's plate (top 106.3 px over the pill centre)
+    ui.ex.body.hitArea = new PIXI.RoundedRectangle(-102, -94, 204, 130, 30);
+    ui.ex.y += 14;                                                      // level with the new BUY BONUS art (both 143 px tall)
+  }
   function exSwitchDraw() {
-    ui.ex.spr.texture = T(S.ex ? "UI/ex_switch_on" : "UI/ex_switch_off");
+    ui.ex.spr.texture = T(EX2 ? (S.ex ? "UI/ex2_on" : "UI/ex2_off") : (S.ex ? "UI/ex_switch_on" : "UI/ex_switch_off"));
     exTag.text = "x" + MC(S.exMode || 1) + " BET";                  // the chosen mode's debit
     exState.text = S.ex ? "ON" : "OFF"; exState.position.set(S.ex ? -42 : 44, 1); exState.style.fill = S.ex ? "#ffffff" : "#ffe9c0";
-    gsap.fromTo(ui.ex.spr.scale, { x: EX_SW * 1.1, y: EX_SW * 0.92 }, { x: EX_SW, y: EX_SW, duration: 0.3, ease: "back.out(3)" });
+    gsap.fromTo(ui.ex.spr.scale, { x: exSw * 1.1, y: exSw * 0.92 }, { x: exSw, y: exSw, duration: 0.3, ease: "back.out(3)" });
   }
   exSwitchDraw();
   function exPress() {                                                 // ON -> switch off at once; OFF -> choose a mode first
@@ -1981,13 +2016,20 @@
   // level 1's red face is LV1_EXTRA px taller (66 -> 92 px; a NineSlicePlane, so its gold top band stays as drawn), level 2
   // stands that much higher, and the TOTAL number is drawn at LV1_NUM (was 56). LV1_EXTRA 0 + LV1_NUM 56 = the b18 tower
   const LV1_EXTRA = 26, LV1_NUM = 64;
-  const CS_X = 944, CS_HIDE = 100 + LV1_EXTRA, CS_A_HIDE = 86 + LV1_EXTRA, CB_BAR = 591, CB_A = 516 - LV1_EXTRA;
-  const CNT_Y = 473 - LV1_EXTRA, ACC_Y = 558 - LV1_EXTRA / 2;   // row centres: level 2 face 440..505, level 1 face 526..591 (both - LV1_EXTRA at the top)
+  // b21 (user 2026-11-20: "make this frame of the popup thinner and more beautiful", arrow on the band between the two
+  // boards): level 1's 20.5 px top band + corner caps -> a 9 px polished gold bar with collars on the pillars and a small blue
+  // gem in the middle (tools/counter_divider_b21.py -> UI/counter_board_red_thin, 2x). Level 1's face keeps its size, so the
+  // bar sits 11.5 px lower and level 2 stands that much lower on it (CB_THIN_DY). ?oldcb = the b20 band
+  const CB_THIN = !params.has("oldcb") && !!PIXI.Assets.get("assets/UI/counter_board_red_thin.webp"), CB_THIN_DY = CB_THIN ? 11.5 : 0;
+  const CS_X = 944, CS_HIDE = 100 + LV1_EXTRA, CS_A_HIDE = 86 + LV1_EXTRA, CB_BAR = 591, CB_A = 516 - LV1_EXTRA + CB_THIN_DY;
+  const CNT_Y = 473 - LV1_EXTRA + CB_THIN_DY, ACC_Y = 558 - LV1_EXTRA / 2;   // row centres: level 2 face 440..505, level 1 face 526..591 (both - LV1_EXTRA at the top)
   const cscreen = new PIXI.Container(); cscreen.visible = false; plaqueL.addChild(cscreen);
   const cscreenA = new PIXI.Container(); cscreenA.y = CS_A_HIDE;   // level 2 (board + count), moves with level 1
-  const cscreenBg = new PIXI.NineSlicePlane(T("UI/counter_board_red"), 0, 30, 0, 0);   // b20: rows 0-29 = the top band (kept), the face stretches
-  cscreenBg.width = cscreenBg.texture.width; cscreenBg.height = cscreenBg.texture.height + LV1_EXTRA;
-  cscreenBg.position.set(CS_X - cscreenBg.width / 2, CB_BAR - cscreenBg.height);   // (was a Sprite, anchor 0.5, 1 at CS_X, CB_BAR)
+  const cscreenBg = CB_THIN ? new PIXI.NineSlicePlane(T("UI/counter_board_red_thin"), 0, 46, 0, 0)   // b21: rows 0-45 (2x) = pad + bar + its shadow
+    : new PIXI.NineSlicePlane(T("UI/counter_board_red"), 0, 30, 0, 0);   // b20: rows 0-29 = the top band (kept), the face stretches
+  const CB_K = CB_THIN ? 0.5 : 1;                                       // b21 art is 2x
+  cscreenBg.width = cscreenBg.texture.width; cscreenBg.height = cscreenBg.texture.height + LV1_EXTRA / CB_K; cscreenBg.scale.set(CB_K);
+  cscreenBg.position.set(CS_X - cscreenBg.width * CB_K / 2, CB_BAR - cscreenBg.height * CB_K);   // (was a Sprite, anchor 0.5, 1 at CS_X, CB_BAR)
   const cscreenBgA = new PIXI.Sprite(T("UI/counter_board_open")); cscreenBgA.anchor.set(0.5, 1); cscreenBgA.position.set(CS_X, CB_A);
   const cscreenMask = new PIXI.Graphics().beginFill(0xffffff).drawRect(760, 280, 380, CB_BAR - 280).endFill(); plaqueL.addChild(cscreenMask); cscreen.mask = cscreenMask;
   cscreen.addChild(cscreenA, cscreenBg); cscreenA.addChild(cscreenBgA);
@@ -4250,7 +4292,9 @@
     fireFrame, tease, FireRect, embers, TITLE: !GPASS,
     isFeature: () => featureOn });
   GX.ctx.exs = { swDigits, swPick, SW_PLATE, swTopL, showMsg, clearWin, colGrow: exColGrow, colFinish: exColFinish,      // EX show seam (src/gx_exshow.js reads it at play time)
-    overlayOpen: () => exBet.isOpen() || !!(buyUI && buyUI.isOpen && buyUI.isOpen()) || menuL.children.length > 0, minOf: (m) => [1, 3, 15, 50][m] };
+    overlayOpen: () => exBet.isOpen() || !!(buyUI && buyUI.isOpen && buyUI.isOpen()) || menuL.children.length > 0, minOf: (m) => [1, 3, 15, 50][m],
+    // b21 drop show (gx_exshow playDrop): the reels' window in board space, the layer the copies go in (under the frame), a board drop
+    win: () => ({ x0: REEL_X[0][0] - 2, x1: REEL_X[2][1] + 2, y0: CELL_Y0, y1: WIN_Y1 }), reelsL, boardDrop, frameTop };
   GX.ctx.cds = { colIds, colWindow, stripAt, colIdxOf, colGrow, colGrowTo, setColC: (c) => { colC = c; }, exCancel: exShowCancel,   // gold-dust column demo seam (src/gx_coldust.js)
     idle: () => S.state === "idle", overlayOpen: GX.ctx.exs.overlayOpen };
   window.G = { mobBull: () => mobBull, mobWild: () => mobWild, bullView: () => ({ still: bullSpr.visible, clip: !!(bullClipC ? bullClipC.visible : clips.bull_idle), alpha: bull.worldAlpha }), spin, S, reels, colReel, Engine, clips, feature, bullSlam, bullCharge, bullOrb, bullPlay, bullDir, bullReact, buy: (k) => spin(null, k), buyUI: () => buyUI, state: () => S.state, last: null, popOpen: () => pop.visible && !!popTap, tapPop: () => popTap && popTap() };

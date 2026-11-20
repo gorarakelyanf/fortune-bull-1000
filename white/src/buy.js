@@ -186,6 +186,14 @@
       shadow.scale.set(1.0 * K, 0.55 * K); shadow.y = 14 * K;
       label.scale.set(label.scale.x * BUY_TEXT_K); if (labelArt) labelArt.scale.set(labelArt.scale.x * BUY_TEXT_K);
       buyHitK = K;
+      // b21 (user 2026-11-20: "we have new buttons"): the user's new BUY BONUS art (tools/buy_button_v2.py -> assets/UI/buy2.webp,
+      // 2x, lettering baked in) in place of plate + rim + lettering, the b19 plate's width (262 px); ?oldbtn = the b20 button
+      const buy2 = !/[?&]oldbtn\b/.test(location.search) && PIXI.Assets.get("assets/UI/buy2.webp");
+      if (buy2) {
+        disc = sprite(buy2, 0.5); label.visible = false; labelArt = null;
+        gemMask.clear().beginFill(0xffffff).drawRoundedRect(-112, -56, 224, 112, 18).endFill();   // the glint stays on the red face
+        shadow.scale.set(1.05, 0.62); shadow.y = 16;
+      }
     } else {
       disc = ART === "assets_v2" && PIXI.Assets.get(`${ART}/UI/buy_button.webp`) ? sprite(T("UI/buy_button")) : sprite(discTex(128));
       if (disc.texture.width > 140) disc.scale.set(132 / disc.texture.width);
@@ -198,11 +206,15 @@
     gsap.timeline({ repeat: -1, repeatDelay: 3.4, delay: 1.2 }).fromTo(glint, { x: -90 }, { x: 90, duration: 0.7, ease: "power1.inOut" });
     pressable(body, () => { if (!enabled || root) return; click(); open(); }, (t) => t, unlock);
     const grey = new PIXI.ColorMatrixFilter(); grey.desaturate(); grey.resolution = Math.min(window.devicePixelRatio || 1, 2);
+    // b21 (user 2026-11-20: "dim the buy bonus like ex during the spin, do not make it black and white"): locked = every
+    // sprite darkened to 0.62 like the EX switch (game.js exDim), fully opaque, colours kept; was 0.75 alpha + desaturate
+    const dimMul = (c, k) => ((Math.round(((c >> 16) & 255) * k) << 16) | (Math.round(((c >> 8) & 255) * k) << 8) | Math.round((c & 255) * k));
+    const dimWalk = (o, locked) => { if (typeof o.tint === "number") { if (o._t0 === undefined) o._t0 = o.tint; o.tint = locked ? dimMul(o._t0, 0.62) : o._t0; } (o.children || []).forEach((ch) => dimWalk(ch, locked)); };
     function setEnabled(on) {
       enabled = !!on;
       body.eventMode = enabled ? "static" : "none";
-      button.alpha = enabled ? 1 : 0.75;
-      body.filters = enabled ? null : [grey];
+      button.alpha = 1;
+      body.filters = null; dimWalk(body, !enabled);
       glow.visible = glint.visible = enabled;
       if (!enabled) gsap.to(body.scale, { x: 1, y: 1, duration: 0.15 });
     }

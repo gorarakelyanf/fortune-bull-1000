@@ -18,11 +18,17 @@ GX.plugin(function (ctx) {
     TD: 0.55, OVER: 0.12, TD_T: 0.25, OVER_T: 0.08,   // the glide stop (normal / turbo), as in spin()
     HOLD: 0.3,                             // the frame stays this long after the column is at rest, then fades
     FADE_IN: 0.2, FADE_OUT: 0.35,
-    BAND: 18, OUT: 3,                      // band thickness inside the window, its thin outer glow (design px)
+    BAND: 30, OUT: 5,                      // band thickness inside the window, its thin outer glow (design px)   // b21: 18 / 3 -> 30 / 5 (user: "more broad")
+    GLOW_BAND: 22,                         // b21: the solid glow layer stays a little narrower than the dust (chip edges stay readable)
     GLOW_A: 0.72, PULSE: 0.09, PULSE_HZ: 1.4,
-    LAYERS: MOBILE ? 2 : 3, SPECKS: MOBILE ? 650 : 900,   // baked glitter layers (each re-weighted every few frames)
-    PARTS: MOBILE ? 80 : 160, GLINTS: MOBILE ? 4 : 7, DRIFT: MOBILE ? 7 : 14,
-    FLOW: MOBILE ? 40 : 80,                // b20: gold-dust specks streaming along the band (0 = the b19 frame: twinkles only)
+    LAYERS: MOBILE ? 2 : 3, SPECKS: MOBILE ? 950 : 1400,   // b21: 650 / 900 -> more specks for the wider band   // baked glitter layers (each re-weighted every few frames)
+    PARTS: MOBILE ? 130 : 260, GLINTS: MOBILE ? 7 : 12, DRIFT: MOBILE ? 16 : 30,   // b21 (user: "more active"): was 80/160, 4/7, 7/14
+    FLOW: MOBILE ? 90 : 170,               // b20: gold-dust specks streaming along the band (0 = the b19 frame: twinkles only)   // b21: was 40 / 80
+    // b21 (user 2026-11-20: "the sparkles and particles, add more, to go outside of the reel borders", sketch: specks flying out on
+    // every side, over the gold frame, out to the right and over the reels on the left): SPILL specks leave the band outward
+    // (all four sides) and fly 40-150 px past the window; a share of the glints pop just outside the window, on the frame
+    SPILL: MOBILE ? 110 : 220, SPILL_EVERY: MOBILE ? [0.008, 0.02] : [0.004, 0.01], GLINT_OUT: 0.4,
+    SPILL_STAR: 0.3,                       // share of spill specks drawn as 4-point sparkles (the rest round twinkles); full alpha (own layer)
     DIM: false,                            // COLDUST_DIM (later: dim the board while the column runs) - not used yet
   };
   const R = 2;                                                     // textures baked at 2x
@@ -35,7 +41,7 @@ GX.plugin(function (ctx) {
   // b19 (user 2026-11-19 items 7-8, the frame now runs in every real spin, game.js colHotOn/colHotOff): frame(on, a) takes the
   // frame's peak alpha (default 1 = the demo); playing() = the demo play owns the column (a round's late frame-off leaves it alone)
   const api = window.COLDUST = { play, frame, stop, active: () => !!(P || F), playing: () => !!P, T: TM, last: null,
-    _count: () => (F && !F.c.destroyed ? F.c.children.length + F.pc.children.length : 0), _tick: () => tickOn };
+    _count: () => (F && !F.c.destroyed ? F.c.children.length + F.pc.children.length + (F.so ? F.so.children.length : 0) : 0), _tick: () => tickOn };
 
   // ---------- textures (baked once, cached) ----------
   function canvas(w, h) { const c = document.createElement("canvas"); c.width = Math.ceil(w * R); c.height = Math.ceil(h * R); return c; }
@@ -49,7 +55,7 @@ GX.plugin(function (ctx) {
   }
   function bake() {
     if (tex) return tex;
-    const B = TM.BAND;
+    const B = TM.GLOW_BAND;                                          // b21: the glow layer's own width (the dust uses TM.BAND)
     // 1) the glow band: brightest just inside the edge, soft inner falloff, a thin outer rim; mottled so it is never flat
     const cg = canvas(W + 2 * M, H + 2 * M), g = cg.getContext("2d"), id = g.createImageData(cg.width, cg.height), px = id.data;
     const nz = []; for (let i = 0; i < 64; i++) nz.push(Math.random());
@@ -76,7 +82,7 @@ GX.plugin(function (ctx) {
     for (let L = 0; L < TM.LAYERS; L++) {
       const c = canvas(W + 2 * M, H + 2 * M), q = c.getContext("2d");
       for (let n = 0; n < TM.SPECKS; n++) {
-        const d = B * 1.4 * Math.pow(Math.random(), 1.9) - 1.5, p = edgePt(Math.random() * PER, d);
+        const d = TM.BAND * 1.3 * Math.pow(Math.random(), 1.6) - 1.5, p = edgePt(Math.random() * PER, d);
         const big = Math.random() < 0.1, r = (big ? rnd(1.6, 2.6) : rnd(0.5, 1.3)) * R, x = (p.x + M) * R, y = (p.y + M) * R;
         const gr = q.createRadialGradient(x, y, 0, x, y, r * 2.2), a = rnd(0.55, 1);
         gr.addColorStop(0, `rgba(255,255,${Math.round(rnd(215, 255))},${a})`);
@@ -127,7 +133,12 @@ GX.plugin(function (ctx) {
     const glints = []; for (let i = 0; i < TM.GLINTS; i++) glints.push({ s: mk(FX.tex.spark), age: 1, life: 0 });
     const drift = []; for (let i = 0; i < TM.DRIFT; i++) drift.push({ s: mk(tx.tw), age: 1, life: 0 });
     const flow = []; for (let i = 0; i < TM.FLOW; i++) { const p = { s: mk(tx.tw) }; spawnFlow(p, true); flow.push(p); }
-    F = { c, glow, lay, pc, parts, glints, drift, flow, t: 0, glintT: 0, driftT: 0, dying: false, fade: null };
+    // b21: the spill specks get their own layer next to the frame at full strength (the frame itself runs at the round's 0.65)
+    const so = new PIXI.Container(); so.name = "colDustSpill"; so.eventMode = "none"; so.position.set(X0, Y0); so.alpha = 0;
+    board.addChildAt(so, board.getChildIndex(c) + 1);
+    const mkS = (t) => { const s = new PIXI.Sprite(t); s.anchor.set(0.5); s.blendMode = PIXI.BLEND_MODES.ADD; s.visible = false; so.addChild(s); return s; };
+    const spill = []; for (let i = 0; i < TM.SPILL; i++) { const star = Math.random() < TM.SPILL_STAR; spill.push({ s: mkS(star ? FX.tex.spark : tx.tw), star, age: 1, life: 0 }); }
+    F = { c, so, peak, glow, lay, pc, parts, glints, drift, flow, spill, t: 0, glintT: 0, driftT: 0, spillT: 0, dying: false, fade: null };
     F.fade = gsap.to(c, { alpha: peak, duration: TM.FADE_IN, ease: "power1.out" });
     tickSync();
   }
@@ -143,9 +154,11 @@ GX.plugin(function (ctx) {
   // stay inside the window (never over the reels on its left)
   function spawnFlow(p, pre) {
     const d = TM.BAND * 0.9 * Math.pow(Math.random(), 1.2);
-    if (Math.random() < 0.8) { const left = Math.random() < 0.5; p.x = left ? Math.max(1.5, d) : W - d; p.y = rnd(0, H); p.vx = 0; p.vy = -rnd(70, 170); }
-    else { const top = Math.random() < 0.5; p.x = rnd(0, W); p.y = top ? d : H - d; p.vx = (p.x < W / 2 ? -1 : 1) * rnd(40, 90); p.vy = 0; }
-    p.ph = rnd(0, 6); p.sw = rnd(1.5, 4); p.life = rnd(0.7, 1.5); p.age = pre ? Math.random() * p.life : 0;
+    // b21 (user 2026-11-20: "make the particles more active, more broad"): faster (130-290 px/s up the sides, was 70-170;
+    // 70-150 along top / bottom, was 40-90), a wider sway, shorter lives so the band keeps renewing
+    if (Math.random() < 0.8) { const left = Math.random() < 0.5; p.x = left ? Math.max(1.5, d) : W - d; p.y = rnd(0, H); p.vx = 0; p.vy = -rnd(130, 290); }
+    else { const top = Math.random() < 0.5; p.x = rnd(0, W); p.y = top ? d : H - d; p.vx = (p.x < W / 2 ? -1 : 1) * rnd(70, 150); p.vy = 0; }
+    p.ph = rnd(0, 6); p.sw = rnd(2.5, 6); p.life = rnd(0.55, 1.15); p.age = pre ? Math.random() * p.life : 0;
     if (pre) { p.x += p.vx * p.age; p.y += p.vy * p.age; }
     p.size = Math.random() < 0.15 ? rnd(6, 9) : rnd(3, 5.5); p.s.tint = TINTS[Math.floor(Math.random() * TINTS.length)]; p.s.visible = true;
   }
@@ -155,7 +168,7 @@ GX.plugin(function (ctx) {
       p.age += dt; p.x += p.vx * dt; p.y += p.vy * dt;
       if (p.age >= p.life || p.y < -4 || p.y > H + 4 || p.x < 1 || p.x > W + 2) spawnFlow(p, false);
       const u = p.age / p.life, env = Math.min(1, u * 5) * (1 - u);
-      const sway = p.vx === 0 ? Math.sin(f.t * p.sw + p.ph) * 2.5 : 0;
+      const sway = p.vx === 0 ? Math.sin(f.t * p.sw + p.ph) * 4.5 : 0;   // b21: 2.5 -> 4.5
       p.s.position.set(Math.max(1, p.x + sway), p.y);
       p.s.alpha = Math.min(1, env * 1.5) * (Math.random() < 0.1 ? 0.5 : 1);
       p.s.scale.set((p.size / tw) * (0.75 + 0.25 * env));
@@ -177,27 +190,43 @@ GX.plugin(function (ctx) {
     if (f.flow) flowTick(f, dt);                                      // b20: the moving gold dust
     // 4-point glints popping at random spots along the band
     f.glintT -= dt;
-    if (f.glintT <= 0) { f.glintT = rnd(0.05, 0.16); const gl = f.glints.find((g) => g.age >= g.life);
-      if (gl) { const e = edgePt(Math.random() * PER, rnd(1, TM.BAND * 0.7)); gl.s.position.set(e.x, e.y); gl.age = 0; gl.life = rnd(0.26, 0.42);
+    // b21: glints every 0.03-0.09 s (was 0.05-0.16), drift specks every 0.025-0.07 s (was 0.06-0.15)
+    if (f.glintT <= 0) { f.glintT = rnd(0.03, 0.09); const gl = f.glints.find((g) => g.age >= g.life);
+      if (gl) { const e = edgePt(Math.random() * PER, Math.random() < TM.GLINT_OUT ? -rnd(4, 34) : rnd(1, TM.BAND * 0.7));   // b21: some just outside gl.s.position.set(e.x, e.y); gl.age = 0; gl.life = rnd(0.26, 0.42);
         gl.size = rnd(16, 28); gl.rot = rnd(-0.4, 0.4); gl.s.tint = Math.random() < 0.5 ? 0xffffff : 0xfff0c0; gl.s.visible = true; } }
     f.glints.forEach((g) => { if (g.age >= g.life) { g.s.visible = false; return; } g.age += dt;
       const u = Math.min(1, g.age / g.life), env = Math.sin(Math.PI * u);
       g.s.alpha = env; g.s.scale.set((g.size / 128) * env * 1.6); g.s.rotation = g.rot + u * 0.6; });
     // a few specks drift 10-30 px off the band and fade (outward; on the left side inward, never over the reels)
     f.driftT -= dt;
-    if (f.driftT <= 0) { f.driftT = rnd(0.06, 0.15); const p = f.drift.find((q) => q.age >= q.life);
-      if (p) { const e = edgePt(Math.random() * PER, rnd(0, TM.BAND)), out = e.nx === 1 ? 1 : -1, sp = rnd(14, 34);
-        p.s.position.set(e.x, e.y); p.vx = e.nx * out * sp + rnd(-6, 6); p.vy = e.ny * out * sp - rnd(4, 14);
+    if (f.driftT <= 0) { f.driftT = rnd(0.025, 0.07); const p = f.drift.find((q) => q.age >= q.life);
+      if (p) { const e = edgePt(Math.random() * PER, rnd(0, TM.BAND)), sp = rnd(24, 60);   // b21: was 14-34 (drift 10-30 px -> 20-55 px); outward on every side (was inward on the left)
+        p.s.position.set(e.x, e.y); p.vx = -e.nx * sp + rnd(-6, 6); p.vy = -e.ny * sp - rnd(4, 14);
         p.age = 0; p.life = rnd(0.6, 1.0); p.size = rnd(2.5, 4.5); p.s.tint = TINTS[1 + Math.floor(Math.random() * 3)]; p.s.visible = true; } }
     f.drift.forEach((p) => { if (p.age >= p.life) { p.s.visible = false; return; } p.age += dt;
       p.s.x += p.vx * dt; p.s.y += p.vy * dt;
-      if (p.s.x < 2) p.s.x = 2;                                       // never left of the window
       const u = p.age / p.life; p.s.alpha = Math.min(1, u * 6) * (1 - u) * (Math.random() < 0.15 ? 0.4 : 1);
       p.s.scale.set((p.size / tex.twW) * (1 - 0.4 * u)); });
+    // b21: SPILL - specks leaving the band outward, past the frame: 70-210 px/s, a little drag and float, 0.6-1.4 s
+    f.spillT -= dt;
+    while (f.spillT <= 0) { f.spillT += rnd(TM.SPILL_EVERY[0], TM.SPILL_EVERY[1]); const p = f.spill.find((q) => q.age >= q.life);
+      if (!p) break;
+      const e = edgePt(Math.random() * PER, rnd(0, TM.BAND * 0.6)), sp = rnd(70, 210), tx_ = e.nx === 0 ? 1 : 0, ty_ = e.ny === 0 ? 1 : 0, tan = rnd(-40, 40);
+      p.s.position.set(e.x, e.y); p.vx = -e.nx * sp + tx_ * tan; p.vy = -e.ny * sp + ty_ * tan - rnd(10, 30);
+      p.age = 0; p.life = rnd(0.6, 1.4); p.tw = rnd(9, 16); p.ph = rnd(0, 6); p.rot = rnd(-0.5, 0.5);
+      p.size = p.star ? rnd(14, 26) : Math.random() < 0.25 ? rnd(8, 12) : rnd(4.5, 8);
+      p.s.tint = TINTS[Math.floor(Math.random() * TINTS.length)]; p.s.visible = true; }
+    f.spill.forEach((p) => { if (p.age >= p.life) { p.s.visible = false; return; } p.age += dt;
+      const k = Math.exp(-1.6 * dt); p.vx *= k; p.vy = p.vy * k - 12 * dt;           // drag, a slow float upward
+      p.s.x += p.vx * dt; p.s.y += p.vy * dt;
+      const u = p.age / p.life, tw = 0.7 + 0.3 * Math.sin(f.t * p.tw + p.ph);
+      p.s.alpha = Math.min(1, u * 8) * (1 - u) * tw;
+      p.s.scale.set((p.size / (p.star ? 128 : tex.twW)) * (1 - 0.35 * u)); if (p.star) p.s.rotation = p.rot + u * 0.8; });
+    f.so.alpha = f.peak > 0 ? Math.min(1, f.c.alpha / f.peak) : f.c.alpha;   // fades with the frame, at full strength
   }
   function killFrame() {
     const f = F; if (!f) return; F = null;
-    try { gsap.killTweensOf(f.c); if (!f.c.destroyed) f.c.destroy({ children: true }); } catch (e) { warn(e); }   // (the baked textures stay cached)
+    try { gsap.killTweensOf(f.c); if (!f.c.destroyed) f.c.destroy({ children: true }); if (f.so && !f.so.destroyed) f.so.destroy({ children: true }); } catch (e) { warn(e); }   // (the baked textures stay cached)
     tickSync();
   }
 
