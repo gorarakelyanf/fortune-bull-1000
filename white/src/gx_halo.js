@@ -432,7 +432,15 @@ GX.plugin(function (ctx) {
     };
     // white 2026-11-17 (user: "look at the video 04:10 to 05:05", Fortune Garuda): the column turns into a shaft of light and
     // the coins rise out of its top one by one, each arcing up to its slot (was: from scattered chips of the column)
-    const TR = ctx.TRAY, top = { x: ctx.COL_CX, y: TR[1] + 46 }, tEnd = 0.6 + (NG - 1) * GAP + FLY;
+    // b22 (user 2026-11-20: "during the super wild now the multiplier comes out of the charge screen, but we need another way:
+    // the multiplier frame burns with particles, the reel rotates, and during the rotation spherical chips go out from the
+    // middle frame"; 8 + 1, the last one rolled on the hand ball as before): the balls leave the CENTRE FRAME (was the column's
+    // top, right under the counter boards) while the column rolls hot with its gold-dust frame (game.js colRollShow).
+    // ?swtop = the b21 start point
+    const OUT_CF = !QS.has("swtop");
+    const TR = ctx.TRAY, top = OUT_CF ? { x: ctx.COL_CX, y: ctx.COL_CY } : { x: ctx.COL_CX, y: TR[1] + 46 }, tEnd = 0.6 + (NG - 1) * GAP + FLY;
+    if (OUT_CF) tl.call(() => { if (!on()) return; const f = ctx.colRollShow || (GX.ctx && GX.ctx.colRollShow);
+      if (f) f(Math.max(0.5, (tEnd - 0.45) / Math.max(0.2, tl.timeScale()))); }, null, 0.2);
     const shaft = new PIXI.Container(); shaft.position.set(ctx.COL_CX, (TR[1] + TR[3]) / 2); shaft.alpha = 0; layers.boardFx.addChild(shaft); me.shaft = shaft;
     shaft.visible = SW_SHAFT;                                          // b18b: off by default (?swshaft); its timeline still runs, unseen
     const sh1 = sp(FX.tex.glow, shaft); sh1.blendMode = ADD; sh1.tint = 0xffc860; sh1.scale.set(1.15, (TR[3] - TR[1]) / 150);

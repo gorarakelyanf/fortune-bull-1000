@@ -102,7 +102,7 @@ GX.plugin(function (ctx) {
   const stStars = [spr(FX.tex.star8 || FX.tex.spark, streak), spr(FX.tex.star8 || FX.tex.spark, streak)];
 
   // ---------- state ----------
-  const m = { sweep: 0, fan: 0, streak: 0, rain: 0, bokeh: 0, ember: 0, leaf: 0, flake: 0, halo: 0 };
+  const m = { sweep: 0, fan: 0, streak: 0, rain: 0, fount: 0, bokeh: 0, ember: 0, leaf: 0, flake: 0, halo: 0 };
   let ti = -1, tier = "big", col = COL.big, live = false, closing = false, t = 0;
   const acc = {};
   const tweens = new Set();
@@ -123,7 +123,10 @@ GX.plugin(function (ctx) {
   // what each tier switches on: every tier is a step up from the one before
   function moodFor(i) {
     return {
-      sweep: 0.2 + 0.05 * i, streak: 0.8 + 0.05 * i, rain: [5, 9, 13, 18, 26][i],
+      // b22 (user 2026-11-20: "add coin particles from top to bottom or fountain, based on win size"): coins are back in
+      // the layered popup - a rain from the top on every tier, thicker each tier, and from SUPER up a fountain from the
+      // bottom of the screen (coins / s; the phone build emits half). ?nocoins = none.
+      sweep: 0.2 + 0.05 * i, streak: 0.8 + 0.05 * i, rain: [8, 13, 18, 24, 32][i], fount: [0, 0, 12, 20, 30][i],
       fan: i >= 1 ? 0.12 + 0.035 * i : 0, bokeh: i >= 2 ? 5 + 3 * (i - 2) : 0, ember: i >= 2 ? 10 + 6 * (i - 2) : 0,
       leaf: i >= 3 ? (i === 3 ? 2.5 : 4) : 0, flake: i >= 3 ? (i === 3 ? 4 : 14) : 0, halo: i >= 4 ? 1 : 0,
     };
@@ -132,7 +135,8 @@ GX.plugin(function (ctx) {
   function reset() {
     killAll(); dropTemps(); parts.forEach((p) => p.clear());
     Object.keys(m).forEach((k) => (m[k] = 0)); Object.keys(acc).forEach((k) => (acc[k] = 0));
-    back.alpha = streak.alpha = fallC.alpha = fallFar.alpha = front.alpha = 1;
+    streak.alpha = fallC.alpha = fallFar.alpha = front.alpha = 1;
+    back.alpha = 0.5;                                  // b22: the sweeping lights / fans at half, so the game shows through (was 1)
     back.scale.set(1); back.pivot.set(0, 0); back.position.set(0, 0);
     popBody.scale.set(1); popBody.pivot.set(0, 0); popBody.position.set(0, POP_DY);
     ti = -1; closing = false; t = 0;
@@ -169,13 +173,23 @@ GX.plugin(function (ctx) {
 
   function emitMood(dt) {
     // coin rain from the top of the screen (body coords: the body sits POP_DY lower)
-    let n = emitN("rain", m.rain, dt);
+    const LAYERED = P.layered && P.layered();         // b24: the layered popup has no leaves (b22: the coins are back)
+    let n = emitN("rain", NO_COINS ? 0 : m.rain, dt);
     for (let i = 0; i < n; i++) {
       const d = Math.random(), sc = 0.32 + 0.38 * d;     // depth: far coins are smaller, slower, dimmer
       (d < 0.65 ? farP : fallP).emit({ frames: FX.tex.coinFrames, fps: 14 + Math.random() * 16, x: rnd(30, W - 30), y: -POP_DY - 80, vx: rnd(-60, 60), vy: 380 + 520 * d, ay: 700 + 500 * d,
         s0: sc, s1: sc, a0: 0.75 + 0.25 * d, a1: 0.75 + 0.25 * d, life: 2.6, vr: rnd(-1.5, 1.5), blend: NORMAL });
     }
-    n = emitN("leaf", m.leaf, dt);
+    // b22: the fountain (SUPER+): jets from the bottom left, centre and right, coins rise high and fall back past the
+    // screen bottom; near coins in front of the popup art, far ones behind it
+    n = emitN("fount", NO_COINS ? 0 : m.fount, dt);
+    for (let i = 0; i < n; i++) {
+      const j = Math.floor(Math.random() * 3), x0 = [230, CX, 850][j], d = Math.random(), sc = 0.4 + 0.35 * d;
+      (d < 0.5 ? farP : fallP).emit({ frames: FX.tex.coinFrames, fps: rnd(16, 30), x: x0 + rnd(-40, 40), y: H - POP_DY + 60,
+        vx: (j === 0 ? rnd(-60, 260) : j === 2 ? rnd(-260, 60) : rnd(-240, 240)), vy: -rnd(1900, 2600), ay: 2300,
+        s0: sc, s1: sc, a0: 1, a1: 1, life: 2.4, vr: rnd(-3, 3), blend: NORMAL });
+    }
+    n = emitN("leaf", LAYERED ? 0 : m.leaf, dt);
     for (let i = 0; i < n; i++) {
       fallP.emit({ tex: leafTex, x: rnd(20, W - 20), y: -POP_DY - 40, vx: rnd(-90, 90), vy: rnd(120, 220), ay: 40, drag: 0.2, s0: rnd(0.6, 0.95), s1: 0.7,
         a0: 1, a1: 0.85, life: 5, rot: rnd(0, 6.28), vr: rnd(-2.2, 2.2), flip: rnd(3, 6), blend: NORMAL });
@@ -218,10 +232,11 @@ GX.plugin(function (ctx) {
   // b19 (user 2026-11-19: "During super win, we have 2 explosion that should not be there"): the title impact's
   // screen flash, glow core, shock rings, radial lines and sparks are off (?popburst = back). Coins, shake, mood stay.
   const POP_BURST = /[?&]popburst\b/.test(location.search);
+  const NO_COINS = /[?&]nocoins\b/.test(location.search);
   function impact(tName, i, c, k) {
     col = c; tier = tName; applyTint();
     if (!POP_BURST) {
-      const nCoin = Math.round((8 + 5 * i) * MK);
+      const nCoin = NO_COINS ? 0 : Math.round((8 + 5 * i) * MK);   // b22: the tier burst of coins is back in the layered popup
       for (let j = 0; j < nCoin; j++) {
         const a = rnd(-Math.PI, 0), v = rnd(700, 1400);
         fallP.emit({ frames: FX.tex.coinFrames, fps: rnd(18, 32), x: CX + rnd(-80, 80), y: 748 + rnd(-30, 30), vx: Math.cos(a) * v, vy: Math.sin(a) * v - 300, ay: 2400,
@@ -348,6 +363,7 @@ GX.plugin(function (ctx) {
   GX.on("popupOpen", () => {
     if (live) app.ticker.remove(tick);
     reset(); live = true; app.ticker.add(tick);
+    streak.y = popAmt.y;                               // b24: the lens streak sits on the amount (the layered popup moves it)
   });
   GX.on("popupTier", (d) => {
     if (!live || closing || !d) return;

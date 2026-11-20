@@ -219,9 +219,10 @@ GX.plugin(function (ctx) {
     GXI.t0 = gsap.globalTimeline.time();
     const restY = restBullY();
     const tl = gsap.timeline();
-    tl.add(() => orbit(restY), 0.2);
-    tl.add(() => strips(0.42), 0.52);
-    for (let k = 0; k < 7; k++) tl.add(() => coinLight(k), 0.62 + k * 0.1);
+    // b23: board first (frame strips, coins), then the bull's orbit as he rises (game.js begin: board 0.1 s, bull 0.8 s)
+    tl.add(() => strips(0.42), 0.2);
+    for (let k = 0; k < 7; k++) tl.add(() => coinLight(k), 0.3 + k * 0.1);
+    tl.add(() => orbit(restY), 0.8);
   }
   function introDone() {
     if (GXI.t0 === null) return;
@@ -235,7 +236,7 @@ GX.plugin(function (ctx) {
   GX.on("introBegin", intro);
   GX.on("introDone", introDone);
   // ?autostart runs the intro before the plugins start: catch up if it is already under way
-  if (S.state === "boot" && gsap.getTweensOf(layers.bgL).length) intro();
+  if (S.state === "boot" && (gsap.getTweensOf(layers.bgL).length || gsap.getTweensOf(layers.boardL).length)) intro();   // b23: bgL no longer tweens
 
   // =============================================================== EXTRA BET
   let exGroup = null;

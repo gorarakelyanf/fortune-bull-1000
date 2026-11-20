@@ -4,9 +4,20 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Fortune Bull 1000</title>
+<!-- b23: the loading screen's files start downloading while the scripts do -->
+<link rel="preload" href="assets/BG/bg_main.webp" as="image" type="image/webp">
+<link rel="preload" href="assets/fonts/poppinsBold.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/poppinsMedium.woff2" as="font" type="font/woff2" crossorigin>
 <style>
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; touch-action: none; -webkit-user-select: none; user-select: none; }
   #wrap { position: fixed; inset: 0; }
+  /* b23: the game's background from the first moment (before the scripts arrive); game.js removes it once the canvas
+     shows the same picture. ::before = the blurred, darkened fill outside the 9:16 board (game.js backdrop), ::after = the background */
+  #bootbg { position: fixed; inset: 0; overflow: hidden; background: #000; pointer-events: none; }
+  /* the 27x48 inline JPEG under it = an instant blurry preview while bg_main.webp downloads */
+  #bootbg::before, #bootbg::after { content: ""; position: absolute; background: url(assets/BG/bg_main.webp) center / contain no-repeat, url(data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAA0JCgsKCA0LCgsODg0PEyAVExISEyccHhcgLikxMC4pLSwzOko+MzZGNywtQFdBRkxOUlNSMj5aYVpQYEpRUk//2wBDAQ4ODhMREyYVFSZPNS01T09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT0//wAARCAAwABsDASIAAhEBAxEB/8QAGgAAAwEAAwAAAAAAAAAAAAAAAgMEAAEFBv/EACYQAAICAgIBAwQDAAAAAAAAAAECAxEABBIhQRMx0SJhcaEzkeH/xAAYAQEAAwEAAAAAAAAAAAAAAAABAAIEA//EABsRAAMBAAMBAAAAAAAAAAAAAAABAhESITFB/9oADAMBAAIRAxEAPwDzckARGdFsRqpUH39rzCKNAvJSSRyND2x8bxvDJFIzG0HI+a45xszRKYfTdlDMAQPI6zPdP4a5U+Mdp6yGSVGjBRV5AnzZ/wAyPfhjbemJBJLnusuk2IEaUoTbIiEfivnOt3JOe1Iyu1E2O8J3RbkOBWmHIhARS2vmsbJpOwj4uoCkffItXZb0gaoX3lA3Ovf95bgcnbBniZZWJC15s2D1gsxY20cV+aahi9zatfpPZIvvEHdN/wAX7GLkVXRRBGseiquO2JI/GYRoSOsD1GkYsQK8dj5wgWHYr+x85bCpPLrpHKrM/wBLGuVe2FJojmbJ9/C2MZMC8bKQPt2PnIht7EY4cmHHrHNJuH//2Q==) center / contain no-repeat; }
+  #bootbg::before { inset: -60px; background-size: cover; filter: blur(18px) brightness(.24) sepia(.15); }
+  #bootbg::after { inset: 0; filter: brightness(.65); }   /* b24: darker, = game.js LOAD_DIM 0.35 veil */
   #demo { position: fixed; top: 8px; left: 8px; z-index: 5; font: 600 12px/1.2 system-ui, sans-serif; color: #ffe6b0; }
   #demo summary { cursor: pointer; background: rgba(40, 8, 14, .85); border: 1px solid #c98a3a; border-radius: 8px; padding: 6px 10px; list-style: none; }
   #demo .list { margin-top: 6px; display: grid; grid-template-columns: repeat(2, auto); gap: 4px; background: rgba(20, 4, 8, .9); border: 1px solid #c98a3a; border-radius: 8px; padding: 8px; }
@@ -16,6 +27,7 @@
 </style>
 </head>
 <body>
+<div id="bootbg"></div>
 <div id="wrap"></div>
 <details id="demo">
   <summary>DEMO</summary>
@@ -41,29 +53,29 @@
     <div class="hint">Space = spin / quick stop</div>
   </div>
 </details>
-<script>window.CLIPV = "ec37d3b02e";</script>
+<script>window.CLIPV = "36d7e5e757";</script>
 <script src="lib/pixi.min.js"></script>
 <script src="lib/pixi-filters.js"></script>
 <script src="lib/gsap.min.js"></script>
 <script src="lib/CustomEase.min.js"></script>
-<script src="src/engine.js?b=11201538"></script>
-<script src="src/audio.js?b=11201538"></script>
-<script src="src/sfx.js?b=11201538"></script>
-<script src="src/fx.js?b=11201538"></script>
-<script src="src/vfx.js?b=11201538"></script>
-<script src="src/buy.js?b=11201538"></script>
-<script src="src/segvideo.js?b=11201538"></script>
-<script src="src/gx.js?b=11201538"></script>
-<script src="src/game.js?b=11201538"></script>
-<script src="src/gx_popup.js?b=11201538"></script>
-<script src="src/gx_feature.js?b=11201538"></script>
-<script src="src/gx_picker.js?b=11201538"></script>
-<script src="src/gx_symbols.js?b=11201538"></script>
-<script src="src/gx_intro.js?b=11201538"></script>
-<script src="src/gx_halo.js?b=11201538"></script>
-<script src="src/gx_rays.js?b=11201538"></script>
-<script src="src/gx_fire.js?b=11201538"></script>
-<script src="src/gx_exshow.js?b=11201538"></script>
-<script src="src/gx_coldust.js?b=11201538"></script>
+<script src="src/engine.js?b=11202042"></script>
+<script src="src/audio.js?b=11202042"></script>
+<script src="src/sfx.js?b=11202042"></script>
+<script src="src/fx.js?b=11202042"></script>
+<script src="src/vfx.js?b=11202042"></script>
+<script src="src/buy.js?b=11202042"></script>
+<script src="src/segvideo.js?b=11202042"></script>
+<script src="src/gx.js?b=11202042"></script>
+<script src="src/game.js?b=11202042"></script>
+<script src="src/gx_popup.js?b=11202042"></script>
+<script src="src/gx_feature.js?b=11202042"></script>
+<script src="src/gx_picker.js?b=11202042"></script>
+<script src="src/gx_symbols.js?b=11202042"></script>
+<script src="src/gx_intro.js?b=11202042"></script>
+<script src="src/gx_halo.js?b=11202042"></script>
+<script src="src/gx_rays.js?b=11202042"></script>
+<script src="src/gx_fire.js?b=11202042"></script>
+<script src="src/gx_exshow.js?b=11202042"></script>
+<script src="src/gx_coldust.js?b=11202042"></script>
 </body>
 </html>

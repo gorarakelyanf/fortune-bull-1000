@@ -34,13 +34,13 @@
   // ---- tuning (tools/sim_spec.cjs): RTP ~97.0% for the base game, each Extra Bet mode (on its debit) and the Buy ----
   const TUNE = Object.assign({
     sw: 0.79,                                   // SUPER WILD symbol weight (base game and every mode)
-    cs: 1.0,                                    // CHARGE symbol weight on the 3x3 board (on ~1 spin in 11)
-    b0: 0.1965,                                 // base game: tilt of the step pool (BASE_STEP x value^-b0)
-    a: [0, 1.2005, 1.1188, 6],              // Extra Bet modes: Direct Multiplier pool = value^-a
+    cs: 0,                                      // CHARGE symbol weight on the 3x3 board: 0 = off (b22, user 2026-11-20: "remove the nudge case from main board"; was 1.0, on ~1 spin in 11)
+    b0: 0.1351,                                 // b22 re-tune (no board CHARGE; was 0.1965) base game: tilt of the step pool (BASE_STEP x value^-b0)
+    a: [0, 1.1561, 0.9744, 5.107],          // b22 re-tune (was 1.2005 / 1.1188 / 6) Extra Bet modes: Direct Multiplier pool = value^-a
     chargeShare: [0, 0.035, 0.03, 0.03],        // share of CHARGE chips among the column draws per mode
     buyA: 3.7973,                               // buy pool exponent
     fc: { mult: 0.8, charge: 0.12, choice2: 0.08 },   // Fortune Choice position kinds
-    fcCharge: [0.12, 0.12, 0.12, 0.018],         // per mode: the CHARGE share of the wheel (the rest of it goes to multipliers)
+    fcCharge: [0.12, 0.12, 0.12, 0.12],          // b22 re-tune (mode 3 was 0.018) per mode: the CHARGE share of the wheel (the rest of it goes to multipliers)
   }, (typeof globalThis !== "undefined" && globalThis.__WB_TUNE) || {});   // tools/tune_spec.cjs overrides
   const WEIGHTS = { J: 18, Q: 17, K: 16, A: 15, hourglass: 9, sun: 8, chest: 7, wild: 3.2, super_wild: TUNE.sw, charge: TUNE.cs };
 
@@ -239,7 +239,7 @@
     if (x >= MAX_WIN) return "max";
     if (x >= 100) return "epic";
     if (x >= 50) return "super";
-    if (x >= 25) return "mega";
+    if (x >= 20) return "mega";                  // b24 (user 2026-11-20): BIG 10-20x, MEGA 20-50x, SUPER 50-100x, EPIC 100x+, MAX = the cap
     if (x >= 10) return "big";
     return x > 0 ? "small" : "none";
   }

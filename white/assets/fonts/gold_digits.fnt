@@ -2,7 +2,7 @@
 <font>
 <info face="gold_digits" size="193" />
 <common lineHeight="241" base="193" scaleW="2106" scaleH="212" pages="1" />
-<pages><page id="0" file="gold_digits.png" /></pages>
+<pages><page id="0" file="gold_digits.webp" /></pages>
 <chars count="13">
 <char id="48" x="0" y="0" width="173" height="202" xoffset="0" yoffset="9" xadvance="165" page="0" chnl="15" />
 <char id="49" x="177" y="0" width="135" height="200" xoffset="0" yoffset="5" xadvance="127" page="0" chnl="15" />

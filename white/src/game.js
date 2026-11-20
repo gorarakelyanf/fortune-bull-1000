@@ -12,7 +12,7 @@
   const HIGH = new Set(["hourglass", "sun", "chest"]);
   const BETS = [10, 20, 50, 100, 200, 500, 1000, 2000, 5000];
   const TIER_ORDER = ["big", "mega", "super", "epic", "max"];
-  const TIER_X = { big: 10, mega: 25, super: 50, epic: 100, max: Engine.MAX_WIN };
+  const TIER_X = { big: 10, mega: 20, super: 50, epic: 100, max: Engine.MAX_WIN };   // b24: MEGA from 20x (= Engine.tier)
   const TIER_NAME = { big: "BIG WIN", mega: "MEGA WIN", super: "SUPER WIN", epic: "EPIC WIN", max: "MAX WIN" };
   const params = new URLSearchParams(location.search);
   // default = V1: the game with the original symbols (assets_v1/Symbols) and original wild clips (clips/_v1)
@@ -23,7 +23,8 @@
   const VER = params.has("v1") ? 1 : params.has("v3") ? 3 : params.has("v2") ? 2 : 4;
   const ART = VER === 3 ? "assets_v2" : "assets";
   const OLD_SYM = VER === 1 || VER === 4 ? /^Symbols\/(chest|hourglass|sun|wild|super_wild)(_|$)/ : null;
-  const artSrc = (p) => `${VER === 4 && p === "Character/bull" ? "assets_v4" : OLD_SYM && OLD_SYM.test(p) ? "assets_v1" : ART}/${p}.webp`;
+  // b22: the V4 build's still bull (shown while the videos load) = the first frame of the new idle (tools/bull_moves_b22.py notes; assets_v4/Character/bull_v5.webp, 964 px = the clip frame on the board)
+  const artSrc = (p) => VER === 4 && p === "Character/bull" ? "assets_v4/Character/bull_v5.webp" : `${VER === 4 && p === "Character/bull" ? "assets_v4" : OLD_SYM && OLD_SYM.test(p) ? "assets_v1" : ART}/${p}.webp`;
   window.ART = ART; window.ART_SRC = artSrc;
   const V2ART = ART === "assets_v2", V2_LAB = { wild: 66, super: 62 };     // label centre below the symbol centre
   // Garuda-standard pass (2026-11-10, research/ref_client_fg1000/DESIGN_ANALYSIS.md): dark recessed reel bed and a
@@ -57,6 +58,9 @@
   // ---------- app ----------
   const app = new PIXI.Application({ backgroundColor: 0x000000, antialias: !MOBILE, autoDensity: true,
     resolution: Math.min(window.devicePixelRatio || 1, 2), resizeTo: window });
+  // b23 (user 2026-11-20: "put the background of the game during the loading"): the canvas stays hidden until the loading
+  // screen's background is drawn in it; until then index.html's #bootbg shows the same background (no black screen)
+  app.view.style.visibility = "hidden";
   document.getElementById("wrap").appendChild(app.view);
   PIXI.Filter.defaultResolution = app.renderer.resolution;   // filters (keyed clips, chips) as sharp as the screen
   // ?fps: a small frame-rate readout (average and slowest frame over the last half second), to check a phone
@@ -87,11 +91,97 @@
   fit();
 
   // ---------- fonts + loader ----------
-  for (const [fam, file, wt] of [["PoppinsB", "poppinsBold.ttf", "700"], ["PoppinsM", "poppinsMedium.ttf", "500"]]) {
-    // a page may embed the fonts (window.FONT_URLS, data: URIs) so it ships only media files (shared Artifact build)
-    const f = new FontFace(fam, `url(${(window.FONT_URLS || {})[fam] || "assets/fonts/" + file})`, { weight: wt });
+  // b23 (user 2026-11-20: "check what can we optimize for fast loading and mobile"): every boot download starts here at
+  // once (it used to be a chain: font, font, logo, five JSON files, then the art, each waiting for the one before)
+  const getJSON = (u) => fetch(u).then((r) => { if (!r.ok) throw new Error(u + " " + r.status); return r.json(); });
+  const layoutP = getJSON("assets/layout.json"), fxPtsP = getJSON("assets/fx_points.json");
+  const clipListP = getJSON("assets/clips/clips.json" + CLIPV).catch(() => ({}));
+  const v4ClipsP = VER === 4 ? getJSON("assets/clips/v4/clips.json" + CLIPV).catch((e) => { console.warn("v4 clips", e); return null; }) : Promise.resolve(null);
+  const mobClipsP = MOBILE && window.SegVideo ? getJSON("assets/clips/m/clips.json" + CLIPV).catch((e) => { console.warn("mobile clips", e); return null; }) : Promise.resolve(null);
+  [layoutP, fxPtsP].forEach((p) => p.catch(() => {}));   // awaited (and thrown) below; no "unhandled" noise meanwhile
+  // a page may embed the fonts (window.FONT_URLS, data: URIs) so it ships only media files (shared Artifact build)
+  // b23: WOFF2 (~half the TTF), the TTF stays as the fallback
+  const fontsP = Promise.all([["PoppinsB", "poppinsBold", "700"], ["PoppinsM", "poppinsMedium", "500"]].map(async ([fam, file, wt]) => {
+    const u = (window.FONT_URLS || {})[fam];
+    const f = new FontFace(fam, u ? `url(${u})` : `url(assets/fonts/${file}.woff2) format("woff2"), url(assets/fonts/${file}.ttf) format("truetype")`, { weight: wt });
     document.fonts.add(await f.load());
+  }));
+  const logoP = PIXI.Assets.load("assets/UI/logo.webp").catch((e) => { console.warn("logo", e); return null; });
+  const goldP = window.GOLD_FNT ? PIXI.Assets.load("assets/fonts/gold_digits.png").then((t) => PIXI.BitmapFont.install(window.GOLD_FNT, t))   // embedded .fnt
+    : PIXI.Assets.load("assets/fonts/gold_digits.fnt");   // b23: its page is gold_digits.webp (450 KB PNG -> ~100 KB)
+  goldP.catch(() => {});
+  // b23: the background first. Same URL as index.html's #bootbg, through an <img> so the browser reuses that download
+  const BG_URL = artSrc("BG/bg_main");
+  const bgTex = await new Promise((res) => {
+    const im = new Image();
+    try { if (new URL(BG_URL, document.baseURI).origin !== location.origin) im.crossOrigin = "anonymous"; } catch (e) { /* relative */ }
+    im.onload = () => { try { const t = PIXI.Texture.from(im); PIXI.Assets.cache.set(BG_URL, t); res(t); } catch (e) { res(null); } };
+    im.onerror = () => res(null);
+    im.src = BG_URL;
+  });
+  let backdropSet = false;
+  function setBackdrop(tex) {
+    backdropSet = true;
+    backdrop.texture = tex;
+    backdrop.tint = 0x3a3030;
+    if (MOBILE) {
+      // phone build: blurred once (drawn tiny, then stretched smooth) instead of a full-screen blur pass every frame
+      try {
+        const src = backdrop.texture.baseTexture.resource.source, c = document.createElement("canvas");
+        c.width = 36; c.height = 64; c.getContext("2d").drawImage(src, 0, 0, 36, 64);
+        backdrop.texture = PIXI.Texture.from(c, { scaleMode: PIXI.SCALE_MODES.LINEAR });
+      } catch (e) { backdrop.filters = [new PIXI.BlurFilter(18)]; }
+    } else backdrop.filters = [new PIXI.BlurFilter(18)];
+    fit();
   }
+  const loadC = new PIXI.Container();
+  root.addChild(loadC);
+  // b24 (user 2026-11-20: "make the background bit darker"): a black veil over the loading background (index.html's
+  // #bootbg uses the same 0.35 so the hand-over matches); it fades out with the loading screen as the game begins
+  const LOAD_DIM = 0.35;
+  if (bgTex) { loadC.addChild(new PIXI.Sprite(bgTex), new PIXI.Graphics().beginFill(0x000000, LOAD_DIM).drawRect(0, 0, W, H).endFill()); setBackdrop(bgTex); }
+  const barBg = new PIXI.Graphics().beginFill(0x2a0c10).drawRoundedRect(240, 1120, 600, 26, 13).endFill()
+    .lineStyle(3, 0xe8a640).drawRoundedRect(240, 1120, 600, 26, 13);
+  const bar = new PIXI.Graphics();
+  loadC.addChild(barBg, bar);
+  try { app.render(); } catch (e) { /* drawn by the ticker */ }
+  app.view.style.visibility = "";
+  { const b = document.getElementById("bootbg"); if (b) b.remove(); }
+
+  // the art (the background is already here)
+  const files = [];
+  const add = (p) => files.push(artSrc(p));
+  if (!bgTex) add("BG/bg_main");
+  add("Character/bull");
+  const VFRAME = params.has("vframe");   // white trial: the vector-drawn gold frame
+  [VFRAME ? "frame_vec" : "frame", "mult_tray", "panel_reels"].forEach((n) => add("Board/" + n));
+  for (const s of Engine.SYMBOLS) {
+    add(`Symbols/${s}`); add(`Symbols/${s}_blur`); add(`Symbols/${s}_off`);
+    if (HIGH.has(s)) ["_tile", "_tile_blur", "_tilebg"].forEach((k) => add(`Symbols/${s}${k}`));
+  }
+  for (const v of Engine.MULT_VALUES) { add(`Multipliers/chip_bg_${v}`); add(`Multipliers/label_${v}x`); }
+  add("Multipliers/chip_bg_nudge"); Engine.NUDGE_CHIPS.forEach((v) => add(`Multipliers/label_nudge${-v}`));
+  if (V2ART) { add("Multipliers/chip_bg_nudge5"); add("UI/buy_button"); }
+  ["title_big", "title_mega", "title_super", "title_epic", "title_max", "wp_medallion_gold", "wp_medallion_tint", "wp_banner_gold", "wp_banner_tint", "wp_tablet_gold", "wp_tablet_tint"].forEach((n) => files.push(`assets/Popup/${n}.webp`));
+  ["chip_coat", "chip_glints", "chip_rim", "chip_shadow"].forEach((n) => add("Multipliers/" + n));
+  ["Multipliers/centre_frame", "UI/nudge_box", "UI/total_box", "UI/counter_screen", "UI/counter_board", "UI/counter_board_red", "UI/counter_board_open", "UI/buy_bg", "UI/total_plate", "UI/cf_arrow", "vfx/winline", "vfx/winline_rest", "UI/exp_panel", "UI/exp_card_red", "UI/exp_card_amber", "UI/exp_card_purple", "UI/exp_confirm", "UI/buy_label", "UI/ex_plate", "UI/charge_badge", "UI/charge_window", "UI/charge_chev", "UI/charge_digit_0", "UI/charge_digit_1", "UI/charge_digit_2", "UI/charge_digit_3", "UI/charge_digit_4", "UI/charge_digit_5", "UI/charge_digit_6", "UI/charge_digit_7", "UI/charge_digit_8", "UI/charge_digit_9", "UI/charge_digit_slash", "UI/total_x", "UI/charge_rect", "UI/charge_rect_window", "UI/ex_switch_off", "UI/ex_switch_on", "UI/ex2_off", "UI/ex2_on", "UI/buy2", "UI/counter_board_red_thin"].forEach((p) => files.push(`assets/${p}.webp`));   // every art set uses these   // b21: ex2_* / buy2 = the user's new buttons
+  if (GPASS) ["Board/panel_dark", "Board/tile_low", "Board/tile_low_blur", "Board/tray_dark", "Board/plinth_slim", "Board/plinth_fade", "Board/frame_stone"].forEach((p) => files.push(`assets/${p}.webp`));
+  if (COINS) { Engine.MULT_VALUES.forEach((v) => files.push(`assets/Multipliers/coin_${v}.webp`)); ["coin_shadow", "coin_rim", "centre_frame_thin"].forEach((n) => files.push(`assets/Multipliers/${n}.webp`)); }
+  ["autoplay", "autoplay_shadow", "balance_bar_border", "balance_bar_fill", "bet_window_border", "bet_window_fill",
+    "ex_button", "ex_shadow", "icon_menu", "icon_sound", "minus", "minus_shadow", "plus", "plus_shadow", "spin_arrows",
+    "spin_base", "spin_glow", "spin_shadow", "turbo", "turbo_shadow", "win_bar"].forEach((n) => add("UI/" + n));
+  const NO_ART = params.has("codefx");                 // ?codefx = the old code-drawn effects, for comparison
+  if (!NO_ART) FX.ART.filter((n) => n !== "magic_sheet" && n !== "fire_strip").forEach((n) => files.push(`assets/vfx/${n}.webp`));   // white: the hand is the orb shader, no fire strip
+  const loadBar = (p) => bar.clear().beginFill(0xffc24a).drawRoundedRect(243, 1123, 594 * p, 20, 10).endFill();
+  const artP = (async () => {
+    for (let tries = 0; ; tries++) {                 // one failed fetch must not kill the boot: retry the missing files
+      try { await PIXI.Assets.load(files, loadBar); break; }
+      catch (e) { if (tries >= 3) throw e; console.warn("assets: retry", tries + 1); await new Promise((r) => setTimeout(r, 400)); }
+    }
+  })();
+  artP.catch(() => {});
+
+  await fontsP;
   FX.init();
   if (window.CustomEase) {
     gsap.registerPlugin(CustomEase);
@@ -99,32 +189,23 @@
     CustomEase.create("fbStopTurbo", "M0,0 C0,0 0.383,0.757 0.639,1.013 0.703,1.077 1,1 1,1");
   }
   VFX.init({ app, root, lite: params.has("lite") || MOBILE });
-  const loadC = new PIXI.Container();
-  root.addChild(loadC);
-  const loadTitle = new PIXI.Text("FORTUNE BULL", FX.gold(110));
-  loadTitle.anchor.set(0.5); loadTitle.position.set(540, 820);
-  const load1000 = new PIXI.Text("1000", FX.gold(170, { fill: FX.TIER_FILL.mega }));
-  load1000.anchor.set(0.5); load1000.position.set(540, 960);
-  const barBg = new PIXI.Graphics().beginFill(0x2a0c10).drawRoundedRect(240, 1120, 600, 26, 13).endFill()
-    .lineStyle(3, 0xe8a640).drawRoundedRect(240, 1120, 600, 26, 13);
-  const bar = new PIXI.Graphics();
   const loadTxt = new PIXI.Text("LOADING", FX.gold(36));
   loadTxt.anchor.set(0.5); loadTxt.position.set(540, 1200);
-  loadC.addChild(loadTitle, load1000, barBg, bar, loadTxt);
+  loadC.addChild(loadTxt);
   // white 2026-11-17 (user: "put this as a loading screen"): the user's FORTUNE BULL 1000 logo (tools/batch17_art.py ->
-  // assets/UI/logo.webp, its black keyed out) replaces the two text lines; they stay as the fallback if it fails to load
-  try {
-    const lt = await PIXI.Assets.load("assets/UI/logo.webp");
+  // assets/UI/logo.webp, its black keyed out). b24 (user 2026-11-20: "remove fortune bull old text from loading"): the
+  // old gold text lines are gone (they showed until the logo arrived); no logo = no title, never the old text
+  const lt = await logoP;
+  if (lt) {
     const logo = new PIXI.Sprite(lt); logo.anchor.set(0.5); logo.position.set(540, 860); logo.scale.set(980 / lt.width);
-    loadC.addChildAt(logo, 0); loadTitle.visible = false; load1000.visible = false;
-  } catch (e) { console.warn("logo", e); }
+    loadC.addChildAt(logo, bgTex ? 2 : 0);   // above the background and its veil
+  }
 
-  const layout = await (await fetch("assets/layout.json")).json();
-  const fxPts = await (await fetch("assets/fx_points.json")).json();
-  let clipList = {};
-  try { clipList = await (await fetch("assets/clips/clips.json" + CLIPV)).json(); } catch (e) { clipList = {}; }
+  const layout = await layoutP;
+  const fxPts = await fxPtsP;
+  let clipList = await clipListP;
   if (VER === 4) {                                   // V4 bull clips replace the bull_* entries (same placement, own tracks)
-    try { const v4 = await (await fetch("assets/clips/v4/clips.json" + CLIPV)).json();
+    try { const v4 = await v4ClipsP; if (!v4) throw new Error("no v4 clips.json");
       for (const [k, c] of Object.entries(v4)) clipList[k] = Object.assign({}, c, { sub: "v4/" }); /* "sub" = clip folder; "dir" is the throw's direction */ } catch (e) { console.warn("v4 clips", e); }
   }
   // ---------- clip downloads (Kling) ----------
@@ -139,7 +220,7 @@
   let mobBull = null, mobWild = null;
   if (MOBILE && window.SegVideo) {
     try {
-      const mc = await (await fetch("assets/clips/m/clips.json" + CLIPV)).json();
+      const mc = await mobClipsP; if (!mc) throw new Error("no mobile clips.json");
       mobBull = new SegVideo.SegPlayer("assets/clips/m/" + mc.bull.file + CLIPV, mc.bull.segments, { fps: mc.fps, minRate: 0.5, maxRate: 2.5 });
       mobWild = new SegVideo.SegPlayer("assets/clips/m/" + mc.wilds.file + CLIPV, mc.wilds.segments, { fps: mc.fps, minRate: 1, maxRate: 1, lazy: true });
       // white (video audit): the bull video downloads alone first; the wild video starts once it is all here (10 s at most)
@@ -178,36 +259,9 @@
       if (BOOT_CLIPS.has(name)) { start(); clipReady.push(Promise.race([first, new Promise((res) => setTimeout(res, 15000))])); }
     } catch (e) { console.warn("clip", name, e); }
   }
-  const files = [];
-  const add = (p) => files.push(artSrc(p));
-  add("BG/bg_main"); add("Character/bull");
-  const VFRAME = params.has("vframe");   // white trial: the vector-drawn gold frame
-  [VFRAME ? "frame_vec" : "frame", "mult_tray", "panel_reels"].forEach((n) => add("Board/" + n));
-  for (const s of Engine.SYMBOLS) {
-    add(`Symbols/${s}`); add(`Symbols/${s}_blur`); add(`Symbols/${s}_off`);
-    if (HIGH.has(s)) ["_tile", "_tile_blur", "_tilebg"].forEach((k) => add(`Symbols/${s}${k}`));
-  }
-  for (const v of Engine.MULT_VALUES) { add(`Multipliers/chip_bg_${v}`); add(`Multipliers/label_${v}x`); }
-  add("Multipliers/chip_bg_nudge"); Engine.NUDGE_CHIPS.forEach((v) => add(`Multipliers/label_nudge${-v}`));
-  if (V2ART) { add("Multipliers/chip_bg_nudge5"); add("UI/buy_button"); }
-  ["title_big", "title_mega", "title_super", "title_epic", "title_max", "wp_medallion_gold", "wp_medallion_tint", "wp_banner_gold", "wp_banner_tint", "wp_tablet_gold", "wp_tablet_tint"].forEach((n) => files.push(`assets/Popup/${n}.webp`));
-  ["chip_coat", "chip_glints", "chip_rim", "chip_shadow"].forEach((n) => add("Multipliers/" + n));
-  ["Multipliers/centre_frame", "UI/nudge_box", "UI/total_box", "UI/counter_screen", "UI/counter_board", "UI/counter_board_red", "UI/counter_board_open", "UI/buy_bg", "UI/total_plate", "UI/cf_arrow", "vfx/winline", "vfx/winline_rest", "UI/exp_panel", "UI/exp_card_red", "UI/exp_card_amber", "UI/exp_card_purple", "UI/exp_confirm", "UI/buy_label", "UI/ex_plate", "UI/charge_badge", "UI/charge_window", "UI/charge_chev", "UI/charge_digit_0", "UI/charge_digit_1", "UI/charge_digit_2", "UI/charge_digit_3", "UI/charge_digit_4", "UI/charge_digit_5", "UI/charge_digit_6", "UI/charge_digit_7", "UI/charge_digit_8", "UI/charge_digit_9", "UI/charge_digit_slash", "UI/total_x", "UI/charge_rect", "UI/charge_rect_window", "UI/ex_switch_off", "UI/ex_switch_on", "UI/ex2_off", "UI/ex2_on", "UI/buy2", "UI/counter_board_red_thin"].forEach((p) => files.push(`assets/${p}.webp`));   // every art set uses these   // b21: ex2_* / buy2 = the user's new buttons
-  if (GPASS) ["Board/panel_dark", "Board/tile_low", "Board/tile_low_blur", "Board/tray_dark", "Board/plinth_slim", "Board/plinth_fade", "Board/frame_stone"].forEach((p) => files.push(`assets/${p}.webp`));
-  if (COINS) { Engine.MULT_VALUES.forEach((v) => files.push(`assets/Multipliers/coin_${v}.webp`)); ["coin_shadow", "coin_rim", "centre_frame_thin"].forEach((n) => files.push(`assets/Multipliers/${n}.webp`)); }
-  ["autoplay", "autoplay_shadow", "balance_bar_border", "balance_bar_fill", "bet_window_border", "bet_window_fill",
-    "ex_button", "ex_shadow", "icon_menu", "icon_sound", "minus", "minus_shadow", "plus", "plus_shadow", "spin_arrows",
-    "spin_base", "spin_glow", "spin_shadow", "turbo", "turbo_shadow", "win_bar"].forEach((n) => add("UI/" + n));
-  const NO_ART = params.has("codefx");                 // ?codefx = the old code-drawn effects, for comparison
-  if (!NO_ART) FX.ART.filter((n) => n !== "magic_sheet" && n !== "fire_strip").forEach((n) => files.push(`assets/vfx/${n}.webp`));   // white: the hand is the orb shader, no fire strip
-  const loadBar = (p) => bar.clear().beginFill(0xffc24a).drawRoundedRect(243, 1123, 594 * p, 20, 10).endFill();
-  for (let tries = 0; ; tries++) {                 // one failed fetch must not kill the boot: retry the missing files
-    try { await PIXI.Assets.load(files, loadBar); break; }
-    catch (e) { if (tries >= 3) throw e; console.warn("assets: retry", tries + 1); await new Promise((r) => setTimeout(r, 400)); }
-  }
+  await artP;
   if (!NO_ART) FX.useArt((n) => PIXI.Assets.get(`assets/vfx/${n}.webp`));
-  if (window.GOLD_FNT) PIXI.BitmapFont.install(window.GOLD_FNT, await PIXI.Assets.load("assets/fonts/gold_digits.png"));   // embedded .fnt
-  else await PIXI.Assets.load("assets/fonts/gold_digits.fnt");
+  await goldP;
   const T = (p) => PIXI.Assets.get(artSrc(p)) || PIXI.Assets.get(`assets/${p}.webp`) || PIXI.Texture.from(artSrc(p));
 
   // ---------- clips (Kling) ----------
@@ -328,33 +382,26 @@
     const grade = new PIXI.Sprite(PIXI.Texture.from(c)); grade.scale.set(W / 270, H / 480);
     bgL.addChild(grade);
   }
-  backdrop.texture = T("BG/bg_main");
-  backdrop.tint = 0x3a3030;
-  if (MOBILE) {
-    // phone build: blurred once (drawn tiny, then stretched smooth) instead of a full-screen blur pass every frame
-    try {
-      const src = backdrop.texture.baseTexture.resource.source, c = document.createElement("canvas");
-      c.width = 36; c.height = 64; c.getContext("2d").drawImage(src, 0, 0, 36, 64);
-      backdrop.texture = PIXI.Texture.from(c, { scaleMode: PIXI.SCALE_MODES.LINEAR });
-    } catch (e) { backdrop.filters = [new PIXI.BlurFilter(18)]; }
-  } else backdrop.filters = [new PIXI.BlurFilter(18)];
-  fit();
+  if (!backdropSet) setBackdrop(T("BG/bg_main"));     // b23: normally done at boot, with the loading background
 
   // bull: container pivoted at the bottom centre so breathing grows from the board
   const bl = L("bull");
   const bull = new PIXI.Container();
   bull.position.set(bl.x + bl.w / 2, bl.y + bl.h);
   const bullSpr = new PIXI.Sprite(T("Character/bull"));
-  bullSpr.position.set(-bl.w / 2, -bl.h);
+  // b22: the new still is the whole square clip frame (964 px at 25.16, -52.58 on the board), not the layout box
+  const STILL_D = bullSpr.texture.width > 900 ? { x: 25.16 - bl.x, y: -52.58 - bl.y } : { x: 0, y: 0 };
+  bullSpr.position.set(-bl.w / 2 + STILL_D.x, -bl.h + STILL_D.y);
   const bullAura = new PIXI.Sprite(FX.tex.glow);
   bullAura.anchor.set(0.5); bullAura.position.set(0, -bl.h * 0.62); bullAura.scale.set(5.5, 5);
   bullAura.tint = 0xffb040; bullAura.blendMode = PIXI.BLEND_MODES.ADD; bullAura.alpha = 0;
   bull.addChild(bullAura, bullSpr);
-  const EYES = [[497, 168], [602, 168]];
+  const EYES = bullSpr.texture.width > 900 ? [[474, 169], [554, 169]] : [[497, 168], [602, 168]];   // b22: the new bull's eyes
   const eyes = EYES.map(([x, y]) => {
     const e = new PIXI.Sprite(FX.tex.glow);
     e.anchor.set(0.5); e.position.set(x - bull.x, y - bull.y); e.scale.set(0.32, 0.2);
     e.tint = 0xff9a1a; e.blendMode = PIXI.BLEND_MODES.ADD; e.alpha = 0.45;
+    if (bullSpr.texture.width > 900) e.renderable = false;   // b22: the new still has its own glowing eyes (the overlay read as bright glasses)
     bull.addChild(e);
     return e;
   });
@@ -370,6 +417,19 @@
   const bullClipC = MOBILE ? new PIXI.Container() : null;
   if (bullClipC) { bull.addChildAt(bullClipC, bullClipAt); bullClipC.visible = false; }
   const bullLive = () => !mobBull || mobBull.live;
+  // b22 (user 2026-11-20: "can we fix the hand cutout issue without regenerating the video?"): a move whose hand leaves
+  // the generated frame (the FLUX throw: fingertips cut by the frame's left edge in the wind-up, grazing the right after the
+  // release) gets a soft fade over its left / right edges (cfg.fade = the fraction of the frame width), so the fingers fade
+  // out instead of ending on a straight line. The missing finger pixels were never generated; this only hides the cut.
+  const fadeTexs = {};
+  function edgeFadeTex(fr) {
+    const k = fr.toFixed(3); if (fadeTexs[k]) return fadeTexs[k];
+    const c = document.createElement("canvas"); c.width = 512; c.height = 4; const g = c.getContext("2d"), im = g.createImageData(512, 4);
+    const ss = (e, x) => { const t = Math.min(1, Math.max(0, x / e)); return t * t * (3 - 2 * t); };
+    for (let x = 0; x < 512; x++) { const u = (x + 0.5) / 512, a = Math.round(255 * ss(fr, u) * ss(fr, 1 - u));
+      for (let y = 0; y < 4; y++) { const i = (y * 512 + x) * 4; im.data[i] = im.data[i + 1] = im.data[i + 2] = 255; im.data[i + 3] = a; } }
+    g.putImageData(im, 0, 0); return (fadeTexs[k] = PIXI.Texture.from(c));
+  }
   function attachBullClip(n) {
     const o = clips[n], sp = o.sprite;
     // relative to the bull's REST point: a clip that arrives during the intro (the bull slides up from +120 px) or a
@@ -380,6 +440,10 @@
     else {
       const at = n === "bull_idle" ? bullClipAt : idle && idle.parent === bull ? bull.getChildIndex(idle) + 1 : bullClipAt;
       bull.addChildAt(sp, Math.min(at, bull.children.length));
+    }
+    if (o.cfg.fade && !o.fadeMask && sp.parent) {             // b22: the soft edge fade (see edgeFadeTex)
+      const m = new PIXI.Sprite(edgeFadeTex(o.cfg.fade)); m.position.copyFrom(sp.position); m.width = o.cfg.w; m.height = o.cfg.h;
+      sp.parent.addChildAt(m, sp.parent.getChildIndex(sp) + 1); sp.mask = m; o.fadeMask = m;
     }
     if (n === "bull_idle") {
       if (!bullClipC) { bullSpr.visible = false; eyes.forEach((e) => (e.visible = false)); }
@@ -480,11 +544,14 @@
   // gets the plain tray mask). ?cfgold = the b20 molten frame + arrows
   const CF_GLOW = !params.has("cfgold");
   if (CF_GLOW) {
-    cfFx.mesh.visible = false; cfArrows.forEach((a) => { a.visible = false; });
+    cfFx.mesh.visible = false;                                          // b22 (user: "bring back the arrows as well"): arrows stay
     // b21 later the same day (user: "make this frame thicker and yellow glowing", screenshot of the white line round a CHARGE
     // chip): warm yellow instead of white, every pass about twice as thick (core 2 -> 4.5 px), a wider halo; a touch bigger
     // so the extra thickness grows outward, off the chip
-    const GW = 190, GH = 112, GR = 15, GP = 40, K2 = 2;                 // the glow line's box, halo room, 2x
+    // b22 (user 2026-11-20: "put the glowing frame on top of the chip frame so no gaps will be visible", 20x screenshot): the
+    // line now runs ON the centre chip's gold rim (rim art 186 x 129 visible at x1 / y0.823 = 186 x 106 on the board; its
+    // middle line 182 x 102, corner 12) instead of 2-4 px outside it
+    const GW = 182, GH = 102, GR = 12, GP = 40, K2 = 2;                 // the glow line's box (= the rim's middle), halo room, 2x
     const c = document.createElement("canvas"); c.width = (GW + 2 * GP) * K2; c.height = (GH + 2 * GP) * K2;
     const g = c.getContext("2d"); g.scale(K2, K2);
     const rr = () => { g.beginPath(); g.roundRect ? g.roundRect(GP, GP, GW, GH, GR) : g.rect(GP, GP, GW, GH); };
@@ -1057,6 +1124,23 @@
     colHot = null;
     try { if (window.COLDUST && !COLDUST.playing()) COLDUST.frame(false); } catch (e) { console.warn("colHot", e); }
   }
+  // b22 (user 2026-11-20: SUPER WILD - "the multiplier frame burns with particles, the reel rotates and during the rotation
+  // spherical chips go out from the middle frame"): the column rolls hot (32 chips/s, gold-dust frame) for dur s and glides
+  // back onto the very chips it showed (look only: strip, result and colC unchanged); its own onLand is parked meanwhile.
+  // gx_halo slowGather calls it while the wheel's balls leave the centre frame. ?nocolroll = the column stays still
+  function colRollShow(dur) {
+    if (!COL_HOT || params.has("nocolroll") || colReel.state !== "idle" || !colReel.syms) return Promise.resolve(false);
+    const ids = colReel.syms.slice(), final = ids.slice(1, 8), c0 = ids[4], keepLand = colReel.onLand, tb = !!S.turbo;
+    colReel.onLand = null;
+    try { if (window.COLDUST) COLDUST.frame(true, COL_HOT_A); } catch (e) { console.warn("colRoll", e); }
+    colReel.start(0, tb); colReel.vmax = colReel.speed = COL_HOT_V; colGrowTo(0, 0.18);
+    return new Promise((res) => gsap.delayedCall(Math.max(0.3, dur), () => {
+      colReel.glideStop(final, { T: 0, td: tb ? 0.25 : 0.55, over: tb ? 0.08 : 0.12, extra: (n) => Array.from({ length: n }, (_, k) => stripAt(c0, k - n - 2)) })
+        .then(() => { colReel.onLand = keepLand; colGrowTo(1, 0.25); SFX.columnStop && SFX.columnStop();
+          gsap.delayedCall(0.3, () => { try { if (window.COLDUST && !COLDUST.playing() && !colHot) COLDUST.frame(false); } catch (e) {} });
+          res(true); });
+    }));
+  }
   app.ticker.add(() => { if (!colHot) return; if (S.state !== "idle") { colHot.idleT = 0; return; }
     if ((colHot.idleT += app.ticker.deltaMS / 1000) > 0.8) colHotOff(0); });
 
@@ -1070,7 +1154,7 @@
   const CF_ARROW_HIDE = new Set([1000, 500]);
   app.ticker.add(() => {
     const cv = colReel.views[4], rest = colReel.state === "idle";
-    const want = CF_GLOW || (rest && cv && CF_ARROW_HIDE.has(cv.v)) ? 0 : 1;   // b21: no arrows with the white glow frame
+    const want = rest && cv && CF_ARROW_HIDE.has(cv.v) ? 0 : 1;   // b22: the arrows are back with the glow frame (b21 hid them)
     cfArrows.forEach((a) => { a.alpha += (want - a.alpha) * 0.25; a.renderable = a.alpha > 0.02; });
   });
 
@@ -1654,10 +1738,10 @@
   function flashAt(x, y, tint, s, life) { if (!BOARD_FLASH && onBoard(x, y, s)) return; topP.emit({ tex: FX.tex.glow, x, y, s0: s, s1: s * 1.3, life: life || 0.35, tint, a0: 0.9, a1: 0 }); }
   let shakeT = 0, shakeA = 0;
   // hit-stop: the whole game holds for a few frames on a heavy impact (real time), then carries on; and a phone buzz
-  let hitStopOn = false;
+  let hitStopOn = false, hitStopTs = 1;
   function hitStop(ms) {
     if (hitStopOn || S.turbo || S.respin) return;
-    const ts = gsap.globalTimeline.timeScale(), low = ts * 0.05; hitStopOn = true;
+    const ts = gsap.globalTimeline.timeScale(), low = ts * 0.05; hitStopOn = true; hitStopTs = ts;   // b22: the bull's video keeps its speed (hitStopTs, bullTick)
     gsap.globalTimeline.timeScale(low);
     setTimeout(() => { hitStopOn = false; if (Math.abs(gsap.globalTimeline.timeScale() - low) < 1e-6) gsap.globalTimeline.timeScale(ts); }, ms);
   }
@@ -1764,7 +1848,9 @@
     if (!mv || !mv.started || mv.ended) return;
     const v = mv.c.video;
     mv.t = v.currentTime;
-    const r = Math.min(8, Math.max(0.07, gsap.globalTimeline.timeScale() * bullRate(mv, mv.t)));   // browsers refuse rates under 1/16
+    // b22: a hit-stop freezes the game for a few frames but not the bull's video: dropping its rate to 1/20 and back made the
+    // decoder stall for longer than the stop itself (a visible hitch in the hit)
+    const r = Math.min(8, Math.max(0.07, (hitStopOn ? hitStopTs : gsap.globalTimeline.timeScale()) * bullRate(mv, mv.t)));   // browsers refuse rates under 1/16
     if (Math.abs(v.playbackRate - r) > 0.01) v.playbackRate = r;
     for (let i = mv.waits.length - 1; i >= 0; i--) if (mv.t >= mv.waits[i].t) { mv.waits[i].res(); mv.waits.splice(i, 1); }
     // back from a hidden tab the browser may have left the move's video paused: resume it rather than cut the move
@@ -2615,7 +2701,7 @@
   // the column (bullOrb with the wheel's hand-off coin; no clip: the coin flies itself); the centre chip shows the value
   async function pickThrow(v, j) {
     const to = { x: COL_CX, y: COL_CY }, tint = multTint(v) === 0xffd070 ? 0xffb040 : multTint(v);
-    await bullOrb(to, tint, v, S.turbo ? 2 : j >= 2 ? 1.6 : 1.3, true, true);   // (no clip: the coin flies itself, coinFlies)
+    await bullOrb(to, tint, v, S.turbo ? 2 : 1, true, true);   /* b22: one uniform throw speed (was 1.3, 1.6 from the third pick) */    // (no clip: the coin flies itself, coinFlies)
     const id = colIdxOf(v);
     if (Engine.STRIP[id] === v) { colReel.syms[4] = id; const cv = colReel.views[4]; cv.set(id); cv.setY(COL_CY); }
     // b18b (QA: calm landing): a small scale-settle under the fading coin (was pulseChip: 1.3-1.45 pop + white glint flash)
@@ -2632,7 +2718,7 @@
   const FC_CHARGE_THROW = true, CHARGE_TAG = false, FC_CHARGE_BOLT = false;   // b18b: no bolt after a thrown CHARGE coin
   async function pickCharge(p, j, acc, ctr) {
     const to = { x: COL_CX, y: COL_CY }, id = colIdxOf(-p.n), onStrip = Engine.STRIP[id] === -p.n;
-    await bullOrb(to, 0xffe14a, -p.n, S.turbo ? 2 : j >= 2 ? 1.6 : 1.3, true, true);   // (no clip: the coin flies itself, coinFlies)
+    await bullOrb(to, 0xffe14a, -p.n, S.turbo ? 2 : 1, true, true);   /* b22: one uniform throw speed (was 1.3, 1.6 from the third pick) */    // (no clip: the coin flies itself, coinFlies)
     // b18b (QA): calm landing - the swap happens under the coin as it fades (comet calm, 0.12 s), a small scale-settle, the
     // chips below dip-fade to the run's values; no bolt: the thrown coin IS the hit (FC_CHARGE_BOLT restores chargeStrike)
     if (onStrip) { colReel.syms[4] = id; const cv = colReel.views[4]; cv.set(id); cv.setY(COL_CY);
@@ -2705,7 +2791,25 @@
   async function chargeStrike(to) {
     const o = handOrb(); flameKick(1.0); bullReact("tease");          // eyes + aura only: no clip
     SFX.lightning(); handStrike({ x0: o.x, y0: o.y, x: to.x, y: to.y, col: 0xffe14a, dur: 0.5, w: 15, branches: 2 });
+    if (BOLT_BALL) { await boltBall(o, to, 0xffc030, S.turbo ? 0.2 : 0.4); return; }   // b22: a burning ball rides the bolt in
     await FX.wait(S.turbo ? 0.18 : 0.38);
+  }
+  // b22 (user 2026-11-20: "during the lightning strike to the multiplier, we need the burning ball to come and hit the multiplier
+  // as well, like an electrical charge; on the charge case and the clash case"): a calm fire ball (comet, no chip face) leaves
+  // the hand orb with the bolt, runs straight along it and hits the chip; at the hit a few short electric arcs crackle
+  // round the chip and its face flashes. ?noboltball = the bolt alone
+  const BOLT_BALL = !params.has("noboltball");
+  async function boltBall(from, to, tint, dur) {
+    const f = { x: from.x, y: from.y }, ctrl = { x: (from.x + to.x) / 2, y: (from.y + to.y) / 2 };
+    await comet(f, ctrl, to, tint, null, dur, true);
+    const ix = Math.abs(to.y - COL_CY) < 4 ? 4 : Math.abs(to.y - (COL_CY - COL_P)) < 4 ? 3 : -1, v = ix >= 0 ? colReel.views[ix] : null;
+    if (v && v.flash) gsap.fromTo(v.flash, { alpha: 0.9 }, { alpha: 0, duration: 0.4, ease: "power2.out" });
+    for (let k = 0; k < 3; k++) {                                 // short arcs out of the chip's rim
+      const a = Math.random() * Math.PI * 2, r0 = 50, r1 = 95 + Math.random() * 30;
+      gsap.delayedCall(k * 0.05, () => handStrike({ x0: to.x + Math.cos(a) * r0, y0: to.y + Math.sin(a) * r0 * 0.6, x: to.x + Math.cos(a) * r1, y: to.y + Math.sin(a) * r1 * 0.6,
+        col: 0xfff2c0, dur: 0.22, w: 4, branches: 0 }));
+    }
+    SFX.tick();
   }
   // white 2026-11-16 (user: "when we get a charge in the main board it should go to the multiplier panel, then start to
   // collect"): the CHARGE symbol with its count flies from its cell into the centre slot and becomes the CHARGE chip
@@ -2836,8 +2940,10 @@
     await FX.wait(S.turbo ? 0.25 : 0.4);
     // white (lightning fix): the clash bolts leave the orb in the hand like every strike (they were bare 4-8 px lines
     // from the chest, re-scribbled every frame): one held bolt per medallion (gx_feature handStrike), the second a beat later
-    { const o = handOrb(); handStrike({ x0: o.x, y0: o.y, x: COL_CX, y: COL_CY - COL_P, dur: 0.62, col: 0xfff2c0 }); }
-    gsap.delayedCall(0.08, () => { const o = handOrb(); handStrike({ x0: o.x, y0: o.y, x: COL_CX, y: COL_CY, dur: 0.54, col: 0xfff2c0, w: 11, branches: 1 }); });
+    { const o = handOrb(); handStrike({ x0: o.x, y0: o.y, x: COL_CX, y: COL_CY - COL_P, dur: 0.62, col: 0xfff2c0 });
+      if (BOLT_BALL) boltBall(o, { x: COL_CX, y: COL_CY - COL_P }, 0xffc030, S.turbo ? 0.22 : 0.42); }   // b22: burning balls ride the clash bolts
+    gsap.delayedCall(0.08, () => { const o = handOrb(); handStrike({ x0: o.x, y0: o.y, x: COL_CX, y: COL_CY, dur: 0.54, col: 0xfff2c0, w: 11, branches: 1 });
+      if (BOLT_BALL) boltBall(o, { x: COL_CX, y: COL_CY }, 0xffc030, S.turbo ? 0.22 : 0.4); });
     const zt = gsap.to({}, { duration: 0.6, onUpdate: () => {
       if (Math.random() < 0.2) burstAt(COL_CX, COL_CY - (Math.random() < 0.5 ? COL_P : 0), 0xffd060, 6);
     } });
@@ -2943,6 +3049,47 @@
     await mv.at("hit");
     await FX.wait(short ? 0.08 : S.turbo ? 0.2 : 0.35);
   }
+  // b22: the smile (bull_win): an arrogant, self-satisfied grin on wins of 5x the base bet and more. Returns the move, or
+  // null when the clip is not there yet (then nothing plays: no code fallback for a smile).
+  function bullWin() {
+    const mv = bullLive() ? bullPlay("bull_win") : null;
+    if (mv && mv.fresh) gsap.fromTo(bullAura, { alpha: 0.3 }, { alpha: 0, duration: 1.6, ease: "power2.in" });
+    return mv;
+  }
+  // b22: the fake hit (bull_fake; user 2026-11-20: "it moves the hand up, ball gets bigger but goes back to normal, so it
+  // is faking"; "we get a random number from 1 to 20, and if we get one particular number, we play the fake"). One roll per
+  // spin at the spin's start: n = 1..FAKE_RANGE, n === FAKE_PICK plays it (1 in 20). Purely visual: it never holds the
+  // round and has no effect on the result. Skipped in turbo and in a round where the bull has a real move (SUPER WILD,
+  // Fortune Choice, a bought round, a win of 5x and more). The hand ball swells with the clip's hand track (fire power 2).
+  // ?nofake = off, ?fake = every spin (QA), G.fake() = on demand.
+  const FAKE_RANGE = 20, FAKE_PICK = 10;
+  function bullFake() {
+    const mv = bullLive() ? bullPlay("bull_fake") : null;
+    if (mv && mv.fresh) {
+      mv.at("up").then(() => { if (!mv.ended && !mv.hurry) SFX.orbCharge(Math.max(0.3, bullSpan("bull_fake", (mv.c.cfg.events || {}).up || 0, (mv.c.cfg.events || {}).hold || 0.75))); });
+    }
+    return mv;
+  }
+  function fakeRoll(r, buyKind) {
+    if (params.has("nofake") || !clips.bull_fake) return false;
+    if (S.turbo || buyKind || featureOn || bullDir.cur || bullDir.queue.length) return false;
+    if (r && (r.bought || r.fc || r.totalX >= 5 || (r.superCells && r.superCells.length))) return false;
+    if (params.has("fake")) return true;
+    return 1 + Math.floor(Math.random() * FAKE_RANGE) === FAKE_PICK;
+  }
+  // b22 (user 2026-11-20: "after the ball hits the board: an impact wave of light going everywhere"): from the hit point a
+  // soft light ring opens over the whole board and a thin bright band runs down through the cells; calm colours, no dot
+  // bursts, short enough not to burn the board. ?nowave = off.
+  const SLAM_WAVE = !params.has("nowave");
+  function slamWave(P, y0) {
+    if (!SLAM_WAVE) return;
+    topP.emit({ tex: FX.tex.ring, x: P.x, y: y0, s0: 0.3, s1: 9, life: 0.7, tint: 0xffe6a8, a0: 0.8, a1: 0 });
+    topP.emit({ tex: FX.tex.ring, x: P.x, y: y0, s0: 0.2, s1: 6, life: 0.95, tint: 0xfff6dc, a0: 0.45, a1: 0 });
+    const band = new PIXI.Sprite(FX.tex.glow); band.anchor.set(0.5); band.blendMode = PIXI.BLEND_MODES.ADD; band.tint = 0xfff0c8;
+    band.width = 1180; band.height = 90; band.position.set(540, y0); band.alpha = 0.5; fxTop.addChild(band);
+    gsap.to(band, { y: 1290, duration: 0.5, ease: "power1.out" });
+    gsap.to(band, { alpha: 0, duration: 0.5, ease: "power2.in", onComplete: () => band.destroy() });
+  }
   const SLAM_FAN = false;
   // b19 (user 2026-11-19: "During super win, we have 2 explosion that should not be there after he hits the board"): the
   // painted impact flipbook (boom: white star flash -> orange fireball / fire ring) and the glow puffs on the bar are off;
@@ -2956,6 +3103,7 @@
     // (hit-stop, shake, shockwave, zoom punch, impact flipbook, smoke, embers, cracks, cell hop, sound)
     SFX.slam(); SFX.impact(true); heavyHit({ x: P.x, y: y0 }, 1, 0xffaa32, true);
     VFX.shockwave(P.x, y0, { amp: 30, radius: 900, dur: 0.25 }); VFX.zoomPunch(P.x, y0 + 300, 0.16, 0.12);
+    slamWave(P, y0);                                          // b22: the light wave over the board
     if (SLAM_BOOM) { flashAt(P.x, y0, 0xfff2cd, 1.4, 0.06); flashAt(P.x, y0 - 20, 0xffaa32, 2.6, 0.22); boom(P.x, y0, 2.2); }   // b19: the two "explosions"
     smokeAt(P.x, y0 - 6, SLAM_BOOM ? 5 : 3, SLAM_BOOM ? 0.8 : 0.65);   // b19: a smaller dust puff (it read as part of the blast)
     if (SLAM_FAN) for (let k = 0; k < 28; k++) {             // a shallow, directional fan along the bar (off: SLAM_FAN)
@@ -3264,19 +3412,27 @@
     const cx = hq ? hq[1] : hero ? HAND_CLIP.x + (FIST_CLIP.x - HAND_CLIP.x) * k : h.x, cy = hq ? hq[2] : hero ? HAND_CLIP.y + (FIST_CLIP.y - HAND_CLIP.y) * k : h.y;
     let gx, gy;
     if (hero) {
-      gx = hero.x - hero.width / 2 + cx * hero.width / 720; gy = hero.y - hero.height / 2 + cy * hero.height / 1280;
+      // b22: the roar clip's own frame size (the square 960 clip on desktop, the phone's shared 720 x 1280 frame)
+      const htw = hero.texture && hero.texture.width > 2 ? hero.texture.width : 720, hth = hero.texture && hero.texture.height > 2 ? hero.texture.height : 1280;
+      gx = hero.x - hero.width / 2 + cx * hero.width / htw; gy = hero.y - hero.height / 2 + cy * hero.height / hth;
       fc.position.set(gx, gy); fc.scale.set((hero.scale.x / (hero.baseS || 1)) * 1.1);
       fc.power = 1.35;
       if (popHandFront) {
         if (popHandFront.texture !== hero.texture) popHandFront.texture = hero.texture;
         popHandFront.position.copyFrom(hero.position); popHandFront.scale.copyFrom(hero.scale);
-        const kx = hero.width / 720, ky = hero.height / 1280;
+        const kx = hero.width / htw, ky = hero.height / hth;
         popHandMask.position.set(gx + HAND_MASK.dx * kx, gy + HAND_MASK.dy * ky);
         popHandMask.scale.set((HAND_MASK.rx * 2 * kx) / 128 / 0.86, (HAND_MASK.ry * 2 * ky) / 128 / 0.86);
         popHandArea.copyFrom(popHandMask.getBounds()).pad(10); popHandFront.filterArea = popHandArea;
       }
     } else {
-      const cfg = (clips.bull_idle || clips.bull_big || { cfg: { x: 162, y: -116.9, w: 725 } }).cfg, sc = cfg.w / 720;
+      // b22 (new square idle, 960 px, its own placement): the hand point is mapped with the frame of the clip it came
+      // from (the playing move's track, the roar's track, else the idle) and that clip's own width (was: the idle's
+      // placement and 720 for every clip)
+      const mvS = bullDir.cur && bullDir.cur.started && !bullDir.cur.ended && bullDir.cur.c.cfg.track ? bullDir.cur.c : null;
+      const srcC = mvS || (bigTrack() ? clips.bull_big : (clips.bull_idle || clips.bull_big));
+      const cfg = srcC ? srcC.cfg : { x: 162, y: -116.9, w: 725 };
+      const vw = srcC && srcC.sprite && srcC.sprite.texture && srcC.sprite.texture.width > 2 ? srcC.sprite.texture.width : 720, sc = cfg.w / vw;
       gx = cfg.x + cx * sc; gy = cfg.y + cy * sc;
       const on = Math.min(1, Math.max(0, h.p));
       fc.position.set(gx - (bl.x + bl.w / 2), gy - (bl.y + bl.h));
@@ -3298,7 +3454,8 @@
       // fingers over the flame: copy the visible bull clip sprite, mask it around the hand
       const src = bullDir.cur && bullDir.cur.started && !bullDir.cur.ended ? bullDir.cur.c.sprite
         : (clips.bull_big && clips.bull_big.sprite.visible ? clips.bull_big.sprite : clips.bull_idle && clips.bull_idle.sprite);
-      handFront.visible = !!src && fc.visible && (!bullClipC || bullClipC.visible);   // not over the still bull
+      const fadeF = mvS && mvS.cfg.fade, atEdge = fadeF && (cx < vw * (fadeF + 0.08) || cx > vw * (0.92 - fadeF));   // b22: hand in a faded edge
+      handFront.visible = !!src && fc.visible && (!bullClipC || bullClipC.visible) && !atEdge;   // not over the still bull
       if (handFront.visible) {
         if (handFront.texture !== src.texture) handFront.texture = src.texture;
         handFront.filters = src.filters; handFront.position.copyFrom(src.position); handFront.scale.copyFrom(src.scale);
@@ -3431,9 +3588,12 @@
       // (a net loss stays quiet). Small totals get a quick throw, popup wins the full one.
       else if (r.mult >= 5 && rung > 0) {
         // 100x and up: the halo wheel above the bull's head picks the value first (src/gx_halo.js), then he throws it
+        // b22 (user 2026-11-20: "a win of 5x or more -> the bull simply smiles, no throw"): the throw is only for a wheel's
+        // pick (this 100x halo wheel, the SUPER WILD wheel); a plain 5x+ multiplier goes straight from the column to the
+        // win board (multHit below) and the bull smiles (bullWin). ?oldthrow = the throw on every 5x+ multiplier.
         const halo = r.mult >= HALO_MIN && !params.has("nohalo");
         if (halo) await GX.run("halo", { mult: r.mult, tint: multTint(r.mult) }, 7000);
-        await bullOrb({ x: COL_CX, y: COL_CY }, multTint(r.mult) === 0xffd070 ? 0xffb040 : multTint(r.mult), r.mult, r.totalX >= 10 ? 1.15 : 1.7, halo); r.bullActed = true; }
+        if (halo || params.has("oldthrow")) { await bullOrb({ x: COL_CX, y: COL_CY }, multTint(r.mult) === 0xffd070 ? 0xffb040 : multTint(r.mult), r.mult, 1, halo);   /* b22: uniform throw speed (was 1.15 / 1.7 by win size) */  r.bullActed = true; } }
       colHotOff(0);                                      // b19 (C): the gold-dust frame fades as the number leaves the column
       await multHit(r.mult, true, false, hitCoins);    // white 2026-11-18 b18: a direct hit from the centre chip (no one-row screen); b19: coins at landing
     } else {
@@ -3443,7 +3603,14 @@
     let bigTw = null;
     const tier = Engine.tier(r.totalX), popWin = TIER_ORDER.includes(tier);
     let slamP = null;
-    if (r.totalX >= 5 && !r.bullActed) { slamP = bullSlam(); r.bullActed = true; }
+    // b22: wins of 5x the base bet and more = the arrogant smile (was the board punch; the punch now belongs to the SUPER
+    // WILD activation and the Buy Bonus start only). The smile never holds the round. ?oldslam = the punch as before.
+    // A popup win waits for the grin to be on his face (as it waited for the punch's hit): the popup's roar takes over after.
+    if (r.totalX >= 5 && !r.bullActed) {
+      if (params.has("oldslam")) slamP = bullSlam();
+      else { const sm = bullWin(); if (sm && popWin && !S.turbo) slamP = Promise.race([sm.at("smile"), FX.wait(1.5)]); }
+      r.bullActed = true;
+    }
     if (r.mult > 1 && popWin) {
       const mt = new PIXI.Text("x" + r.mult, FX.gold(46, { fill: FX.TIER_FILL.mega })); mt.anchor.set(0.5); mt.position.set(plaque.x + 250, plaque.y);
       plaqueL.addChild(mt); winObjs.push(mt); multTag = mt; mt.renderable = false;   // white 2026-11-16: no "xN" tag (user)
@@ -3539,7 +3706,8 @@
     max: { fill: ["#FFFFFF", "#FFE070", "#FF8A00"], stroke: "#5a2a00", glow: 0xb88a2a, burst: 0xfff0a0, flare: 0xffffff },
   };
   const pop = new PIXI.Container(); pop.visible = false; popL.addChild(pop);
-  const popDark = new PIXI.Graphics().beginFill(0x07020a, 0.75).drawRect(-200, -200, W + 400, H + 400).endFill();
+  // b22 (user 2026-11-20: "make the background a bit transparent so the game will be visible"): 0.45 (was 0.75)
+  const popDark = new PIXI.Graphics().beginFill(0x07020a, 0.45).drawRect(-200, -200, W + 400, H + 400).endFill();
   const popBurst = new PIXI.Sprite(FX.tex.burst); popBurst.anchor.set(0.5); popBurst.position.set(540, 820); popBurst.blendMode = PIXI.BLEND_MODES.ADD;
   const popBurst2 = new PIXI.Sprite(FX.tex.burst); popBurst2.anchor.set(0.5); popBurst2.position.set(540, 820); popBurst2.blendMode = PIXI.BLEND_MODES.ADD;
   const popGlow = new PIXI.Sprite(FX.tex.glow); popGlow.anchor.set(0.5); popGlow.position.set(540, 760); popGlow.scale.set(5); popGlow.blendMode = PIXI.BLEND_MODES.ADD;
@@ -3547,7 +3715,10 @@
   if (clips.bull_big) {
     popHero = new PIXI.Sprite(clips.bull_big.sprite.texture);
     popHero.filters = clips.bull_big.sprite.filters; popHero.anchor.set(0.5, 0.5);
-    popHero.width = clips.bull_big.cfg.w * 1.05; popHero.height = clips.bull_big.cfg.h * 1.05; popHero.position.set(540, 600);
+    popHero.width = clips.bull_big.cfg.w * 1.05; popHero.height = clips.bull_big.cfg.h * 1.05;
+    // b22: the bull stands where the V4 hero stood (frame 162, -116.9, 725 x 1288.9 centred on 540, 600) whatever the
+    // roar clip's own frame is (the square clip: 25.16, -52.58, 963.6)
+    { const bc = clips.bull_big.cfg; popHero.position.set(540 + ((bc.x + bc.w / 2) - 524.5) * 1.05, 600 + ((bc.y + bc.h / 2) - 527.55) * 1.05); }
     popHero.baseS = popHero.scale.x;
     // the bull art ends at the knees: fade the hero out below the amount (y 960 -> 1080)
     const top = popHero.y - popHero.height / 2, hh = popHero.height;
@@ -3635,12 +3806,121 @@
   pop.eventMode = "static"; pop.hitArea = new PIXI.Rectangle(0, 0, W, H);
   let popTap = null, titlePulse = null;
   pop.on("pointertap", () => popTap && popTap());
+
+  // ---------- b24 layered win popup ----------
+  // user 2026-11-20 ("divide each popup into separate layers so we can animate them with code, remove the coins" ->
+  // "build it in"): the approved popup art (art_src/win_popup_final) split into RING, BULL, BANNER (empty) and TITLE per
+  // tier (art_src/win_popup_layers, tools/popup_layers.py) -> assets/Popup/layers/<tier>.webp atlases + layers.json
+  // {size, tiers: {tier: {part: [ax, ay, w, h, x, y]}}} (atlas rect, place in the 941x1672 art). The tier glow / rays, the
+  // amount and TAP TO CONTINUE stay code. No coins. Loaded in the background after the game starts (not on the boot
+  // path); until they are here, and with ?oldpop, the previous popup plays. Each tier's group is shifted so every banner
+  // sits at MAX's banner height (the chest pushed MAX's down): the banner, amount and hint never jump on a tier-up.
+  const OLD_POP = params.has("oldpop");
+  const PL = { ready: false, tier: null, k: W / 941, bannerY: 1042.5, parts: {} };   // k: art px -> world px
+  const popLay = new PIXI.Container(); popLay.eventMode = "none"; popLay.visible = false;
+  popLay.scale.set(PL.k); popLay.y = -POP_DY;                     // art space (0..941 x 0..1672) = the whole screen
+  const layG = new PIXI.Container(); popLay.addChild(layG);       // per-tier shift (art px)
+  const LAY = {};
+  ["ring", "bull", "banner", "title"].forEach((p) => { const s = new PIXI.Sprite(PIXI.Texture.EMPTY); s.anchor.set(0.5, p === "bull" ? 1 : 0.5); LAY[p] = s; layG.addChild(s); });
+  const layTitleMask = new PIXI.Sprite(PIXI.Texture.EMPTY); layTitleMask.anchor.set(0.5); layG.addChild(layTitleMask);   // the title sweep's mask
+  popBody.addChildAt(popLay, popBody.getChildIndex(popCoins.c));
+  popFaders.push(popLay);
+  const layOn = () => PL.ready && !OLD_POP;
+  const LAY_AMT = 205, LAY_HINT = 318;                            // art px below the banner centre: amount, hint
+  async function loadPopLayers() {
+    try {
+      const meta = await (await fetch("assets/Popup/layers/layers.json")).json();
+      const bases = await PIXI.Assets.load(TIER_ORDER.map((t) => `assets/Popup/layers/${t}.webp`));
+      for (const t of TIER_ORDER) {
+        const base = bases[`assets/Popup/layers/${t}.webp`].baseTexture, fr = meta.tiers[t]; PL.parts[t] = {};
+        for (const [p, [ax, ay, w, h, x, y]] of Object.entries(fr))
+          PL.parts[t][p] = { tex: new PIXI.Texture(base, new PIXI.Rectangle(ax, ay, w, h)), x, y, w, h };
+      }
+      const mb = PL.parts.max && PL.parts.max.banner; if (mb) PL.bannerY = mb.y + mb.h / 2;
+      PL.ready = true;
+    } catch (e) { console.warn("popup layers (the previous popup plays)", e); }
+  }
+  // place the 4 layers of tier t (textures, positions, the group shift that puts its banner at PL.bannerY)
+  function laySet(t) {
+    const P = PL.parts[t]; if (!P) return;
+    PL.tier = t;
+    const b = P.banner; layG.y = b ? PL.bannerY - (b.y + b.h / 2) : 0;
+    for (const p of ["ring", "bull", "banner", "title"]) {
+      const s = LAY[p], f = P[p]; if (!f) { s.visible = false; continue; }
+      s.visible = true; s.texture = f.tex; s.position.set(f.x + f.w / 2, p === "bull" ? f.y + f.h : f.y + f.h / 2);
+      s.home = { x: s.x, y: s.y };
+    }
+    layTitleMask.texture = LAY.title.texture; layTitleMask.position.copyFrom(LAY.title.position);
+    if (P.ring) {                                                  // the code glow / rays follow this tier's ring centre
+      const cy = (P.ring.y + P.ring.h / 2 + layG.y) * PL.k - POP_DY, cx = (P.ring.x + P.ring.w / 2) * PL.k;
+      [popGlow, popBurst, popBurst2].forEach((o) => o.position.set(cx, cy));
+      PL.ringCX = cx; PL.ringCY = cy + POP_DY;
+    }
+  }
+  // layered mode on: hide the previous popup's art, put the code parts (glow, rays, flare, amount, hint) on this tier
+  function layOpen() {
+    const on = layOn();
+    popLay.visible = on;
+    [popMed, popBan, popPlate, popTitle, popTitleArt, popTitleMask, popArtMask].forEach((o) => (o.visible = !on));
+    if (popHero) [popHero, popHero.heroMask, popHandFront, popFlame].forEach((o) => { if (o) o.visible = !on; });
+    popShine.mask = on ? layTitleMask : popTitleMask;
+    if (popRays) popRays.alpha = on ? 0.2 : 1;                // quieter god rays: the bull stays the brightest thing (b22: 0.2, was 0.45 - the game shows through)
+    if (!on) return 930;
+    // a soft tier glow behind the ring, quieter than the old popup (the approved art: a dim glow, the bull the brightest)
+    popGlow.scale.set(4.6); popBurst.scale.set(1.9); popBurst2.scale.set(1.5); popBurst.alpha = 0.28; popBurst2.alpha = 0.2;   // placed by laySet
+    const by = PL.bannerY * PL.k - POP_DY;
+    popShine.y = by; popFlare.y = by + LAY_AMT * PL.k; popAmtGlow.y = by + LAY_AMT * PL.k;
+    popHint.y = by + LAY_HINT * PL.k;
+    return by + LAY_AMT * PL.k;                                    // the amount's y in the body
+  }
+  // a tier arrives: first = the popup opens (everything builds in), else a tier-up (punch, swap, slam)
+  let layIdle = [];
+  function layTier(t, first) {
+    if (!layOn()) return;
+    layIdle.forEach((tw) => tw.kill()); layIdle = [];
+    const R = LAY.ring, B = LAY.bull, N = LAY.banner, T = LAY.title;
+    [R, B, N, T].forEach((s) => { gsap.killTweensOf(s); gsap.killTweensOf(s.scale); });
+    laySet(t);
+    if (first) {
+      gsap.fromTo(R.scale, { x: 0.55, y: 0.55 }, { x: 1, y: 1, duration: 0.5, ease: "back.out(1.7)" });
+      gsap.fromTo(R, { alpha: 0, rotation: -0.5 }, { alpha: 1, rotation: 0, duration: 0.5, ease: "power3.out" });
+      gsap.fromTo(B, { y: B.home.y + 140, alpha: 0 }, { y: B.home.y, alpha: 1, duration: 0.55, ease: "power3.out", delay: 0.08 });
+      gsap.fromTo(B.scale, { x: 0.9, y: 0.9 }, { x: 1, y: 1, duration: 0.6, ease: "back.out(1.6)", delay: 0.08 });
+      gsap.fromTo(N.scale, { x: 0.15, y: 0.7 }, { x: 1, y: 1, duration: 0.42, ease: "back.out(1.8)", delay: 0.12 });
+      gsap.fromTo(N, { alpha: 0 }, { alpha: 1, duration: 0.15, delay: 0.12 });
+      gsap.fromTo(T.scale, { x: 1.35, y: 1.35 }, { x: 1, y: 1, duration: 0.3, ease: "back.out(2.4)", delay: 0.3 });
+      gsap.fromTo(T, { alpha: 0 }, { alpha: 1, duration: 0.12, delay: 0.3 });
+    } else {
+      R.alpha = B.alpha = N.alpha = T.alpha = 1;
+      gsap.fromTo(R.scale, { x: 1.12, y: 1.12 }, { x: 1, y: 1, duration: 0.4, ease: "back.out(2)" });
+      gsap.fromTo(B.scale, { x: 1.08, y: 1.08 }, { x: 1, y: 1, duration: 0.35, ease: "back.out(2.2)" });
+      gsap.fromTo(B, { y: B.home.y + 40 }, { y: B.home.y, duration: 0.3, ease: "power3.out" });
+      // the banner is nearly screen-wide: it punches mostly in height, the title a little (no overflow off the screen)
+      gsap.fromTo(N.scale, { x: 1.03, y: 1.22 }, { x: 1, y: 1, duration: 0.32, ease: "back.out(2.4)" });
+      gsap.fromTo(T.scale, { x: 1.18, y: 1.18 }, { x: 1, y: 1, duration: 0.28, ease: "back.out(2.8)" });
+    }
+    // idle life: the bull breathes (from his feet), the ring and title pulse softly
+    const d0 = first ? 0.7 : 0.4;
+    layIdle.push(gsap.to(B.scale, { y: 1.014, x: 1.006, duration: 1.4, yoyo: true, repeat: -1, ease: "sine.inOut", delay: d0 }));
+    layIdle.push(gsap.to(R.scale, { x: 1.02, y: 1.02, duration: 1.8, yoyo: true, repeat: -1, ease: "sine.inOut", delay: d0 }));
+    layIdle.push(gsap.to(T.scale, { x: 1.025, y: 1.025, duration: 0.7, yoyo: true, repeat: -1, ease: "sine.inOut", delay: d0 }));
+  }
+  function layTick() {                                            // per frame while the popup is up
+    if (!popLay.visible) return;
+    layTitleMask.scale.copyFrom(LAY.title.scale); layTitleMask.alpha = LAY.title.alpha;
+    const t = performance.now() / 1000;
+    popBurst.rotation = t * 0.12; popBurst2.rotation = -t * 0.08;
+    popGlow.alpha = 0.55 + 0.12 * Math.sin(t * 2.2);
+    if (popRays) popRays.update(t, PL.ringCX || 540, PL.ringCY || 600);
+  }
+  function layClose() { layIdle.forEach((tw) => tw.kill()); layIdle = []; }
   // b19 (user 2026-11-19: "During super win, we have 2 explosion that should not be there"): the BIG -> MEGA -> SUPER
   // tier-ups each fired a glow puff, ring, shockwave and dot burst here (+ gx_popup impact flash / rings / lines). Off;
   // ?popburst brings them back. The title still slams in, the fanfare, coins and shake stay.
   const POP_BURST = params.has("popburst");
   function setTierTitle(t, first) {
     GX.emit("popupTier", { tier: t, first });
+    layTier(t, first);                                 // b24: the layered popup (no-op until its art is loaded)
     const look = TIER_LOOK[t];
     popTitle.text = TIER_NAME[t]; popTitle.style.fill = look.fill; popTitle.style.stroke = look.stroke;
     const base = Math.min(1, 980 / (popTitle.width / popTitle.scale.x));
@@ -3652,6 +3932,7 @@
       popShine.mask = popArtMask;
     } else popShine.mask = popTitleMask;
     popTitle.renderable = popTitleMask.renderable = !art;   // after the mask swap: un-masking makes the old mask renderable again
+    if (popLay.visible) { popTitleArt.visible = popArtMask.visible = false; popShine.mask = layTitleMask; }   // b24: the layered title only (an old title used as a mask draws once it is not one)
     if (titlePulse) titlePulse.kill();
     gsap.killTweensOf(popTitle.scale);
     const again = performance.now() - (setTierTitle.at || 0) < 350; setTierTitle.at = performance.now();   // a tap jumped tiers
@@ -3680,7 +3961,8 @@
   }
   async function bigWin(amount, x) {
     popFaders.forEach((o) => (o.alpha = 1));
-    popDark.alpha = 0; popHint.alpha = 0; popAmt.alpha = 1; popAmt.position.set(540, 930); popCoins.clear();
+    const amtY = layOpen();                            // b24: layered popup on / off; the amount's y
+    popDark.alpha = 0; popHint.alpha = 0; popAmt.alpha = 1; popAmt.position.set(540, amtY); popCoins.clear();
     pop.visible = true; pop.alpha = 1;
     GX.emit("popupOpen", { amount, x });
     gsap.to(popDark, { alpha: 1, duration: 0.3 });
@@ -3704,7 +3986,7 @@
     const coinTick = () => {
       coinAcc += coinRate * Math.min(0.05, app.ticker.deltaMS / 1000) * gsap.globalTimeline.timeScale();
       const n = Math.floor(coinAcc); coinAcc -= n;
-      for (let i = 0; i < n; i++) {
+      for (let i = 0; i < (popLay.visible ? 0 : n); i++) {   // b24: no coins in the layered popup
         const base = { x: 540 + (Math.random() - 0.5) * 120, y: 840, vx: (Math.random() - 0.5) * 1400, vy: -1300 - Math.random() * 900, ay: 2600, life: 1.7,
           a0: 1, a1: 1, blend: PIXI.BLEND_MODES.NORMAL };
         const r0 = Math.random();
@@ -3718,12 +4000,13 @@
         popTitleMask.scale.copyFrom(popTitle.scale);
         const ts = (popTitle.scale.x / titleBase) * artBase; popTitleArt.scale.set(ts); popArtMask.scale.set(ts);
         popAmtGlow.alpha = 0.45 + 0.25 * Math.sin(performance.now() / 160);
-        if (popRays) popRays.update(performance.now() / 1000, 540, 380 + POP_DY);
-        if (popFlame && popHero) placeFlame(popFlame, popHero, true);
+        if (popLay.visible) layTick();
+        else if (popRays) popRays.update(performance.now() / 1000, 540, 380 + POP_DY);
+        if (popFlame && popHero && !popLay.visible) placeFlame(popFlame, popHero, true);
       }
       popFlare.alpha = 0.75 + 0.25 * Math.sin(performance.now() / 110);
       flare1.scale.x = 4.4 + 0.4 * Math.sin(performance.now() / 170);
-      if (Math.random() < 0.5) SFX.coin();
+      if (!popLay.visible && Math.random() < 0.5) SFX.coin();
     };
     app.ticker.add(coinTick);
     const countTw = gsap.timeline();
@@ -3744,7 +4027,7 @@
         countTw.kill(); shown.v = amount; draw();
         if (cur < steps.length - 1) { cur = steps.length - 1; setTierTitle(steps[cur], cur === 0); }   // tap: straight to the final tier
         gsap.fromTo(popAmt.scale, { x: amtK * 1.08, y: amtK * 1.08 }, { x: amtK, y: amtK, duration: 0.18, ease: "back.out(1.2)" });
-        ringAt(540, 930 + POP_DY, 0xffd060, 4, 0.5); SFX.impact(true); coinRate = 8;
+        ringAt(540, amtY + POP_DY, 0xffd060, 4, 0.5); SFX.impact(true); coinRate = 8;
         gsap.to(popHint, { alpha: 1, duration: 0.4 });
         const auto = gsap.delayedCall(S.auto ? 0.6 : 1.1, close);
         popTap = () => { auto.kill(); close(); };
@@ -3752,7 +4035,7 @@
       const close = async () => {
         popTap = null;
         await GX.run("popupClose", { tier: steps[cur], amount });
-        app.ticker.remove(coinTick); shineTw.kill(); VFX.bloom(false); SFX.musicBack();
+        app.ticker.remove(coinTick); shineTw.kill(); VFX.bloom(false); SFX.musicBack(); layClose();
         if (titlePulse) { titlePulse.kill(); titlePulse = null; }
         gsap.to(popFaders, { alpha: 0, duration: 0.3 });
         // the amount shrinks and flies down to the win bar
@@ -3844,7 +4127,8 @@
     if (S.auto > 0) { S.auto--; autoTxt.text = String(S.auto); if (!S.auto) stopAuto(); }
     showMsg("GOOD LUCK!");
     SFX.spin(); bullReact("spin");
-    arrowSpeed = 6.3;                                   // ~360 deg/s while the reels run (Garuda)
+    if (fakeRoll(r, buyKind)) bullFake();               // b22: the fake hit, 1 spin in 20 (never holds the round)
+    arrowSpeed = 6.3;                                  // ~360 deg/s while the reels run (Garuda)
     gsap.fromTo(spinFlash, { alpha: 0.9 }, { alpha: 0, duration: 0.5 });
     // white 2026-11-16 (user: "we still have the dots exploding from spin button"): no ring / dot swirl from the button
     if (SPIN_BURST) ringAt(scx, scy, 0xffd060, 1.6, 0.4);
@@ -3858,7 +4142,13 @@
     // A stop request lands ~0.15 s later (the final symbols scroll in), so requests go out that much earlier.
     reels.forEach((rl) => rl.start(0, tb)); colReel.start(0, tb);   // Garuda: every reel starts at once, no lift
     // b19 (items 7-8): the hot column - 32 chips/s and the gold-dust frame (after exShowCancel above, which ends a demo frame)
-    if (COL_HOT) { colReel.vmax = colReel.speed = Math.max(colReel.vmax, COL_HOT_V); colHotOn(); }
+    // b22 (user 2026-11-20: "the multiplier particle effects play only during CHARGE / SUPER WILD, in other cases we use the
+    // default"; "old way, bring back the arrows, stop it closer to the 3rd reel stop"; dust "in the beginning, plus when 1000x
+    // is coming, win or not"): the hot column (32 chips/s + the gold-dust frame, from the spin's start) only in a round with
+    // a SUPER WILD (Fortune Choice), a CHARGE (column chip, nudges, board CHARGE runs) or a 1000x landing in the centre;
+    // every other spin rolls the old way (9 chips/s, turbo 26, no dust). ?hotall = the b19-b21 rule (every spin)
+    const hotRound = params.has("hotall") || !!(r.fc || (r.nudges && r.nudges.length) || (r.boardRuns && r.boardRuns.length) || r.startMult < 0 || r.startMult === 1000);
+    if (COL_HOT && hotRound) { colReel.vmax = colReel.speed = Math.max(colReel.vmax, COL_HOT_V); colHotOn(); }
     colGrowTo(0, 0.18);                                // white 2026-11-17: the rolling column is one even strip
     // Porco: each reel may start its stop when the previous one has; stops come one loop apart (~0.4 s)
     const tStop = tb ? [0.1, 0.15, 0.2] : [0.75, 1.1, 1.45], LEAD = 0;   // white 2026-11-13: calmer, towards Pascal (0.6/1.0/1.4/1.7)   // Garuda (measured): hard stops 0.72 / 0.90 / 1.08 / 1.25 s     // timing pass 2026-11-10 (was 0.6/1.0/1.4/1.7)
@@ -3882,7 +4172,9 @@
     const colFinal = colWindow(colFix);
     const g0 = gsap.globalTimeline.time(), tNow = () => gsap.globalTimeline.time() - g0;
     const GAP = tStop[2] - tStop[1], COL_TD = tb ? 0.25 : 0.55, COL_OV = tb ? 0.08 : 0.12;
-    const colLand = (doTease ? tStop[1] + 1.1 : tStop[2]) + 3.5 / reels[2].vNormal + GAP;   // a reel lands ~3.5 cells after its stop call
+    // b22 (user: "stop it closer to the 3rd reel stop"): the column lands COL_GAP after the third reel (was one reel gap, 0.35 s)
+    const COL_GAP = tb ? GAP : 0.12;
+    const colLand = (doTease ? tStop[1] + 1.1 : tStop[2]) + 3.5 / reels[2].vNormal + COL_GAP;   // a reel lands ~3.5 cells after its stop call
     const colNeed = (colFinal.length + 1 + COL_OV) / colReel.vmax + COL_TD / 2;
     let colP = null;
     const colGo = () => {
@@ -4140,7 +4432,7 @@
     // bull breathing + eye flicker
     const br = Math.sin(time * Math.PI * 2 / 3.4);
     bullSpr.scale.set(1 + 0.0025 * br, 1 + 0.006 * br);
-    bullSpr.y = -bl.h * (1 + 0.006 * br); bullSpr.x = -bl.w / 2 * (1 + 0.0025 * br);
+    bullSpr.y = -bl.h * (1 + 0.006 * br) + STILL_D.y; bullSpr.x = -bl.w / 2 * (1 + 0.0025 * br) + STILL_D.x;
     eyes.forEach((e, k) => { if (!gsap.isTweening(e)) e.alpha = 0.4 + 0.12 * Math.sin(time * 7 + k) + 0.05 * Math.random(); });
     // rays + sun
     rays.forEach((r, k) => { r.alpha = 0.07 + 0.05 * Math.sin(time * 0.6 + k * 1.7); r.rotation = 0.5 + k * 0.06 + 0.015 * Math.sin(time * 0.3 + k); });
@@ -4250,15 +4542,18 @@
     loadC.eventMode = "none";
     GX.emit("introBegin", {});
     gsap.to(loadC, { alpha: 0, duration: 0.4, onComplete: () => loadC.destroy({ children: true }) });
-    gsap.to(bgL, { alpha: 1, duration: 0.8 }); gsap.to(ambBack, { alpha: 1, duration: 1.2 }); gsap.to(ambFront, { alpha: 1, duration: 1.2 });
-    gsap.fromTo(bull, { y: bl.y + bl.h + 120 }, { y: bl.y + bl.h, duration: 1.1, ease: "power3.out", delay: 0.2 });
-    gsap.to(bullL, { alpha: 1, duration: 0.6, delay: 0.2 });
-    gsap.fromTo(board.scale, { x: 0.92, y: 0.92 }, { x: 1, y: 1, duration: 0.8, ease: "back.out(1.6)", delay: 0.45 });
+    // b23: the loading screen already shows this background, so it is simply there (no fade through black)
+    bgL.alpha = 1; gsap.to(ambBack, { alpha: 1, duration: 1.2 }); gsap.to(ambFront, { alpha: 1, duration: 1.2 });
+    // b23 (user 2026-11-20: "when game loads show the board first then the character"): board (+ buttons), then the bull
+    // rises behind it; the landing impact waits for him (was: bull at 0.2 s, board at 0.45 s, impact at 1.1 s)
+    gsap.fromTo(board.scale, { x: 0.92, y: 0.92 }, { x: 1, y: 1, duration: 0.8, ease: "back.out(1.6)", delay: 0.1 });
     board.pivot.set(540, 940); board.position.set(540, 940);
-    gsap.to(boardL, { alpha: 1, duration: 0.5, delay: 0.45 });
-    gsap.fromTo(uiL, { y: 120 }, { y: 0, duration: 0.7, ease: "power3.out", delay: 0.7 });
-    gsap.to(uiL, { alpha: 1, duration: 0.5, delay: 0.7 });
-    await FX.wait(1.1);
+    gsap.to(boardL, { alpha: 1, duration: 0.5, delay: 0.1 });
+    gsap.fromTo(uiL, { y: 120 }, { y: 0, duration: 0.7, ease: "power3.out", delay: 0.35 });
+    gsap.to(uiL, { alpha: 1, duration: 0.5, delay: 0.35 });
+    gsap.fromTo(bull, { y: bl.y + bl.h + 120 }, { y: bl.y + bl.h, duration: 1.1, ease: "power3.out", delay: 0.8 });
+    gsap.to(bullL, { alpha: 1, duration: 0.6, delay: 0.8 });
+    await FX.wait(1.7);
     SFX.impact(true); bullReact("big"); shake(8, 0.3);
     board.pivot.set(0, 0); board.position.set(0, 0);
     GX.emit("introDone", {});
@@ -4286,23 +4581,27 @@
   GX.start({ PIXI, gsap, app, W, H, MOBILE, GPASS, params, S, Engine, FX, VFX, SFX, T, reels, colReel,
     REEL_X, REEL_CX, CELL_Y0, CELL_H, WIN_Y1, rowY, COL_CX, COL_CY, COL_P, TRAY, HIGH, LIFT,
     layers: { bgL, ambBack, bullL, ambFront, boardL, uiL, fxTop, popL, board, boardFx, cellFxBack, frameL, reelsL, plaqueL },
-    pop: { pop, popBody, popDark, popGlow, popBurst, popTitle, popTitleArt, popAmt, popPlate, popHero, popRays, popFlame, popCoins, popFaders, POP_DY },
+    pop: { pop, popBody, popDark, popGlow, popBurst, popTitle, popTitleArt, popAmt, popPlate, popHero, popRays, popFlame, popCoins, popFaders, POP_DY,
+      layered: () => popLay.visible },                  // b24: the layered popup is up (no coins, no leaves, amount at popAmt.y)
     bull, bullFit, bullToL, bullDir, bullReact, handNow, handOrb, flame, featRays, vignette, topP, boardP, winObjs,
     burstAt, ringAt, boom, flashAt, starFlash, lightning, shake, hitStop, flameKick, multTint, nEmit,
     fireFrame, tease, FireRect, embers, TITLE: !GPASS,
     isFeature: () => featureOn });
+  GX.ctx.colRollShow = colRollShow;                       // b22: gx_halo's SUPER WILD gather rolls the column
   GX.ctx.exs = { swDigits, swPick, SW_PLATE, swTopL, showMsg, clearWin, colGrow: exColGrow, colFinish: exColFinish,      // EX show seam (src/gx_exshow.js reads it at play time)
     overlayOpen: () => exBet.isOpen() || !!(buyUI && buyUI.isOpen && buyUI.isOpen()) || menuL.children.length > 0, minOf: (m) => [1, 3, 15, 50][m],
     // b21 drop show (gx_exshow playDrop): the reels' window in board space, the layer the copies go in (under the frame), a board drop
     win: () => ({ x0: REEL_X[0][0] - 2, x1: REEL_X[2][1] + 2, y0: CELL_Y0, y1: WIN_Y1 }), reelsL, boardDrop, frameTop };
   GX.ctx.cds = { colIds, colWindow, stripAt, colIdxOf, colGrow, colGrowTo, setColC: (c) => { colC = c; }, exCancel: exShowCancel,   // gold-dust column demo seam (src/gx_coldust.js)
     idle: () => S.state === "idle", overlayOpen: GX.ctx.exs.overlayOpen };
-  window.G = { mobBull: () => mobBull, mobWild: () => mobWild, bullView: () => ({ still: bullSpr.visible, clip: !!(bullClipC ? bullClipC.visible : clips.bull_idle), alpha: bull.worldAlpha }), spin, S, reels, colReel, Engine, clips, feature, bullSlam, bullCharge, bullOrb, bullPlay, bullDir, bullReact, buy: (k) => spin(null, k), buyUI: () => buyUI, state: () => S.state, last: null, popOpen: () => pop.visible && !!popTap, tapPop: () => popTap && popTap() };
+  window.G = { mobBull: () => mobBull, mobWild: () => mobWild, bullView: () => ({ still: bullSpr.visible, clip: !!(bullClipC ? bullClipC.visible : clips.bull_idle), alpha: bull.worldAlpha }), spin, S, reels, colReel, Engine, clips, feature, bullSlam, bullCharge, bullOrb, bullPlay, bullWin, fake: bullFake, bullDir, bullReact, buy: (k) => spin(null, k), buyUI: () => buyUI, state: () => S.state, last: null, popOpen: () => pop.visible && !!popTap, tapPop: () => popTap && popTap() };
+  window.G.popLayers = () => PL.ready;                     // b24 QA: the layered popup's art is loaded
   window.G.toggleEx = toggleEx; window.G.exBet = exBet; window.G.exPress = exPress;
   window.G.exColGrow = exColGrow; window.G.exColFinish = exColFinish; window.G.exModePrep = exModePrep;   // QA (EX show)
   window.G.exPlan = () => exPlan; window.G.exG = EXG;
   window.G.colDust = (o) => (window.COLDUST ? COLDUST.play(o) : Promise.resolve("off"));   // DEMO: gold-dust fast column (key "d")
   if (params.has("autostart") || !TAP_SCREEN) begin();   // b19: begins by itself unless ?tap
+  setTimeout(loadPopLayers, 1500);                       // b24: the layered popup's art, after the start (not on the boot path)
   document.querySelectorAll("[data-force]").forEach((b) => b.addEventListener("click", () => { SFX.unlock(); if (S.state === "idle") spin(b.dataset.force); }));
   document.querySelectorAll("[data-buy]").forEach((b) => b.addEventListener("click", () => { SFX.unlock(); if (S.state === "idle") spin(null, b.dataset.buy); }));
 })().catch((e) => {
