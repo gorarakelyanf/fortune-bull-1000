@@ -87,6 +87,10 @@
     sp.blendMode = PIXI.BLEND_MODES.ADD;
     const g = new PIXI.filters.GodrayFilter({ angle: 30, gain: o.gain || 0.55, lacunarity: 2.6, parallel: false, center: [0, 0], alpha: 1 });
     const cm = new (PIXI.ColorMatrixFilter || PIXI.filters.ColorMatrixFilter)();
+    // b22 (user 2026-11-20: "make the background a bit transparent so the game will be visible"): a filter draws its result
+    // with its OWN blend mode, not the sprite's - the rays came out as an opaque black sheet over the whole game. The last
+    // filter now adds its light (black adds nothing), so the popup's backdrop shows the game through it.
+    cm.blendMode = PIXI.BLEND_MODES.ADD;
     sp.filters = [g, cm];
     parent.addChild(sp);
     sp.setTint = (hex) => {

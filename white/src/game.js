@@ -1738,9 +1738,13 @@
   function flashAt(x, y, tint, s, life) { if (!BOARD_FLASH && onBoard(x, y, s)) return; topP.emit({ tex: FX.tex.glow, x, y, s0: s, s1: s * 1.3, life: life || 0.35, tint, a0: 0.9, a1: 0 }); }
   let shakeT = 0, shakeA = 0;
   // hit-stop: the whole game holds for a few frames on a heavy impact (real time), then carries on; and a phone buzz
+  // b22 (user 2026-11-20: "the impact hits and the board kind of freezes for a second, we need these effects to be smooth"):
+  // the hit-stop (the whole game at 1/20 speed for 50-120 ms on the throw's landing, the board hit, SUPER WILD landings and
+  // big multipliers) read as the board seizing up. Off; ?hitstop brings it back.
+  const HIT_STOP = params.has("hitstop");
   let hitStopOn = false, hitStopTs = 1;
   function hitStop(ms) {
-    if (hitStopOn || S.turbo || S.respin) return;
+    if (!HIT_STOP || hitStopOn || S.turbo || S.respin) return;
     const ts = gsap.globalTimeline.timeScale(), low = ts * 0.05; hitStopOn = true; hitStopTs = ts;   // b22: the bull's video keeps its speed (hitStopTs, bullTick)
     gsap.globalTimeline.timeScale(low);
     setTimeout(() => { hitStopOn = false; if (Math.abs(gsap.globalTimeline.timeScale() - low) < 1e-6) gsap.globalTimeline.timeScale(ts); }, ms);
@@ -1759,7 +1763,7 @@
     }
     if (kind === "big" || kind === "tease") {
       gsap.fromTo(bullAura, { alpha: 0.55 }, { alpha: 0, duration: kind === "big" ? 2.2 : 1.4, ease: "power2.in" });
-      gsap.fromTo(bull.scale, { x: 1.025, y: 1.025 }, { x: 1, y: 1, duration: 0.9, ease: "elastic.out(1,0.5)" });
+      // b22 (user 2026-11-20: "remove all the scale and stupid animation from the character"): no scale pop on the bull; his own video carries the moves
     }
     if (kind === "big") {
       // the roar sound lands on the open mouth: it fires on the clip's own clock at events.roar (the sound needs
@@ -3130,11 +3134,7 @@
   async function bullSlamCode() {
     bullReact("big");
     const by = bl.y + bl.h;
-    gsap.killTweensOf(bull); gsap.killTweensOf(bull.scale);
-    gsap.to(bull.scale, { x: 0.98, y: 0.98, duration: S.turbo ? 0.1 : 0.2, ease: "power2.out" });
-    await FX.tween(bull, { y: by - 10, duration: S.turbo ? 0.1 : 0.2, ease: "power2.out" });
-    gsap.to(bull.scale, { x: 1.07, y: 1.07, duration: 0.1, ease: "power3.in" });          // lunge toward the screen
-    await FX.tween(bull, { y: by + 8, duration: 0.1, ease: "power3.in" });
+    await FX.wait(S.turbo ? 0.2 : 0.3);                // b22 (user 2026-11-20: "remove all the scale and stupid animation from the character"): no code lunge (scale / dip) of the bull
     const P = { x: 470, y: 600 };
     shake(16, 0.45); SFX.slam();
     VFX.shockwave(P.x, P.y, { amp: 36, radius: 1500, dur: 0.9 }); VFX.zoomPunch(P.x, P.y + 300, 0.16, 0.35);
@@ -3149,8 +3149,7 @@
     }
     gsap.to(crack, { alpha: 0, duration: 0.4, onComplete: () => crack.destroy() });
     if (dropWorthy()) { boardDrop(1.1); hopCells(P); }               // white: a letters-only win keeps the board still
-    gsap.to(bull, { y: by, duration: 0.5, ease: "power2.out", delay: 0.1 });
-    gsap.to(bull.scale, { x: 1, y: 1, duration: 0.5, delay: 0.1 });
+    void by;
     await FX.wait(0.35);
   }
   // the bull charges the fire in his hand (it takes the orb's colour), winds up and hurls it as a comet (Kling throw clip)
@@ -3198,8 +3197,54 @@
     const ctrl = { x: Math.min(W - 40, from.x + d[0] / dl * 420), y: from.y + d[1] / dl * 420 };
     if (!quiet) { flashAt(from.x, from.y, 0xffffff, 1.8, 0.2); starFlash(from.x, from.y, 1.3, tint); }   // b18b: a calm throw leaves the hand quietly (b20: a wheel's throw too - the hand ball is seen leaving)
     GX.emit("throwRelease", { from, to, tint, label });
-    await comet(from, ctrl, to, tint, label, S.turbo ? 0.22 : 0.3, calm, picked && BALL_THROW);
+    await comet(from, ctrl, to, tint, label, S.turbo ? 0.2 : 0.3, calm, picked && BALL_THROW, true);   // b22: a quicker flight (was 0.3 / 0.22), the ball shatters on landing
     orbImpact(to, tint, calm);
+    throwImpact(to, tint);                             // b22: the landing's wave + board drop, on the comet's last frame
+  }
+  // b22 (user 2026-11-20: "speed up the throwing animation and add a huge impact effect wave and board drop at the right
+  // moment"): where the thrown ball lands in the column - two big light rings and a white core ring open from the chip, a
+  // tall band of light sweeps left across the whole board, a screen ripple, the cells hop away from the column, the board
+  // drops hard and springs back, a short hit-stop, shake and the heavy impact sound. Turbo: lighter. ?nothrowwave = off.
+  const THROW_WAVE = !params.has("nothrowwave");
+  function throwImpact(to, tint) {
+    if (!THROW_WAVE) return;
+    const q = S.turbo ? 0.6 : 1, tn = tint || 0xffd060;
+    shatterBall(to, tn, q);
+    // four rings, a beat apart, the first two the full board wide (white core, tier colour, gold, soft white)
+    [[0, 0xffffff, 16, 0.7, 1], [0.05, tn, 14, 0.85, 1], [0.12, 0xffd870, 11, 0.95, 0.9], [0.2, 0xfff3d0, 8, 1.0, 0.7]].forEach(([dl, c, s1, life, a0]) =>
+      gsap.delayedCall(dl, () => topP.emit({ tex: FX.tex.ring, x: to.x, y: to.y, s0: 0.3, s1: s1 * q, life, tint: c, a0, a1: 0 })));   // b22 smooth: one ring each (was two stacked)
+    topP.emit({ tex: FX.tex.glow, x: to.x, y: to.y, s0: 1.2, s1: 2.6, life: 0.3, tint: 0xfff2c0, a0: 0.9, a1: 0 });   // the hit's own flash, on the chip
+    // the light band sweeping left over the whole board (two layers: a bright core and a wide soft glow)
+    [[180, 1, 0xfff6dc], [420, 0.55, tn]].forEach(([w0, a, c]) => {
+      const band = new PIXI.Sprite(FX.tex.glow); band.anchor.set(0.5); band.blendMode = PIXI.BLEND_MODES.ADD; band.tint = c;
+      band.width = w0; band.height = 820; band.position.set(to.x, 940); band.alpha = a; fxTop.addChild(band);
+      gsap.to(band, { x: -80, width: w0 * 1.6, duration: 0.6 * q, ease: "power1.out" });
+      gsap.to(band, { alpha: 0, duration: 0.6 * q, ease: "power2.in", onComplete: () => band.destroy() });
+    });
+    // b22 smooth: no screen ripple / zoom blur here - both re-render the whole screen through a filter every frame of the
+    // wave (the costliest part of it on a phone); the rings, band and shards carry the wave
+    hopCells(to, 26 * q, 760);
+    boardDropHit(1000);                                // the strongest drop (60 px) and the long spring back
+    SFX.impact(true); SFX.slam(); shake(12 * q, 0.35); buzz(40); hitStop(70);   // (hitStop is off unless ?hitstop)
+  }
+  // b22 (user 2026-11-20: "shatter the ball at this moment into an impact wave"): the fire ball bursts where it lands - a
+  // quick fireball pop, fire shards streaking out in every direction and molten drops that fall away with gravity; the
+  // impact rings and the light band (throwImpact) open from the same point
+  function shatterBall(to, tn, q) {
+    topP.emit({ tex: FX.tex.glow, x: to.x, y: to.y, s0: 1.0, s1: 3.4 * q, life: 0.24, tint: 0xffc060, a0: 1, a1: 0 });
+    topP.emit({ tex: FX.tex.glow, x: to.x, y: to.y, s0: 0.6, s1: 1.8, life: 0.16, tint: 0xffffff, a0: 1, a1: 0 });
+    const nS = Math.round((MOBILE ? 18 : 30) * q), nD = Math.round((MOBILE ? 8 : 14) * q);
+    for (let k = 0; k < nS; k++) {                     // fire shards
+      const a = (k / nS) * Math.PI * 2 + Math.random() * 0.4, v = 700 + Math.random() * 1000, r0 = Math.random();
+      topP.emit({ tex: FX.tex.flame, x: to.x + Math.cos(a) * 12, y: to.y + Math.sin(a) * 12, vx: Math.cos(a) * v, vy: Math.sin(a) * v, drag: 3.2,
+        s0: 0.5 + Math.random() * 0.45, s1: 0, life: 0.45 + Math.random() * 0.35, stretch: 900, a0: 1, a1: 0.2,
+        tint: r0 < 0.45 ? tn : r0 < 0.8 ? 0xffd070 : 0xffffff, blend: PIXI.BLEND_MODES.ADD });
+    }
+    for (let k = 0; k < nD; k++) {                     // molten drops
+      const a = -Math.PI * (0.1 + 0.8 * Math.random()), v = 300 + Math.random() * 600;
+      topP.emit({ tex: FX.tex.dot, x: to.x, y: to.y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, ay: 1700, s0: 0.35 + Math.random() * 0.3, s1: 0.1,
+        life: 0.7 + Math.random() * 0.3, a0: 1, a1: 0.6, tint: Math.random() < 0.5 ? 0xffa030 : 0xffe080, blend: PIXI.BLEND_MODES.ADD });
+    }
   }
   // b20 lead (user 2026-11-19: "the hand ball should be thrown"): a wheel's fire ball flies as the hand ball itself - the
   // comet's fire + glow with the value's numerals, no painted chip face / rim (?oldcoins = the chip wheels keep their faces)
@@ -3209,14 +3254,15 @@
     const H = window.GX_HALO_HANDOFF; window.GX_HALO_HANDOFF = null;
     const from = H && H.c && !H.c.destroyed ? { x: H.c.x, y: H.c.y } : handOrb();
     if (H && H.c && !H.c.destroyed) H.c.destroy({ children: true });
-    await comet(from, { x: from.x + 160, y: (from.y + to.y) / 2 }, to, tint, label, S.turbo ? 0.25 : 0.35, calm, BALL_THROW);   // b20: the hand ball, no chip face
+    await comet(from, { x: from.x + 160, y: (from.y + to.y) / 2 }, to, tint, label, S.turbo ? 0.2 : 0.3, calm, BALL_THROW, true);   // b20: the hand ball, no chip face (b22: quicker, shatters)
     orbImpact(to, tint, calm);
+    throwImpact(to, tint);                             // b22: the same landing as a clip throw
   }
   // a fireball with a trailing magic flame, flown along a curve
   // calm (b18b, the Fortune Choice coins: QA "a big glow ball around the coin covers the counter boards"): a modest glow
   // behind the coin (0.75, half alpha), no white core / ring / white speed streak, a thin trail; the coin fades out over
   // 0.12 s at the landing so the chip swap under it cross-fades (pickThrow / pickCharge swap on the landing frame)
-  function comet(from, ctrl, to, tint, label, dur, calm, bare) {   // b20: bare = a wheel's fire ball (numerals only, no chip face / rim)
+  function comet(from, ctrl, to, tint, label, dur, calm, bare, pop) {   // b20: bare = a wheel's fire ball (numerals only, no chip face / rim); b22: pop = gone at once on landing (it shatters)
     const o = new PIXI.Container(); o.position.set(from.x, from.y); fxTop.addChild(o);
     const tail = VFX.magicFlame(o, 150, 300, rgbOf(tint)); tail.power = calm ? 0.7 : 1.5;
     const G0 = calm ? 0.75 : 2.1;
@@ -3235,7 +3281,9 @@
       const l = labelSprite(label); l.anchor.set(0.5); l.scale.set(COINS ? (label < 0 ? k * NUDGE_K : k * LABEL_K) : k); o.addChild(l);
     }
     const p = { t: 0 }; let px = from.x, py = from.y;
-    return FX.tween(p, { t: 1, duration: dur, ease: "power2.in", onUpdate: () => {
+    // b22 (user 2026-11-20: "at the final stage the ball should accelerate, go faster"): a thrown ball (pop) eases in hard -
+    // it leaves the hand slowly and rockets into the column over the last third of the flight (power4.in; was power2.in)
+    return FX.tween(p, { t: 1, duration: dur, ease: pop ? "power4.in" : "power2.in", onUpdate: () => {
       const q = FX.bezier(from, ctrl, to, p.t), vx = q.x - px, vy = q.y - py; px = q.x; py = q.y;
       o.position.set(q.x, q.y); ring.rotation += 0.3;
       if (vx || vy) tail.rotation = Math.atan2(-vx, vy);           // the flame streams behind the ball
@@ -3243,7 +3291,7 @@
       for (let k = 0; k < n; k++) topP.emit({ tex: k ? FX.tex.dot : FX.tex.spark, x: q.x + (Math.random() - 0.5) * 30, y: q.y + (Math.random() - 0.5) * 30, s0: calm ? 0.3 : 0.5, s1: 0, life: calm ? 0.25 : 0.4, tint });
       if (vx || vy) { const sp = Math.hypot(vx, vy); g.scale.set(G0 + sp / (calm ? 160 : 40), G0); g.rotation = Math.atan2(vy, vx); if (!calm) topP.emit({ tex: FX.tex.dot, x: q.x, y: q.y, vx: -vx * 8, vy: -vy * 8, s0: 0.9, s1: 0, life: 0.18, stretch: 300, tint: 0xffffff }); }
     } }).then(() => {
-      if (!calm) { o.destroy({ children: true }); return; }
+      if (!calm || pop) { o.destroy({ children: true }); return; }
       tail.power = 0; g.visible = false;
       gsap.to(o, { alpha: 0, duration: 0.12, ease: "power1.in", onComplete: () => o.destroy({ children: true }) });
     });
@@ -4430,9 +4478,7 @@
     } else idleLifeT = 0;
     ambP.update(dt); dust.update(dt); boardP.update(dt); topP.update(dt); popCoins.update(dt);
     // bull breathing + eye flicker
-    const br = Math.sin(time * Math.PI * 2 / 3.4);
-    bullSpr.scale.set(1 + 0.0025 * br, 1 + 0.006 * br);
-    bullSpr.y = -bl.h * (1 + 0.006 * br) + STILL_D.y; bullSpr.x = -bl.w / 2 * (1 + 0.0025 * br) + STILL_D.x;
+    // b22 (user 2026-11-20: "remove all the scale and stupid animation from the character"): the still bull (before the videos load) no longer breathes by scaling
     eyes.forEach((e, k) => { if (!gsap.isTweening(e)) e.alpha = 0.4 + 0.12 * Math.sin(time * 7 + k) + 0.05 * Math.random(); });
     // rays + sun
     rays.forEach((r, k) => { r.alpha = 0.07 + 0.05 * Math.sin(time * 0.6 + k * 1.7); r.rotation = 0.5 + k * 0.06 + 0.015 * Math.sin(time * 0.3 + k); });
@@ -4512,8 +4558,8 @@
     // shake
     // shake around the board's rest point (= its pivot: the intro scales the board about (540, 940))
     if (shakeT > 0) { shakeT -= dt; const a = shakeA * Math.max(0, shakeT) / 0.4, dx = (Math.random() - 0.5) * a;
-      board.x = board.pivot.x + dx; board.y = board.pivot.y + (Math.random() - 0.5) * a; bullL.x = dx * 0.5; }
-    else if (board.x !== board.pivot.x || board.y !== board.pivot.y) { board.position.copyFrom(board.pivot); bullL.x = 0; shakeA = 0; }
+      board.x = board.pivot.x + dx; board.y = board.pivot.y + (Math.random() - 0.5) * a; }   // b22: the shake no longer jiggles the bull (was bullL.x = dx * 0.5)
+    else if (board.x !== board.pivot.x || board.y !== board.pivot.y) { board.position.copyFrom(board.pivot); shakeA = 0; }
   });
 
   // ---------- intro ----------
